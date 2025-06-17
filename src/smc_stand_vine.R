@@ -32,7 +32,6 @@ set.seed(42)
 
 ########################################################################################################################
 run_standard_smc <- function(U,
-                    skeleton,
                     cfg,
                     type       = c("standard", "block"),
                     seed       = 42,
@@ -40,6 +39,7 @@ run_standard_smc <- function(U,
                     W_predict  = 5L) {
   
   type <- match.arg(type)
+  skeleton  <- vinecop(U, family_set = "gaussian")
   
   # ── dimensions ───────────────────────────────────────────────────
   N <- nrow(U); K <- cfg$K; M <- cfg$M
@@ -127,7 +127,7 @@ run_standard_smc <- function(U,
       data_up_to_t <- U[max(1, t_idx - cfg$W + 1):t_idx, , drop = FALSE]
       newAnc       <- systematic_resample(w_new)
       particles    <- resample_move(particles, newAnc, data_up_to_t,
-                                    cl, skeleton, type, cfg)
+                                    cl, type, cfg, skeleton=skeleton)
     } else {
       step_prev <- t_idx - 1L
       newAnc    <- if (step_prev < 1L) seq_len(M) else out$ancestorIndices[, step_prev]
