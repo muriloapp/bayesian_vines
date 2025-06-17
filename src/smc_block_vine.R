@@ -65,6 +65,7 @@ run_block_smc <- function(U,
       unique = integer(n_pairs),
       euc    = numeric(n_pairs)
     ),
+    mh_acc_pct      = rep(NA_real_, n_pairs),
     theta_hist      = array(NA_real_,    dim = c(M, S, K)),
     gamma_hist      = array(NA_integer_, dim = c(M, S, K)),
     ancestorIndices = matrix(0L, M, S)
@@ -144,8 +145,10 @@ run_block_smc <- function(U,
         
         data_up_to_t <- U[max(1, t_idx - cfg$W + 1) : t_idx, , drop = FALSE]
         newAnc <- systematic_resample(w_new)
-        particles    <- resample_move(particles, newAnc, data_up_to_t,
+        move_out    <- resample_move(particles, newAnc, data_up_to_t,
                                       cl, type, cfg, tr=tr_idx, temp_skel = tmp_skel)
+        particles <- move_out$particles
+        out$mh_acc_pct[step_id] <- move_out$acc_pct
       } else {
         prev_step <- step_id - 1L
         newAnc    <- if (prev_step < 1L) seq_len(M) else out$ancestorIndices[, prev_step]
@@ -163,27 +166,6 @@ run_block_smc <- function(U,
   out$particles_final    <- particles
   return(out)
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
