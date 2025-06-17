@@ -1,0 +1,26 @@
+{
+    "id": "9CD9E55D",
+    "path": "~/Research/project_1/Code/Exploratory/smc_vines/src/smc_block_vine.R",
+    "project_path": "src/smc_block_vine.R",
+    "type": "r_source",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1750105994555.0,
+    "source_on_save": false,
+    "relative_order": 5,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "84,24",
+        "scrollLine": "44"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1750110386,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1750110386357,
+    "read_only": false,
+    "read_only_alternatives": []
+}
