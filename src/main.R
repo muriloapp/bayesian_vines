@@ -37,7 +37,6 @@ build_cfg <- function(d) {
 }
 
 
-type = "block"
 
 quiet_assert()
 load_packages()
@@ -49,21 +48,15 @@ source(here("src", "smc_block_vine.R"))
 
 
 
-# ---- 1 • Simulate data -----------------------------------------------------
 U  <- sim_static_cop_3(N = 6)
 N  <- nrow(U)
 d  <- ncol(U)
 cfg <- build_cfg(d)
 
-# ---- 2 • Initial skeleton & particles -------------------------------------
-skeleton  <- vinecop(U, family_set = "gaussian")
 
-# ---- 3 • Run SMC ----------------------------------------------------------
-results <- run_standard_smc(U, skeleton, cfg, type)
-#results <- run_block_smc(U, cfg)
+#results <- run_standard_smc(U, cfg, type="standard")
+results <- run_block_smc(U, cfg, type="block")
 
-
-# ---- 4 • Report -----------------------------------------------------------
 cat("\n\n===== FINAL MODEL EVALUATION =====\n")
 cat(sprintf("Log Model Evidence: %.4f\n", results$log_model_evidence))
 
