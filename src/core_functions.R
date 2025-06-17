@@ -5,7 +5,7 @@ library(tictoc)
 library(Rcpp)
 library(matrixStats)
 
-set.seed(42)
+#set.seed(42)
 
 log_prior <- function(p, cfg) {
   with(cfg, {
@@ -398,6 +398,15 @@ systematic_resample <- function(w) {
   cumw <- cumsum(w)
   (u0 + 0:(M-1)/M) |> 
     (\(u) findInterval(u, cumw)+1L)()
+}
+
+
+# Stratified resampling (O(M))
+stratified_resample <- function(w) {
+  M <- length(w)
+  cumw <- cumsum(w)                     # cumulative weights
+  u    <- ((seq_len(M) - 1) + runif(M)) / M   # one uniform draw per stratum
+  findInterval(u, cumw) + 1L            # ancestor indices (1-based)
 }
 
 

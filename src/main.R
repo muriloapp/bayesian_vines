@@ -2,7 +2,7 @@
 #  C-vine SMC with spike-and-slab prior
 #  2025-06-16
 # ──────────────────────────────────────────────────────────────────────────────
-set.seed(42)
+set.seed(126)
 quiet_assert <- function() {
   assignInNamespace("assert_that", function(...) invisible(TRUE), ns = "assertthat")
   assignInNamespace("see_if",      function(...) invisible(TRUE), ns = "assertthat")
@@ -21,16 +21,16 @@ build_cfg <- function(d) {
     d            = d,
     K            = d * (d - 1) / 2,
     M            = 1000,
-    pi0_edge     = 0.30,
+    pi0_edge     = 0.70, #0.3
     slab_sd      = 0.50,
     ess_thr      = 0.50,
-    W            = 1000L,
+    W            = 1000L,      #1000L,
     k_step       = 1L,                  
     proc_sd      = 0,
     p_dyn_flip   = 0,
     n_mh         = 1L,
     step_sd      = 0.05,
-    p_flip_edge  = 0.10,
+    p_flip_edge  = 0.25,
     indep_copula = bicop_dist("indep"),
     W_predict    = 5L,
     seed         = 42,
@@ -51,7 +51,8 @@ source(here("src", "results_helpers.R"))
 
 
 
-U  <- sim_static_cop_3(N = 6)
+#U  <- sim_static_cop_3(N = 1000)
+U  <- sim_ar1_copula_corr_3(N = 1000)
 N  <- nrow(U)
 d  <- ncol(U)
 cfg <- build_cfg(d)
@@ -60,9 +61,18 @@ cfg <- build_cfg(d)
 #results <- run_standard_smc(U, cfg, type="standard")
 results <- run_block_smc(U, cfg, type="block")
 
+
+
+
 cat("\n\n===== FINAL MODEL EVALUATION =====\n")
 cat(sprintf("Log Model Evidence: %.4f\n", results$log_model_evidence))
 
+#================================================================================
+# Save results
+#================================================================================
+
+results[["cfg"]] <- cfg
+saveRDS(results, file = "simul_results/block_dynamic_3.rds")
 
 
 
@@ -70,15 +80,38 @@ cat(sprintf("Log Model Evidence: %.4f\n", results$log_model_evidence))
 # Explore results
 #================================================================================
 
-# plot(results$diag_log$unique)
-# 
-# plot_genealogy_theta(results$theta_hist, results$ancestorIndices, edge_id = 1)   
-# 
+# plot(results$diag_log$unique, type="l")
+#  
+# plot_genealogy_theta(results$theta_hist, results$ancestorIndices, edge_id = 1, ylim = c(0.5, 1.1))   
+#  
 # plot_theta_histograms(results$theta_mean, k_set = c(1))
 # 
-# plot_theta_paths(results$theta_mean, results$theta_se, k=3, theta_true = 0.2)
-# 
-# 
+# plot_theta_paths(results$theta_mean, results$theta_se, k=1, theta_true = 0.6)
+#  
+#  
+
+
+
+#results <- readRDS("simul_results/block_stat_3.rds")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
