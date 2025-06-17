@@ -34,9 +34,7 @@ set.seed(42)
 run_standard_smc <- function(U,
                     cfg,
                     type       = c("standard", "block"),
-                    seed       = 42,
-                    n_cores    = max(parallel::detectCores() - 1, 1),
-                    W_predict  = 5L) {
+                    n_cores    = max(parallel::detectCores() - 1, 1)) {
   
   type <- match.arg(type)
   skeleton  <- vinecop(U, family_set = "gaussian")
@@ -72,7 +70,7 @@ run_standard_smc <- function(U,
   # ── parallel backend ───────────────────────────────────────────────────────
   cl <- parallel::makeCluster(n_cores)
   on.exit(parallel::stopCluster(cl), add = TRUE)          # safe cleanup
-  parallel::clusterSetRNGStream(cl, seed)
+  parallel::clusterSetRNGStream(cl, cfg$seed)
   
   parallel::clusterExport(
     cl,
@@ -92,7 +90,7 @@ run_standard_smc <- function(U,
     particles <- propagate_particles(particles, cfg)
     
     # 2. predictive metrics (after burn-in) ──────────────────────────────────
-    if (t_idx > W_predict) {
+    if (t_idx > cfg$W_predict) {
       w_prev <- vapply(particles, `[[`, numeric(1), "w")
       w_prev <- w_prev / sum(w_prev)
       
