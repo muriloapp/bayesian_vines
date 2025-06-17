@@ -23,7 +23,7 @@ assignInNamespace("see_if", function(...) invisible(TRUE), ns = "assertthat")
 source(here('src','core_functions.R'))
 source(here('src','simulation.R'))
 
-set.seed(42)
+#set.seed(42)
 
 #Rcpp::sourceCpp(here::here("src", "calc_loglik_tree_tr.cpp"))
 
@@ -144,7 +144,7 @@ run_block_smc <- function(U,
       if (ESS(w_new) < cfg$ess_thr * M && t_idx < N) {
         
         data_up_to_t <- U[max(1, t_idx - cfg$W + 1) : t_idx, , drop = FALSE]
-        newAnc <- systematic_resample(w_new)
+        newAnc <- stratified_resample(w_new)
         move_out    <- resample_move(particles, newAnc, data_up_to_t,
                                       cl, type, cfg, tr=tr_idx, temp_skel = tmp_skel)
         particles <- move_out$particles
