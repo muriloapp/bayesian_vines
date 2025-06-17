@@ -1,0 +1,331 @@
+
+# Block vine Block_vine
+# refactor trees and adjust mhstep
+
+# ================================================================
+#  SMC para C-vine com spike-and-slab 
+# ================================================================
+library(rvinecopulib)
+library(VineCopula)
+library(data.table)
+library(tictoc)
+library(Rcpp)
+library(here)
+library(parallel)
+library(RcppThread)
+library(assertthat)
+library(profvis)
+
+
+assignInNamespace("assert_that", function(...) invisible(TRUE), ns = "assertthat")
+assignInNamespace("see_if", function(...) invisible(TRUE), ns = "assertthat")
+
+source(here('src','1.9_fun_block_vine.R'))
+source(here('src','simulation.R'))
+
+set.seed(42)
+
+#Rcpp::sourceCpp(here::here("src", "calc_loglik_tree_tr.cpp"))
+
+
+## 0. SIMULATE DATA -------------------------------------------------------
+U <- sim_static_cop_3(N=6)
+N <- nrow(U);  d <- ncol(U)
+
+cfg <- list(
+  d            = d,
+  K            = d * (d - 1) / 2,
+  M            = 1000,
+  pi0_edge     = 0.30,
+  slab_sd      = 0.50,
+  ess_thr      = 0.50,
+  W            = 15L,
+  k_step       = 1L,
+  proc_sd      = 0.00,
+  p_dyn_flip   = 0.00,
+  n_mh         = 1L,
+  step_sd      = 0.05,
+  p_flip_edge  = 0.10,
+  G            = 2,        # group in tree argument
+  indep_copula = bicop_dist("indep")
+)
+
+type = 'block'
+cfg[["S"]] <- N * cfg$G  # named
+
+## 1. Skeleton -----------------------------------------------------------
+skeleton <- vinecop(U, family_set = "gaussian")
+particles <- replicate(cfg$M, new_particle(cfg), simplify = FALSE)
+acc_ratio <- rep(NA_real_, nrow(U)) # to check acceptance
+
+
+skeletons_by_tr <- lapply(1:(d-1), function(tr) {
+  vinecop(U, family_set = "gaussian", structure = skeleton$structure, trunc_lvl = tr)
+})
+
+n_cores <- max(detectCores() - 1, 1)
+cl <- makeCluster(n_cores)
+clusterSetRNGStream(cl, 42)
+
+clusterExport(cl, c(
+  "mh_step_in_tree", "vine_from_particle", "log_prior",
+  "d", "bicop_dist", "vinecop_dist", "dvinecop","skeleton", "cfg", "mh_step"
+  #"calc_log_lik_tree_tr_cpp"
+), envir = environment())
+
+
+
+
+## 2.1 INITIALIZE METRICS STORAGE (NEW) ----------------------------------
+log_pred_densities <- numeric(N)
+theta_mean <- matrix(NA_real_, nrow(U), cfg$K, dimnames = list(NULL, sprintf("theta[%d]", 1:cfg$K)))
+theta_se   <- matrix(NA_real_, nrow(U), cfg$K, dimnames = list(NULL, sprintf("theta[%d]", 1:cfg$K)))
+gamma_mean <- matrix(NA_real_, nrow(U), cfg$K, dimnames = list(NULL, sprintf("edge[%d]", 1:cfg$K)))
+gamma_se <- matrix(NA_real_, nrow(U), cfg$K, dimnames = list(NULL, sprintf("edge[%d]", 1:cfg$K)))
+
+n_pairs   <- N * (d-1)
+diag_log <- data.table(
+  t      = integer(n_pairs),
+  tr     = integer(n_pairs),
+  ESS    = numeric(n_pairs),
+  unique = integer(n_pairs),
+  euc    = numeric(n_pairs)
+)
+pos <- 1L
+
+
+
+theta_hist <- array(NA_real_, dim = c(cfg$M, cfg$S, cfg$K))   # parameters history
+ancestorIndices    <- matrix(0L, nrow = cfg$M, ncol = cfg$S)     # parent indices
+ancestorIndices[, 1L] <- seq_len(cfg$M)                      # identity for step 1
+
+# -------------------------------------------------------------------------
+
+
+system.time(
+#profvis({
+## 3.  Filtro SMC -----------------------------------------------------
+for (t in seq_len(nrow(U))) {
+  tic("t time")
+    u_row    <- U[t, , drop = FALSE]        
+    pair_copulas <- skeleton$pair_copulas
+    
+    particles        <- propagate_particles(particles, cfg)
+    
+    if (t>5) {
+      ## 2.5 PREDICTIVE METRICS (REFACTORED) -----------------------------
+      # A single, efficient function call
+      #if (t==10) {break}
+      w_prev_for_prediction <- vapply(particles, `[[`, numeric(1), "w")
+      w_prev_for_prediction <- w_prev_for_prediction / sum(w_prev_for_prediction)
+      metrics_list <- compute_predictive_metrics(
+        u_row,
+        particles,
+        skeleton,
+        w_prev_for_prediction,
+        cfg
+      )
+
+      # Unpack the results
+      log_pred_densities[t] <- metrics_list$log_pred_density
+      theta_mean[t, ]       <- metrics_list$theta_mean
+      theta_se[t,   ]       <- metrics_list$theta_se
+      gamma_mean[t, ]       <- metrics_list$gamma_mean
+      gamma_se[t,   ]       <- metrics_list$gamma_se
+  }
+  
+    # Update weights
+
+    tr_sequence <- 1:cfg$G
+    for (tr in tr_sequence) {
+      tic("tr time")
+      
+      
+      if (tr==cfg$G){
+        temp_skel <- skeletons_by_tr[[length(skeletons_by_tr)]]
+      } else {
+        temp_skel <- skeletons_by_tr[[tr]]
+      }
+
+      tr_prev <- tr - 1
+      log_incr <- vapply(particles, function(p) {
+        calculate_log_lik_tree_tr(p, temp_skel, u_row, t, tr, tr_prev, skeletons_by_tr, cfg)
+      }, numeric(1))
+      particles       <- update_weights(particles, log_incr) 
+      w_new <- vapply(particles, `[[`, numeric(1), 'w')
+      
+      diag <- diagnostic_report(t, tr, U, particles, w_new, cfg)
+      
+      diag_log[pos, `:=`(
+        t      = ..t,
+        tr     = ..tr,
+        ESS    = diag$ESS,
+        unique = diag$unique,
+        euc    = diag$euc
+      )]
+      pos <- pos + 1L
+      
+
+      # Resample + move
+        if (ESS(w_new) < cfg$ess_thr * cfg$M && t <N) {
+          newAncestors <- systematic_resample(w_new)
+          #idx       <- sample.int(M, M, TRUE, prob = w_new)
+          particles <- particles[newAncestors]                  # cópia simples
+          for (p in particles) {                       # reinicia pesos
+            p$w <- 1 / cfg$M
+          }
+          
+          data_up_to_t <- U[max(1, t - cfg$W + 1):t, , drop = FALSE]
+          mh_n_prop <- cfg$M * cfg$n_mh # counters for acception
+          mh_n_acc  <- 0
+          
+          # The workers need 'temp_skel' to build the vine and 'vine_from_particle' itself.
+          clusterSetRNGStream(cl, 42) 
+          
+          
+          
+          tic("mh time")
+          
+          mh_results <- parLapply(cl, seq_along(particles), function(i, particles_local, data_up_to_t, temp_skel, tr, cfg) {
+            p <- particles_local[[i]]
+            local_acc <- 0L
+            for (k in seq_len(cfg$n_mh)) {
+              p <- mh_step_in_tree(p, tr, data_up_to_t, temp_skel, cfg) # Use the new function signature
+              if (isTRUE(p$last_accept)) {
+                local_acc <- local_acc + 1L
+              }
+            }
+            list(p = p, acc = local_acc)
+          },
+          particles, data_up_to_t, temp_skel, tr, cfg)
+         
+          toc()
+          #stopCluster(cl)
+
+          mh_n_acc <- sum(vapply(mh_results, `[[`, integer(1), "acc"))
+          particles <- lapply(mh_results, `[[`, "p")
+          
+          acc_pct <- 100 * mh_n_acc / mh_n_prop
+          cat(sprintf(
+            "MH acceptance = %4d / %4d  =  %.2f%%\n\n",
+            mh_n_acc, mh_n_prop, acc_pct
+          ))
+        } else {
+          step_id_prev <- (t - 1L) * cfg$G + tr - 1L          # previous sub-step
+          newAncestors <- if (step_id_prev < 1L) seq_len(cfg$M)
+          else ancestorIndices[, step_id_prev]
+        }
+      
+      ## NOW add the copy:
+      ## ---- FLAT INDEX OF *THIS* SUB-STEP -----------------------------------
+      step_id <- (t - 1L) * cfg$G + tr          # 1-based: 1,2,…,S
+      
+      ## ---- STORE genealogy + state -----------------------------------------
+      ancestorIndices[   , step_id] <- newAncestors
+      theta_hist[, step_id, ] <- t(vapply(particles, `[[`, numeric(cfg$K), "theta"))
+      toc()}
+toc()} 
+)
+
+
+
+
+
+
+
+
+
+
+## 4. FINAL METRICS ANALYSIS (NEW) ---------------------------------------------
+cat("\n\n===== FINAL MODEL EVALUATION =====\n")
+
+# 4.1 Model Evidence (Log Marginal Likelihood)
+log_model_evidence <- sum(log_pred_densities)
+cat(sprintf("Log Model Evidence: %.4f\n", log_model_evidence))
+
+# library(ggplot2)
+# k <- 1
+# df <- data.frame(
+#   t   = 1:nrow(U),
+#   mu  = theta_mean[, k],
+#   lo  = theta_mean[, k] - theta_se[, k],
+#   hi  = theta_mean[, k] + theta_se[, k]
+# )
+# 
+# ggplot(df, aes(t, mu)) +
+#   geom_ribbon(aes(ymin = lo, ymax = hi), alpha = .15) +
+#   geom_line(linewidth = .6) +
+#   labs(title = sprintf("θ[%d] posterior mean ±1 s.e.", k),
+#        y = expression(theta), x = "time t")
+
+
+
+
+plot_genealogy_edge <- function(theta_hist, ancestor, edge_id = 1,
+                                base_col = "grey80", alive_col = "red",
+                                pch = 19, cex = .25, lwd = .25)
+{
+  M <- dim(theta_hist)[1L];  S <- dim(theta_hist)[2L]
+  
+  ## rebuild trajectories
+  traj <- matrix(NA_real_, M, S)
+  traj[, 1L] <- theta_hist[, 1L, edge_id]
+  for (s in 2:S)
+    traj[, s] <- theta_hist[ ancestor[, s], s, edge_id ]
+  
+  ## surviving lineages
+  surv <- traj
+  idx  <- ancestor[, S]                # parents of the last step
+  for (s in (S - 1L):1L) {
+    surv[, s] <- traj[idx, s]
+    idx <- ancestor[idx, s]
+  }
+  
+  matplot(t(traj), col = base_col, type = "p", pch = pch, cex = cex,
+          lty = 1, lwd = lwd, xlab = "sub-step", 
+          ylab = bquote(theta[.(edge_id)]))
+  abline(v = seq(G + 0.5, S, by = G), lty = 3, col = "lightgrey")
+  matlines(t(surv), col = alive_col, lwd = lwd)
+  title(main = sprintf("Genealogy of θ[%d]  (flat index)", edge_id))
+}
+
+
+
+
+
+plot_genealogy_edge(theta_hist, ancestorIndices, edge_id = 12)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,26 @@
+{
+    "id": "FF5BC183",
+    "path": "~/Research/project_1/Code/Exploratory/smc_vines/src/core_functions.R",
+    "project_path": "src/core_functions.R",
+    "type": "r_source",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1750108216484.0,
+    "source_on_save": false,
+    "relative_order": 4,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "437,14",
+        "scrollLine": "396"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1750165194,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1750165194831,
+    "read_only": false,
+    "read_only_alternatives": []
+}
