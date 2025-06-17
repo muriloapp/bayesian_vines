@@ -24,13 +24,9 @@ source(here('src','core_functions.R'))
 source(here('src','simulation.R'))
 
 set.seed(42)
-# 
+
 # acc_ratio <- rep(NA_real_, nrow(U)) # to check acceptance
 
-
-
-
-########################################################################################################################
 run_standard_smc <- function(U,
                     cfg,
                     type       = c("standard", "block"),
@@ -56,6 +52,7 @@ run_standard_smc <- function(U,
       unique = integer(N),
       euc    = numeric(N)
     ),
+    mh_acc_pct      = rep(NA_real_, N),
     theta_hist      = array(NA_real_,    dim = c(M, N, K)),
     gamma_hist      = array(NA_integer_, dim = c(M, N, K)),
     ancestorIndices = matrix(0L, M, N)
@@ -124,8 +121,10 @@ run_standard_smc <- function(U,
     if (ESS(w_new) < cfg$ess_thr * M && t_idx < N) {
       data_up_to_t <- U[max(1, t_idx - cfg$W + 1):t_idx, , drop = FALSE]
       newAnc       <- systematic_resample(w_new)
-      particles    <- resample_move(particles, newAnc, data_up_to_t,
+      move_out     <- resample_move(particles, newAnc, data_up_to_t,
                                     cl, type, cfg, skeleton=skeleton)
+      particles <- move_out$particles
+      out$mh_acc_pct[t_idx] <- move_out$acc_pct
     } else {
       step_prev <- t_idx - 1L
       newAnc    <- if (step_prev < 1L) seq_len(M) else out$ancestorIndices[, step_prev]
@@ -143,81 +142,4 @@ run_standard_smc <- function(U,
   return(out)
 }
   
-  
-  
-  
-  
-
-
-
-
-
-
-
-
-
-# 
-# 
-# library(ggplot2)
-# library(reshape2)
-# # Base R: 3 simple histograms, one above the other
-# par(mfrow = c(1, 3), mar = c(4, 4, 2, 1))
-# 
-# for (k in 1:3) {
-#   hist(theta_mean[, k],
-#        main = bquote("Histogram of " ~ theta[.(k)]),
-#        xlab = bquote(theta[.(k)]),
-#        col = "lightblue",
-#        border = "white")
-# }
-# 
-# 
-# 
-# theta_path <- attr(U, "theta_path")
-# 
-# # Construct long-format data frame for all k
-# k_values <- 2
-# df_all <- do.call(rbind, lapply(k_values, function(k) {
-#   data.frame(
-#     t = 1:nrow(theta_mean),
-#     mu = theta_mean[, k],
-#     lo = theta_mean[, k] - theta_se[, k],
-#     hi = theta_mean[, k] + theta_se[, k],
-#     #true = theta_true[, k],
-#     true = theta_path[,k],
-#     k = factor(k)
-#   )
-# }))
-# 
-# ggplot(df_all, aes(x = t, y = mu, color = k, fill = k)) +
-#   geom_ribbon(aes(ymin = lo, ymax = hi), alpha = 0.15, color = NA) +
-#   geom_line(linewidth = 0.7) +
-#   geom_line(aes(y = true, group = k), color = "black", linetype = "dashed") +
-#   labs(title = expression("Posterior mean ±1 s.e. with true " ~ theta[k]),
-#        y = expression(theta[k]), x = "time t") +
-#   theme_minimal() +
-#   scale_color_brewer(palette = "Dark2") +
-#   scale_fill_brewer(palette = "Pastel2")
-# 
-# 
-# 
-# 
-# 
-# plot_genealogy_theta(theta_hist, ancestorIndices, edge_id = 1)   # for edge 12
-# 
-# 
-# 
-# 
-# 
-# 
-
-
-
-
-
-
-
-
-
-
 

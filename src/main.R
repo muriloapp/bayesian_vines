@@ -11,7 +11,7 @@ quiet_assert <- function() {
 load_packages <- function() {
   pkgs <- c(
     "rvinecopulib", "VineCopula", "data.table", "tictoc", "Rcpp",
-    "here", "parallel", "RcppThread", "profvis"
+    "here", "parallel", "RcppThread", "profvis", "ggplot2", "reshape2"
   )
   lapply(pkgs, require, character.only = TRUE)
 }
@@ -24,8 +24,8 @@ build_cfg <- function(d) {
     pi0_edge     = 0.30,
     slab_sd      = 0.50,
     ess_thr      = 0.50,
-    W            = 15L,
-    k_step       = 1L,
+    W            = 1000L,
+    k_step       = 1L,                  
     proc_sd      = 0,
     p_dyn_flip   = 0,
     n_mh         = 1L,
@@ -34,7 +34,7 @@ build_cfg <- function(d) {
     indep_copula = bicop_dist("indep"),
     W_predict    = 5L,
     seed         = 42,
-    G            = 2L                    #important
+    G            = 2L                      # Group in which tree
   )
 }
 
@@ -47,6 +47,7 @@ source(here("src", "core_functions.R"))
 source(here("src", "simulation.R"))
 source(here("src", "smc_stand_vine.R"))
 source(here("src", "smc_block_vine.R"))
+source(here("src", "results_helpers.R"))
 
 
 
@@ -61,4 +62,27 @@ results <- run_block_smc(U, cfg, type="block")
 
 cat("\n\n===== FINAL MODEL EVALUATION =====\n")
 cat(sprintf("Log Model Evidence: %.4f\n", results$log_model_evidence))
+
+
+
+
+#================================================================================
+# Explore results
+#================================================================================
+
+# plot(results$diag_log$unique)
+# 
+# plot_genealogy_theta(results$theta_hist, results$ancestorIndices, edge_id = 1)   
+# 
+# plot_theta_histograms(results$theta_mean, k_set = c(1))
+# 
+# plot_theta_paths(results$theta_mean, results$theta_se, k=3, theta_true = 0.2)
+# 
+# 
+
+
+
+
+
+
 
