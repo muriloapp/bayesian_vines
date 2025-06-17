@@ -231,7 +231,7 @@ need_resample <- function(w, cfg, t, T) {
   ess(w) < cfg$ess_thr * cfg$M && t < T
 }
 
-resample_move <- function(particles, newAncestors, data_up_to_t, cl, skeleton, type, cfg, tr=NULL, temp_skel=NULL) {
+resample_move <- function(particles, newAncestors, data_up_to_t, cl, type, cfg, skeleton=NULL, tr=NULL, temp_skel=NULL) {
   
   #idx       <- sample.int(M, M, TRUE, prob = w_new)
   particles <- particles[newAncestors]                  # cópia simples
