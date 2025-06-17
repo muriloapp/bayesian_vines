@@ -286,7 +286,7 @@ resample_move <- function(particles, newAncestors, data_up_to_t, cl, type, cfg, 
     mh_n_acc, mh_n_prop, acc_pct
   ))
   
-  particles
+  return(list(particles = particles, acc_pct = acc_pct))
 }
 
 ## ───────────── Monte-Carlo utilities ────────────────────────────
@@ -443,55 +443,6 @@ compute_predictive_metrics <- function(u_obs, particles, skel, w_prev_for_predic
     gamma_se      = gamma_sd_now
   ))
 }
-
-
-
-plot_genealogy_theta <- function(theta_hist, anc, edge_id = 1,
-                                 base_col = "black", alive_col = "red",
-                                 pch = 19, cex = .25, lwd = .25)
-{
-  M <- dim(theta_hist)[1L];  T <- dim(theta_hist)[2L]
-  
-  ## (1) rebuild *all* trajectories for that coordinate
-  traj_all <- matrix(0, M, T)
-  for (tt in 1:(T - 1))
-    traj_all[, tt] <- theta_hist[ anc[, tt + 1L], tt, edge_id ]
-  traj_all[, T] <- theta_hist[, T, edge_id]
-  
-  ## (2) rebuild the ones that survive to the end
-  traj_surv <- matrix(0, M, T)
-  traj_surv[, T] <- theta_hist[, T, edge_id]
-  idx <- anc[, T]
-  for (tt in (T - 1L):1L) {
-    traj_surv[, tt] <- theta_hist[idx, tt, edge_id]
-    idx <- anc[idx, tt]
-  }
-  
-  ## (3) plot
-  matplot(t(traj_all), col = base_col, pch = pch, cex = cex,
-          type = "p", lty = 1, lwd = lwd,
-          xlab = "time step", ylab = bquote(theta[.(edge_id)]),
-          main = paste0("Genealogy of θ[", edge_id, "]"))
-  # matlines(t(traj_surv), col = alive_col, lty = 1, lwd = lwd)
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
