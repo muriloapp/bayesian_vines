@@ -23,7 +23,7 @@ assignInNamespace("see_if", function(...) invisible(TRUE), ns = "assertthat")
 source(here('src','core_functions.R'))
 source(here('src','simulation.R'))
 
-set.seed(42)
+#set.seed(42)
 
 # acc_ratio <- rep(NA_real_, nrow(U)) # to check acceptance
 
@@ -34,7 +34,7 @@ run_standard_smc <- function(U,
   
   type <- match.arg(type)
   skeleton  <- vinecop(U, family_set = "gaussian")
-  
+
   # ── dimensions ───────────────────────────────────────────────────
   N <- nrow(U); K <- cfg$K; M <- cfg$M
 
@@ -120,7 +120,7 @@ run_standard_smc <- function(U,
     # 5. resample + move if ESS below threshold ─────────────────────────────
     if (ESS(w_new) < cfg$ess_thr * M && t_idx < N) {
       data_up_to_t <- U[max(1, t_idx - cfg$W + 1):t_idx, , drop = FALSE]
-      newAnc       <- systematic_resample(w_new)
+      newAnc <- stratified_resample(w_new)
       move_out     <- resample_move(particles, newAnc, data_up_to_t,
                                     cl, type, cfg, skeleton=skeleton)
       particles <- move_out$particles
