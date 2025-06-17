@@ -3,24 +3,24 @@
     "path": "~/Research/project_1/Code/Exploratory/smc_vines/src/smc_stand_vine.R",
     "project_path": "src/smc_stand_vine.R",
     "type": "r_source",
-    "hash": "645389150",
+    "hash": "0",
     "contents": "",
     "dirty": false,
     "created": 1750106966660.0,
     "source_on_save": false,
-    "relative_order": 2,
+    "relative_order": 1,
     "properties": {
         "source_window_id": "",
         "Source": "Source",
-        "cursorPosition": "128,35",
-        "scrollLine": "90"
+        "cursorPosition": "40,25",
+        "scrollLine": "26"
     },
     "folds": "",
-    "lastKnownWriteTime": 1750165410,
+    "lastKnownWriteTime": 1750168432,
     "encoding": "UTF-8",
     "collab_server": "",
     "source_window": "",
-    "last_content_update": 1750165410373,
+    "last_content_update": 1750168432530,
     "read_only": false,
     "read_only_alternatives": []
 }

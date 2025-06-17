@@ -37,7 +37,6 @@ build_cfg <- function(d) {
 }
 
 
-type = "block"
 
 quiet_assert()
 load_packages()
@@ -56,11 +55,11 @@ d  <- ncol(U)
 cfg <- build_cfg(d)
 
 # ---- 2 • Initial skeleton & particles -------------------------------------
-skeleton  <- vinecop(U, family_set = "gaussian")
+
 
 # ---- 3 • Run SMC ----------------------------------------------------------
-results <- run_standard_smc(U, skeleton, cfg, type)
-#results <- run_block_smc(U, cfg)
+#results <- run_standard_smc(U, cfg, type="standard")
+results <- run_block_smc(U, cfg, type="block")
 
 
 # ---- 4 • Report -----------------------------------------------------------
