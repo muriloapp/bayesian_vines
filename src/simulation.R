@@ -62,12 +62,12 @@ sim_ar1_copula_corr_3 <- function(N = 200) {
   library(VineCopula)
   
   ## Desired means (correlations)
-  mu_corr <- c(0.6, 0.4, 0.1)
+  mu_corr <- c(0.0, 0.4, 0.6) # last edge equal zero
   names(mu_corr) <- c("x12", "x13", "x23")
   
   ## AR(1) parameters
-  phi    <- c(0.98, 0.98, 0.98)                  # strong persistence
-  sigma  <- c(0.04, 0.04, 0.01)                  # smaller variance for x23
+  phi    <- c(0.99, 0.99, 0.99)                  # strong persistence
+  sigma  <- c(0.00, 0.01, 0.01)                  # smaller variance for x23
   mu_lat <- atanh(mu_corr)                      # mean in latent space
   
   ## Simulate AR(1) latent paths
@@ -105,10 +105,10 @@ sim_ar1_copula_corr_3 <- function(N = 200) {
 }
 
 
-# U <- sim_ar1_copula_corr_3(N = 500)
-# θ <- attr(U, "theta_path")
-# matplot(θ, type = "l", lty = 1, col = 1:3, ylab = "θ(t)", xlab = "time")
-# legend("topright", legend = colnames(θ), col = 1:3, lty = 1)
+U <- sim_ar1_copula_corr_3(N = 1000)
+θ <- attr(U, "theta_path")
+matplot(θ, type = "l", lty = 1, col = 1:3, ylab = "θ(t)", xlab = "time")
+legend("topright", legend = colnames(θ), col = 1:3, lty = 1)
 
 
 
