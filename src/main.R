@@ -32,6 +32,8 @@ build_cfg <- function(d) {
     step_sd      = 0.05,
     p_flip_edge  = 0.10,
     indep_copula = bicop_dist("indep"),
+    W_predict    = 5L,
+    seed         = 42,
     G            = 2L                    #important
   )
 }

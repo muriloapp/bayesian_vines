@@ -31,9 +31,7 @@ set.seed(42)
 run_block_smc <- function(U,
                           cfg,
                           type       = "block",
-                          seed       = 42,
-                          n_cores    = max(parallel::detectCores() - 1, 1),
-                          W_predict  = 5L) {
+                          n_cores    = max(parallel::detectCores() - 1, 1)) {
   
   # ── 0 • basic sizes & helpers ──────────────────────────────────────────────
   N  <- nrow(U);  d <- ncol(U)
@@ -76,7 +74,7 @@ run_block_smc <- function(U,
   # ── 3 • parallel backend ─────────────────────────────────────────────────
   cl <- parallel::makeCluster(n_cores)
   on.exit(parallel::stopCluster(cl), add = TRUE)
-  parallel::clusterSetRNGStream(cl, seed)
+  parallel::clusterSetRNGStream(cl, cfg$seed)
   
   parallel::clusterExport(
     cl, c("mh_step_in_tree", "vine_from_particle", "log_prior",
@@ -96,7 +94,7 @@ run_block_smc <- function(U,
     particles <- propagate_particles(particles, cfg)   # state advance
     
     # ---- Predictive metrics once per row ----------------------------------
-    if (t_idx > W_predict) {
+    if (t_idx > cfg$W_predict) {
       w_prev <- vapply(particles, `[[`, numeric(1), "w")
       w_prev <- w_prev / sum(w_prev)
       
@@ -148,26 +146,6 @@ run_block_smc <- function(U,
         newAnc <- systematic_resample(w_new)
         particles    <- resample_move(particles, newAnc, data_up_to_t,
                                       cl, type, cfg, tr=tr_idx, temp_skel = tmp_skel)
-        # particles <- particles[newAnc]          # shallow copy
-        # for (p in particles) p$w <- 1 / M       # reset weights
-        # 
-        # 
-        # 
-        # parallel::clusterSetRNGStream(cl, seed)
-        # mh_res <- parallel::parLapply(
-        #   cl, seq_along(particles),
-        #   function(i, particles_local, data_t, tmp_skel, tr_idx, cfg) {
-        #     p <- particles_local[[i]]
-        #     local_acc <- 0L
-        #     for (k in seq_len(cfg$n_mh)) {
-        #       p <- mh_step_in_tree(p, tr_idx, data_t, tmp_skel, cfg)
-        #       if (isTRUE(p$last_accept)) local_acc <- local_acc + 1L
-        #     }
-        #     list(p = p, acc = local_acc)
-        #   },
-        #   particles, data_up_to_t, tmp_skel, tr_idx, cfg
-        # )
-        # particles <- lapply(mh_res, `[[`, "p")
       } else {
         prev_step <- step_id - 1L
         newAnc    <- if (prev_step < 1L) seq_len(M) else out$ancestorIndices[, prev_step]
