@@ -4,7 +4,7 @@ library(data.table)
 library(tictoc)
 library(here)
 
-set.seed(42)
+#set.seed(42)
 
 
 sim_static_cop_3 = function(N=200){

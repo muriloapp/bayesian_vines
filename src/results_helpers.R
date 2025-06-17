@@ -4,9 +4,11 @@ library(reshape2)
 
 plot_genealogy_theta <- function(theta_hist, anc, edge_id = 1,
                                  base_col = "black", alive_col = "red",
-                                 pch = 19, cex = .25, lwd = .25)
+                                 pch = 19, cex = .25, lwd = .25,
+                                 ylim = NULL)  # ← added ylim input
 {
-  M <- dim(theta_hist)[1L];  T <- dim(theta_hist)[2L]
+  M <- dim(theta_hist)[1L]
+  T <- dim(theta_hist)[2L]
   
   ## (1) rebuild *all* trajectories for that coordinate
   traj_all <- matrix(0, M, T)
@@ -24,12 +26,14 @@ plot_genealogy_theta <- function(theta_hist, anc, edge_id = 1,
   }
   
   ## (3) plot
-  matplot(t(traj_all), col = base_col, pch = pch, cex = cex,
+  matplot(t(traj_all),
+          col = base_col, pch = pch, cex = cex,
           type = "p", lty = 1, lwd = lwd,
           xlab = "time step", ylab = bquote(theta[.(edge_id)]),
-          main = paste0("Genealogy of θ[", edge_id, "]"))
-  # matlines(t(traj_surv), col = alive_col, lty = 1, lwd = lwd)
+          main = paste0("Genealogy of θ[", edge_id, "]"),
+          ylim = ylim)  # ← passed through
 }
+
 
 plot_theta_histograms <- function(theta_mean, k_set = 1:3, colors = "lightblue") {
   par(mfrow = c(1, length(k_set)), mar = c(4, 4, 2, 1))
