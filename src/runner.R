@@ -6,7 +6,7 @@ library(here)
 source(here::here("src","config.R"))
 
 
-dir.create(here::here("dynamic_dgp"), showWarnings = FALSE)
+dir.create(here::here("simul_results/dynamic_dgp"), showWarnings = FALSE)
 
 run_and_save <- function(U, cfg, alg = c("standard", "block"), tag = NULL) {
   alg <- match.arg(alg)
@@ -20,7 +20,7 @@ run_and_save <- function(U, cfg, alg = c("standard", "block"), tag = NULL) {
   res$cfg <- cfg                                   
   
   tag   <- if (is.null(tag)) "" else paste0("_", tag)
-  fname <- here::here("dynamic_dgp", paste0(alg, "_", ncol(U) ,"_", tag))
+  fname <- here::here("simul_results/dynamic_dgp", paste0(alg, "_", ncol(U) ,"_", tag))
 
   saveRDS(res, fname)
   message(sprintf("✓ Saved %s", fname))
@@ -57,7 +57,7 @@ for (i in seq_along(cfg_variants)) {
   cfg    <- modifyList(build_cfg(d), tweaks)
   cfg$label <- tag
   
-  for (alg in c("block")) {
+  for (alg in c("standard", "block")) {
     set.seed(cfg$seed)
     run_and_save(U, cfg, alg, tag)
   }
