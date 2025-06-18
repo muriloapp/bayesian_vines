@@ -105,10 +105,10 @@ sim_ar1_copula_corr_3 <- function(N = 200) {
 }
 
 
-U <- sim_ar1_copula_corr_3(N = 1000)
-θ <- attr(U, "theta_path")
-matplot(θ, type = "l", lty = 1, col = 1:3, ylab = "θ(t)", xlab = "time")
-legend("topright", legend = colnames(θ), col = 1:3, lty = 1)
+# U <- sim_ar1_copula_corr_3(N = 1000)
+# θ <- attr(U, "theta_path")
+# matplot(θ, type = "l", lty = 1, col = 1:3, ylab = "θ(t)", xlab = "time")
+# legend("topright", legend = colnames(θ), col = 1:3, lty = 1)
 
 
 
