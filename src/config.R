@@ -21,19 +21,19 @@ build_cfg <- function(d) {
     d            = d,
     K            = d * (d - 1) / 2,
     M            = 1000,
-    pi0_edge     = 0.30, #0.3
+    pi0_edge     = 0.50, #0.3
     slab_sd      = 0.50,
     ess_thr      = 0.50,
     W            = 1000L,      #1000L,
     k_step       = 1L,                  
     proc_sd      = 0,
     p_dyn_flip   = 0,
-    n_mh         = 1L,
+    n_mh         = 3L,
     step_sd      = 0.05,
     p_flip_edge  = 0.25,
     indep_copula = bicop_dist("indep"),
     W_predict    = 5L,
-    seed         = 42,
+    seed         = 126, #42
     G            = 2L                      # Group in which tree
   )
 }
