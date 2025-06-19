@@ -51,7 +51,7 @@ run_block_smc <- function(U,
   # ── 2 • initial particles & diagnostics store ────────────────────────────
   particles <- replicate(M, new_particle(cfg), simplify = FALSE)
   
-  n_pairs <- N * (d-1)
+  n_pairs <- N * cfg$G
   out <- list(
     log_pred   = numeric(N),
     theta_mean = matrix(NA_real_, N, K),
