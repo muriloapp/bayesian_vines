@@ -6,7 +6,7 @@ library(here)
 source(here::here("src","config.R"))
 
 
-dir.create(here::here("simul_results/dynamic_dgp"), showWarnings = FALSE)
+dir.create(here::here("simul_results/static_dgp"), showWarnings = FALSE)
 
 run_and_save <- function(U, cfg, alg = c("standard", "block"), tag = NULL) {
   alg <- match.arg(alg)
@@ -20,7 +20,7 @@ run_and_save <- function(U, cfg, alg = c("standard", "block"), tag = NULL) {
   res$cfg <- cfg                                   
   
   tag   <- if (is.null(tag)) "" else paste0("_", tag)
-  fname <- here::here("simul_results/dynamic_dgp", paste0(alg, "_", ncol(U) ,"_", tag))
+  fname <- here::here("simul_results/static_dgp", paste0(alg, "_", ncol(U) , tag))
 
   saveRDS(res, fname)
   message(sprintf("✓ Saved %s", fname))
@@ -33,19 +33,22 @@ run_and_save <- function(U, cfg, alg = c("standard", "block"), tag = NULL) {
 
 
 set.seed(126)
-U  <- sim_ar1_copula_corr_3(N = 1000)              # or sim_static_cop_3
+U  <- sim_static_cop_8(N = 1000)              
 d  <- ncol(U)
 
 cfg_variants <- list(
   list(
     pi0_edge   = 0.70,
-    label      = "pi07"
-  ),
-  list(                            
-    pi0_edge   = 0.70,
-    W          = 30,
-    label      = "pi07_W30"
-  )
+    label      = "pi07_M2000_G3_nmh5",
+    G          = 3,
+    M          = 2000,
+    n_mh       = 5
+  ) #,
+  # list(                            
+  #   pi0_edge   = 0.70,
+  #   W          = 30,
+  #   label      = "pi07_W30"
+  # )
 )
 
 
@@ -62,3 +65,6 @@ for (i in seq_along(cfg_variants)) {
     run_and_save(U, cfg, alg, tag)
   }
 }
+
+
+
