@@ -52,47 +52,7 @@ load_packages()                      # loads rvinecopulib, here(), … (already 
 
 
 
-#U  <- sim_static_cop_3(N = 1000)
-# U  <- sim_ar1_copula_corr_3(N = 1000)
-# N  <- nrow(U)
-# d  <- ncol(U)
-# cfg <- build_cfg(d)
 
-
-#results <- run_standard_smc(U, cfg, type="standard")
-# results <- run_block_smc(U, cfg, type="block")
-# 
-# 
-# 
-# 
-# cat("\n\n===== FINAL MODEL EVALUATION =====\n")
-# cat(sprintf("Log Model Evidence: %.4f\n", results$log_model_evidence))
-
-#================================================================================
-# Save results
-#================================================================================
-
-# results[["cfg"]] <- cfg
-# saveRDS(results, file = "simul_results/block_dynamic_3.rds")
-
-
-
-#================================================================================
-# Explore results
-#================================================================================
-
-# plot(results$diag_log$unique, type="l")
-#  
-# plot_genealogy_theta(results$theta_hist, results$ancestorIndices, edge_id = 1, ylim = c(0.5, 1.1))   
-#  
-# plot_theta_histograms(results$theta_mean, k_set = c(1))
-# 
-# plot_theta_paths(results$theta_mean, results$theta_se, k=1, theta_true = 0.6)
-#  
-#  
-
-
-#results <- readRDS("simul_results/block_stat_3.rds")
 
 
 
