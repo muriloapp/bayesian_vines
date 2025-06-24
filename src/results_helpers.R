@@ -179,7 +179,7 @@ plot_theta_paths_df <- function(theta_mean, theta_sd = NULL, theta_true = NULL, 
   p <- p +
     labs(
       title = plot_title %||% expression("Posterior mean ±1 s.e."),
-      y = expression(theta), x = "time t",
+      y = expression(theta), x = "",
       color = NULL, fill = NULL, linetype = NULL
     ) +
     theme_minimal(base_size = 14) +
