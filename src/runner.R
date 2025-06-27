@@ -33,14 +33,14 @@ run_and_save <- function(U, cfg, alg = c("standard", "block"), tag = NULL) {
 
 
 set.seed(126)
-U  <- sim_static_cop_8(N = 50)              
+U  <- sim_static_cop_3(N = 250)              
 d  <- ncol(U)
 
 cfg_variants <- list(
   list(
     pi0_edge   = 0.50,
-    label      = "pi05_G3_N50_KM",
-    G          = 3
+    label      = "pi05_nmh1_N250_KM",
+    n_mh       = 1
   ) #,
   # list(                            
   #   pi0_edge   = 0.70,
