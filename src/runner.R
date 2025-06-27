@@ -33,16 +33,14 @@ run_and_save <- function(U, cfg, alg = c("standard", "block"), tag = NULL) {
 
 
 set.seed(126)
-U  <- sim_static_cop_8(N = 1000)              
+U  <- sim_static_cop_8(N = 50)              
 d  <- ncol(U)
 
 cfg_variants <- list(
   list(
-    pi0_edge   = 0.70,
-    label      = "pi07_M2000_G3_nmh5",
-    G          = 3,
-    M          = 2000,
-    n_mh       = 5
+    pi0_edge   = 0.50,
+    label      = "pi05_G3_N50_KM",
+    G          = 3
   ) #,
   # list(                            
   #   pi0_edge   = 0.70,
@@ -51,6 +49,7 @@ cfg_variants <- list(
   # )
 )
 
+system.time(
 
 for (i in seq_along(cfg_variants)) {
   v    <- cfg_variants[[i]]          # pull the i-th inner list
@@ -60,13 +59,13 @@ for (i in seq_along(cfg_variants)) {
   cfg    <- modifyList(build_cfg(d), tweaks)
   cfg$label <- tag
   
-  for (alg in c("standard", "block")) {
+  for (alg in c("standard")) {
     set.seed(cfg$seed)
     run_and_save(U, cfg, alg, tag)
   }
 }
 
-
+)
 
 
 
