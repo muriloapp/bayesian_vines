@@ -7,20 +7,50 @@ library(matrixStats)
 
 #set.seed(42)
 
-log_prior <- function(p, cfg) {
-  with(cfg, {
-    sum(dnorm(p$theta[p$gamma == 1L], 0, slab_sd, log = TRUE)) +
-      sum(ifelse(p$gamma == 1L, log(1 - pi0_edge), log(pi0_edge)))
-  })
+# log_prior <- function(p, cfg) {
+#   with(cfg, {
+#     sum(dnorm(p$theta[p$gamma == 1L], 0, slab_sd, log = TRUE)) +
+#       sum(ifelse(p$gamma == 1L, log(1 - pi0_edge), log(pi0_edge)))
+#   })
+# }
+log_prior <- function(theta, cfg) {
+  spike <- cfg$pi_spike  * dnorm(theta, 0, cfg$spike_sd)
+  slab  <- (1-cfg$pi_spike) * dnorm(theta, 0, cfg$slab_sd)
+  sum(log(spike + slab + 1e-300))
 }
 
+# new_particle <- function(cfg) {
+#   with(cfg, {
+#     g <- rbinom(K, 1, 1 - pi0_edge)
+#     tvec <- rnorm(K, 0, slab_sd) * g
+#     list(gamma = g, theta = tvec, w = 1 / M, last_accept = NA)
+#   })
+# }
+
 new_particle <- function(cfg) {
-  with(cfg, {
-    g <- rbinom(K, 1, 1 - pi0_edge)
-    tvec <- rnorm(K, 0, slab_sd) * g
-    list(gamma = g, theta = tvec, w = 1 / M, last_accept = NA)
-  })
+  from_slab <- rbinom(cfg$K, 1, 1 - cfg$pi_spike)
+  theta_vec <- rnorm(cfg$K, 0,
+                     ifelse(from_slab == 1,
+                            cfg$slab_sd, cfg$spike_sd))
+  list(theta = theta_vec,
+       w     = 1 / cfg$M,
+       last_accept = FALSE)
 }
+
+# vine_from_particle <- function(p, skel, cfg) {
+#   with(cfg, {
+#     pcs <- lapply(skel$pair_copulas, function(lvl) lapply(lvl, identity))
+#     idx <- 1L
+#     for (tr in seq_along(pcs)) {
+#       for (ed in seq_along(pcs[[tr]])) {
+#         pcs[[tr]][[ed]] <- if (p$gamma[idx] == 0L) indep_copula
+#         else bicop_dist("gaussian", parameters = tanh(p$theta[idx]))
+#         idx <- idx + 1L
+#       }
+#     }
+#     vinecop_dist(pcs, structure = skel$structure)
+#   })
+# }
 
 vine_from_particle <- function(p, skel, cfg) {
   with(cfg, {
@@ -28,8 +58,7 @@ vine_from_particle <- function(p, skel, cfg) {
     idx <- 1L
     for (tr in seq_along(pcs)) {
       for (ed in seq_along(pcs[[tr]])) {
-        pcs[[tr]][[ed]] <- if (p$gamma[idx] == 0L) indep_copula
-        else bicop_dist("gaussian", parameters = tanh(p$theta[idx]))
+        pcs[[tr]][[ed]] <- bicop_dist("gaussian", parameters = tanh(p$theta[idx]))
         idx <- idx + 1L
       }
     }
@@ -117,36 +146,59 @@ mh_step_in_tree <- function(p, tr, data_up_to_t, temp_skel, cfg) {
   return(p)
 }
 
+# mh_step <- function(p, data_up_to_t, skeleton, cfg) {
+#   with(cfg, {
+#     prop <- p
+#     flip <- runif(K) < p_flip_edge
+#     on  <- flip & prop$gamma == 0L
+#     off <- flip & prop$gamma == 1L
+#     
+#     prop$gamma[on]  <- 1L
+#     prop$theta[on]  <- rnorm(sum(on), 0, slab_sd)
+#     prop$gamma[off] <- 0L
+#     prop$theta[off] <- 0
+#     
+#     act <- which(prop$gamma == 1L)
+#     if (length(act)) prop$theta[act] <- prop$theta[act] + rnorm(length(act), 0, step_sd)
+#     
+#     vine_prop <- vine_from_particle(prop, skeleton, cfg)
+#     vine_curr <- vine_from_particle(p,   skeleton, cfg)
+#     
+#     prop_ll <- sum(log(pmax(dvinecop(data_up_to_t, vine_prop), .Machine$double.eps)))
+#     curr_ll <- sum(log(pmax(dvinecop(data_up_to_t, vine_curr), .Machine$double.eps)))
+#     
+#     log_q <- sum(dnorm(prop$theta[on], 0, slab_sd, log = TRUE))
+#     log_acc <- (prop_ll + log_prior(prop, cfg)) - (curr_ll + log_prior(p, cfg)) - log_q
+#     
+#     if (log(runif(1)) < log_acc) {
+#       p$gamma <- prop$gamma; p$theta <- prop$theta; p$last_accept <- TRUE
+#     } else p$last_accept <- FALSE
+#     p
+#   })
+# }
+
 mh_step <- function(p, data_up_to_t, skeleton, cfg) {
-  with(cfg, {
-    prop <- p
-    flip <- runif(K) < p_flip_edge
-    on  <- flip & prop$gamma == 0L
-    off <- flip & prop$gamma == 1L
-    
-    prop$gamma[on]  <- 1L
-    prop$theta[on]  <- rnorm(sum(on), 0, slab_sd)
-    prop$gamma[off] <- 0L
-    prop$theta[off] <- 0
-    
-    act <- which(prop$gamma == 1L)
-    if (length(act)) prop$theta[act] <- prop$theta[act] + rnorm(length(act), 0, step_sd)
-    
-    vine_prop <- vine_from_particle(prop, skeleton, cfg)
-    vine_curr <- vine_from_particle(p,   skeleton, cfg)
-    
-    prop_ll <- sum(log(pmax(dvinecop(data_up_to_t, vine_prop), .Machine$double.eps)))
-    curr_ll <- sum(log(pmax(dvinecop(data_up_to_t, vine_curr), .Machine$double.eps)))
-    
-    log_q <- sum(dnorm(prop$theta[on], 0, slab_sd, log = TRUE))
-    log_acc <- (prop_ll + log_prior(prop, cfg)) - (curr_ll + log_prior(p, cfg)) - log_q
-    
-    if (log(runif(1)) < log_acc) {
-      p$gamma <- prop$gamma; p$theta <- prop$theta; p$last_accept <- TRUE
-    } else p$last_accept <- FALSE
-    p
-  })
+  prop <- p
+  prop$theta <- p$theta + rnorm(cfg$K, 0, cfg$step_sd)
+  
+  vine_prop <- vine_from_particle(prop, skeleton, cfg)
+  vine_curr <- vine_from_particle(p,    skeleton, cfg)
+  
+  ll_prop <- sum(log(pmax(dvinecop(data_up_to_t, vine_prop),
+                          .Machine$double.eps)))
+  ll_curr <- sum(log(pmax(dvinecop(data_up_to_t, vine_curr),
+                          .Machine$double.eps)))
+  
+  log_acc <- (ll_prop + log_prior(prop$theta, cfg)) -
+    (ll_curr + log_prior(p$theta, cfg))
+  
+  if (log(runif(1)) < log_acc) {
+    p$theta <- prop$theta
+    p$last_accept <- TRUE
+  } else p$last_accept <- FALSE
+  p
 }
+
 
 # # Adaptive Proposal SD
 # adaptive_proc_sd <- function(theta_mat, w_new, scale = 0.3, floor_val = 1e-3) {
@@ -213,6 +265,13 @@ compute_log_incr <- function(particles, u_row, skeleton, cfg) {
  
   log_incr
 }
+
+# compute_log_incr <- function(particles, u_row, skeleton, cfg) {
+#   vapply(particles, function(p) {
+#     dens <- dvinecop(u_row, vine_from_particle(p, skeleton, cfg))
+#     ifelse(dens <= 0, -1e100, log(dens))
+#   }, numeric(1))
+# }
 
 update_weights <- function(particles, log_lik) {
   
@@ -302,6 +361,13 @@ w_quantile <- function(x, w, probs = c(0.025, 0.975)) {
   vapply(probs, function(p) x[which.max(cw >= p)], numeric(1))
 }
 
+responsibility <- function(theta, cfg) {
+  spike <- cfg$pi_spike  * dnorm(theta, 0, cfg$spike_sd)
+  slab  <- (1-cfg$pi_spike) * dnorm(theta, 0, cfg$slab_sd)
+  w     <- slab / (spike + slab)
+  if (is.null(dim(w))) w <- matrix(w, nrow = 1L)
+  w
+}
 
 ## ───────────── diagnostic & plotting ────────────────────────────
 diagnostic_report <- function(t, tr, U, particles, w_new,
@@ -312,20 +378,22 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
   
   if (t %% k_step != 0L && t != nrow(U)) return(invisible())
   ## 1. unpack particle state -------------------------------------------------
-  gamma_mat <- do.call(rbind, lapply(particles, `[[`, "gamma"))
+  #gamma_mat <- do.call(rbind, lapply(particles, `[[`, "gamma"))
   theta_mat <- do.call(rbind, lapply(particles, `[[`, "theta"))
   rho_mat   <- tanh(theta_mat)
+  
+  slab_w <- responsibility(theta_mat, cfg)   # M × K
   
   ## 2. normalise weights (essential) -----------------------------------------
   w_new <- w_new / sum(w_new)
   ess_t <- 1 / sum(w_new^2)
   
   ## 3. global diagnostics ----------------------------------------------------
-  edge_ct    <- rowSums(gamma_mat)
+  edge_ct    <- rowSums(slab_w)
   mean_edges <- w_mean(edge_ct, w_new)
   se_edges   <- mc_se(edge_ct, w_new, ess_t)
   
-  key_vec   <- apply(cbind(gamma_mat, theta_mat), 1L,
+  key_vec   <- apply(cbind(slab_w, theta_mat), 1L,
                      \(row) paste(row, collapse = ","))
   n_unique  <- length(unique(key_vec))
   
@@ -337,7 +405,7 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
     t, tr, ess_t / M, mean_edges, se_edges, n_unique, avg_dist))
   
   ## 4. per-edge summaries ----------------------------------------------------
-  inc_prob <- colSums(gamma_mat * w_new)
+  inc_prob <- colSums(slab_w  * w_new)
   
   edge_summ <- lapply(seq_along(inc_prob), function(e) {
     
@@ -345,7 +413,7 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
     se_inc <- sqrt(inc_prob[e] * (1 - inc_prob[e]) / ess_t)
     
     ## conditional posterior of rho if edge present at all
-    gamma_e <- gamma_mat[, e]
+    gamma_e <- slab_w[, e]
     rho_e   <- rho_mat[,  e]
     w_cond  <- w_new * gamma_e
     if (sum(w_cond) < 1e-12) {
@@ -362,7 +430,8 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
     qs     <- w_quantile(rho_e, w_cond, q_probs)
     
     ## MC-SE of the mean (zero-padded variance / ESS)
-    var_rho_zpad <- w_var(rho_e * gamma_e, w_new, mu_rho * inc_prob[e])
+    var_rho_zpad <- w_var(rho_e * slab_w[, e], w_new,
+                          mu_rho * inc_prob[e])          # PATCH
     se_rho       <- sqrt(var_rho_zpad / ess_t)
     
     cat(sprintf(
@@ -431,18 +500,21 @@ compute_predictive_metrics <- function(u_obs, particles, skel, w_prev_for_predic
   ## -- 2. posterior mean + s.e. of θ -----------------------------------
   theta_mat <- do.call(rbind, lapply(particles, `[[`, "theta"))
   rho_mat <- tanh(theta_mat)
-  gamma_mat <- do.call(rbind, lapply(particles, `[[`, "gamma"))
+  #gamma_mat <- do.call(rbind, lapply(particles, `[[`, "gamma"))
+  slab_w <- responsibility(theta_mat, cfg)
+  gamma_mean_now <- colSums(slab_w * w_prev_for_prediction)
+  gamma_sd_now   <- sqrt(gamma_mean_now * (1 - gamma_mean_now))
   ## mean
   theta_mean_now <- colSums(rho_mat * w_prev_for_prediction)
   
   ## weighted var  = Σ w (θ-μ)²
   theta_var <- colSums(w_prev_for_prediction * (rho_mat - rep(theta_mean_now, each = nrow(rho_mat)))^2)
-  gamma_mean_now <- colSums(gamma_mat * w_prev_for_prediction)
+  #gamma_mean_now <- colSums(gamma_mat * w_prev_for_prediction)
   
   ## ESS for each step (scalar)  -> s.e. = √(var / ESS)
   ess <- 1 / sum(w_prev_for_prediction^2)
   theta_sd_now <- sqrt(theta_var)
-  gamma_sd_now  <- sqrt(gamma_mean_now * (1 - gamma_mean_now))
+  #gamma_sd_now  <- sqrt(gamma_mean_now * (1 - gamma_mean_now))
   # --- 4. Return all metrics in a single list ---
   return(list(
     log_pred_density = log_pred_density,

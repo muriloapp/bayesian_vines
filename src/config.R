@@ -21,15 +21,20 @@ build_cfg <- function(d) {
     d            = d,
     K            = d * (d - 1) / 2,
     M            = 1000,
-    pi0_edge     = 0.50, #0.3
-    slab_sd      = 0.50,
+    #pi0_edge     = 0.50, #0.3
+    ##––– SSVS prior ––––––––––––––––––––
+    pi_spike  = 0.50,              # NEW  (probability θ from spike)
+    slab_sd   = 0.50,              # τ₁
+    spike_sd  = 0.04,              # τ₀ ≪ τ₁
+    ##–––––––––––––––––––––––––––––––––––
+    #slab_sd      = 0.50,
     ess_thr      = 0.50,
     W            = 1000L,      #1000L,
     k_step       = 1L,                  
     proc_sd      = 0,
     p_dyn_flip   = 0,
     n_mh         = 3L,
-    step_sd      = 0.05,
+    step_sd      = 0.02,
     p_flip_edge  = 0.25,
     indep_copula = bicop_dist("indep"),
     W_predict    = 5L,

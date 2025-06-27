@@ -43,8 +43,8 @@ run_standard_smc <- function(U,
     log_pred   = numeric(N),
     theta_mean = matrix(NA_real_, N, K),
     theta_se   = matrix(NA_real_, N, K),
-    gamma_mean = matrix(NA_real_, N, K),
-    gamma_se   = matrix(NA_real_, N, K),
+    #gamma_mean = matrix(NA_real_, N, K),
+    #gamma_se   = matrix(NA_real_, N, K),
     diag_log   = data.table::data.table(
       t      = integer(N),
       tr     = integer(N),
@@ -54,8 +54,9 @@ run_standard_smc <- function(U,
     ),
     mh_acc_pct      = rep(NA_real_, N),
     theta_hist      = array(NA_real_,    dim = c(M, N, K)),
-    gamma_hist      = array(NA_integer_, dim = c(M, N, K)),
-    ancestorIndices = matrix(0L, M, N)
+    #gamma_hist      = array(NA_integer_, dim = c(M, N, K)),
+    ancestorIndices = matrix(0L, M, N),
+    incl_hist = matrix(NA_real_, N, K)
   )
   
   # ── initial state ──────────────────────────────────────────────────────────
@@ -84,7 +85,7 @@ run_standard_smc <- function(U,
     u_row <- U[t_idx, , drop = FALSE]
     
     # 1. propagate step ──────────────────────────────────────────────────────
-    particles <- propagate_particles(particles, cfg)
+    #particles <- propagate_particles(particles, cfg)
     
     # 2. predictive metrics (after burn-in) ──────────────────────────────────
     if (t_idx > cfg$W_predict) {
@@ -97,8 +98,8 @@ run_standard_smc <- function(U,
       out$log_pred[t_idx]    <- pm$log_pred_density
       out$theta_mean[t_idx,] <- pm$theta_mean
       out$theta_se[t_idx,]   <- pm$theta_se
-      out$gamma_mean[t_idx,] <- pm$gamma_mean
-      out$gamma_se[t_idx,]   <- pm$gamma_se
+      #out$gamma_mean[t_idx,] <- pm$gamma_mean
+      #out$gamma_se[t_idx,]   <- pm$gamma_se
     }
     
     # 3. weight update ──────────────────────────────────────────────────────
@@ -133,7 +134,11 @@ run_standard_smc <- function(U,
     
     # 6. save history ───────────────────────────────────────────────────────
     out$theta_hist[, t_idx, ] <- t(vapply(particles, `[[`, numeric(K), "theta"))
-    out$gamma_hist[, t_idx, ] <- t(vapply(particles, `[[`, integer(K), "gamma"))
+    #out$gamma_hist[, t_idx, ] <- t(vapply(particles, `[[`, integer(K), "gamma"))
+    
+    theta_mat <- do.call(rbind, lapply(particles, `[[`, "theta"))
+    out$incl_hist[t_idx, ] <-
+      colSums(responsibility(theta_mat, cfg) * w_new) 
   }
   
   # ── finish ────────────────────────────────────────────────────────────────
