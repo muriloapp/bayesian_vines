@@ -50,7 +50,9 @@ run_standard_smc <- function(U,
       tr     = integer(N),
       ESS    = numeric(N),
       unique = integer(N),
-      euc    = numeric(N)
+      euc    = numeric(N),
+      tau_mean = numeric(N),      # NEW
+      tau_sd   = numeric(N)       # NEW
     ),
     mh_acc_pct      = rep(NA_real_, N),
     theta_hist      = array(NA_real_,    dim = c(M, N, K)),
@@ -72,7 +74,7 @@ run_standard_smc <- function(U,
   
   parallel::clusterExport(
     cl,
-    c("mh_step_in_tree", "vine_from_particle", "log_prior",
+    c("mh_step_in_tree", "vine_from_particle", "log_prior", "slab_sd_from_tau", "spike_sd_from_tau", "update_tau2", "rinvgamma", "dinvgamma",
       "bicop_dist", "vinecop_dist", "dvinecop", "skeleton", "cfg",
       "mh_step", "propagate_particles", "update_weights", "ESS",
       "diagnostic_report", "systematic_resample", "resample_move",
@@ -110,11 +112,13 @@ run_standard_smc <- function(U,
     # 4. diagnostics ────────────────────────────────────────────────────────
     dg <- diagnostic_report(t_idx, tr, U, particles, w_new, cfg)
     out$diag_log[pos, `:=`(
-      t      = t_idx,
-      tr     = tr,
-      ESS    = dg$ESS,
+      t    = t_idx,
+      tr   = tr,
+      ESS  = dg$ESS,
       unique = dg$unique,
-      euc    = dg$euc
+      euc  = dg$euc,
+      tau_mean = dg$tau_mean,        # NEW
+      tau_sd   = dg$tau_sd           # NEW
     )]
     pos <- pos + 1L
     
@@ -137,8 +141,13 @@ run_standard_smc <- function(U,
     #out$gamma_hist[, t_idx, ] <- t(vapply(particles, `[[`, integer(K), "gamma"))
     
     theta_mat <- do.call(rbind, lapply(particles, `[[`, "theta"))
-    out$incl_hist[t_idx, ] <-
-      colSums(responsibility(theta_mat, cfg) * w_new) 
+    ## NEW: build the per-particle τ vector
+    tau_vec   <- sqrt(vapply(particles, function(p) p$tau2, numeric(1)))
+    
+    ## NEW: inclusion weights with the corrected responsibility()
+    slab_w    <- responsibility(theta_mat, tau_vec, cfg)
+    
+    out$incl_hist[t_idx, ] <- colSums(slab_w * w_new)
   }
   
   # ── finish ────────────────────────────────────────────────────────────────

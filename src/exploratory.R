@@ -11,14 +11,14 @@ res_block <- readRDS("simul_results/static_dgp/block_stat_3.rds")
 res_stand$log_model_evidence
 res_block$log_model_evidence
 
-
-res_stand <- readRDS("simul_results/static_dgp/standard_8_pi05_G3_N50_SSVSc")
-res_block <- readRDS("simul_results/static_dgp/block_8_pi07_M2000_G3_nmh5")
+res_stand <- readRDS("simul_results/static_dgp/standard_3_pi05_nmh1_N250_KM")
+res_SS <- readRDS("simul_results/static_dgp/standard_3_pi05_nmh1_N250_SSVS")
 
 res_stand$theta_mean
 
 
-plot_theta_paths(res_stand$theta_mean, res_stand$theta_se, k=2, theta_true = 0.5)
+plot_theta_paths(res_stand$theta_mean, res_stand$theta_se, k=3, theta_true = 0.2)
+plot_theta_paths(res_SS$theta_mean, res_SS$theta_se, k=3, theta_true = 0.2)
 
 
 
@@ -138,9 +138,9 @@ ggsave(filename = "figures/static_3d_unique_block.png", plot = p, width = 8, hei
 # Explore results
 #================================================================================
 
-# plot(results$diag_log$unique, type="l")
+plot(res_stand$diag_log$ESS, type="l")
 #  
-plot_genealogy_theta(res_stand$theta_hist, res_stand$ancestorIndices, edge_id = 3)   
+plot_genealogy_theta(res_SS$theta_hist, res_SS$ancestorIndices, edge_id = 1)   
 #  
 # plot_theta_histograms(results$theta_mean, k_set = c(1))
 # 
@@ -152,7 +152,7 @@ plot_genealogy_theta(res_stand$theta_hist, res_stand$ancestorIndices, edge_id = 
 #results <- readRDS("simul_results/block_stat_3.rds")
 
 
-
+sum(res_SS$diag_log$ESS<500)
 
 
 

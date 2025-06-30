@@ -5,6 +5,10 @@ library(tictoc)
 library(Rcpp)
 library(matrixStats)
 
+
+## ---------- slab / spike SD given τ ----------
+spike_sd_from_tau <- function(tau){tau}
+slab_sd_from_tau  <- function(tau, cfg){cfg$c_slab * tau}
 #set.seed(42)
 
 # log_prior <- function(p, cfg) {
@@ -13,11 +17,34 @@ library(matrixStats)
 #       sum(ifelse(p$gamma == 1L, log(1 - pi0_edge), log(pi0_edge)))
 #   })
 # }
-log_prior <- function(theta, cfg) {
-  spike <- cfg$pi_spike  * dnorm(theta, 0, cfg$spike_sd)
-  slab  <- (1-cfg$pi_spike) * dnorm(theta, 0, cfg$slab_sd)
-  sum(log(spike + slab + 1e-300))
+# log_prior <- function(theta, cfg) {
+#   spike <- cfg$pi_spike  * dnorm(theta, 0, cfg$spike_sd)
+#   slab  <- (1-cfg$pi_spike) * dnorm(theta, 0, cfg$slab_sd)
+#   sum(log(spike + slab + 1e-300))
+# }
+
+log_prior <- function(p, cfg){
+  tau  <- sqrt(p$tau2)
+  sd_i <- ifelse(abs(p$theta) > 0,           # we only need component wise sd
+                 slab_sd_from_tau(tau, cfg),
+                 spike_sd_from_tau(tau))
+  
+  ll_theta <- sum(dnorm(p$theta, 0, sd_i, log = TRUE))
+  
+  ## Bernoulli mixture weight  (γ marginalised → pi_spike term)
+  ll_mix <- sum(log( cfg$pi_spike  * dnorm(p$theta, 0, spike_sd_from_tau(tau)) +
+                       (1 - cfg$pi_spike) * dnorm(p$theta, 0, slab_sd_from_tau(tau, cfg)) +
+                       1e-300))
+  
+  ## τ² prior (only if random)
+  if (cfg$tau_prior == "fixed"){
+    ll_tau <- 0
+  } else {
+    ll_tau <- dinvgamma(p$tau2, cfg$a0, cfg$b0, log = TRUE)
+  }
+  ll_mix + ll_tau             # ll_theta is inside ll_mix already
 }
+
 
 # new_particle <- function(cfg) {
 #   with(cfg, {
@@ -27,15 +54,39 @@ log_prior <- function(theta, cfg) {
 #   })
 # }
 
-new_particle <- function(cfg) {
-  from_slab <- rbinom(cfg$K, 1, 1 - cfg$pi_spike)
-  theta_vec <- rnorm(cfg$K, 0,
-                     ifelse(from_slab == 1,
-                            cfg$slab_sd, cfg$spike_sd))
-  list(theta = theta_vec,
-       w     = 1 / cfg$M,
+# new_particle <- function(cfg) {
+#   from_slab <- rbinom(cfg$K, 1, 1 - cfg$pi_spike)
+#   theta_vec <- rnorm(cfg$K, 0,
+#                      ifelse(from_slab == 1,
+#                             cfg$slab_sd, cfg$spike_sd))
+#   list(theta = theta_vec,
+#        w     = 1 / cfg$M,
+#        last_accept = FALSE)
+# }
+
+new_particle <- function(cfg){
+  ## τ² : fixed or drawn
+  if (cfg$tau_prior == "fixed"){
+    tau2 <- cfg$tau0^2
+  } else {                                   # inverse-Gamma draw
+    tau2 <- rinvgamma(1, cfg$a0, cfg$b0)
+  }
+  tau <- sqrt(tau2)
+  
+  ## pick spike vs slab for each edge
+  is_slab <- rbinom(cfg$K, 1, 1 - cfg$pi_spike)
+  
+  theta <- rnorm(cfg$K, 0,
+                 ifelse(is_slab,
+                        slab_sd_from_tau(tau, cfg),
+                        spike_sd_from_tau(tau)))
+  
+  list(theta = theta,
+       tau2  = tau2,            # keep τ² in the state
+       w     = 1/cfg$M,
        last_accept = FALSE)
 }
+
 
 # vine_from_particle <- function(p, skel, cfg) {
 #   with(cfg, {
@@ -65,6 +116,43 @@ vine_from_particle <- function(p, skel, cfg) {
     vinecop_dist(pcs, structure = skel$structure)
   })
 }
+
+## ---------- inverse-Gamma utilities ----------
+rinvgamma <- function(n, shape, scale)  1/rgamma(n, shape, rate = scale)
+dinvgamma <- function(x, shape, scale, log = FALSE){
+  lg <- shape*log(scale) - lgamma(shape) -
+    (shape+1)*log(x) - scale/x
+  if(log) lg else exp(lg)
+}
+
+
+
+update_tau2 <- function(p, cfg){
+  if (cfg$tau_prior == "fixed") return(p)     # no-op for fixed model
+  
+  tau  <- sqrt(p$tau2)
+  c2   <- cfg$c_slab^2
+  v_sp <- tau^2
+  v_sl <- c2 * v_sp
+  
+  ## 1. posterior slab responsibility for each θ
+  den_sp <- cfg$pi_spike      * dnorm(p$theta, 0, sqrt(v_sp))
+  den_sl <- (1-cfg$pi_spike)  * dnorm(p$theta, 0, sqrt(v_sl))
+  w_sl   <- den_sl / (den_sp + den_sl + 1e-300)   # length-K vector
+  
+  ## 2. sum of squares with correct scaling
+  s0 <- sum((1 - w_sl) * p$theta^2)        # spike part
+  s1 <- sum(w_sl      * p$theta^2) / c2    # slab part
+  
+  ## 3. IG update
+  a_post <- cfg$a0 + cfg$K/2
+  b_post <- cfg$b0 + 0.5 * (s0 + s1)
+  
+  p$tau2 <- rinvgamma(1, a_post, b_post)
+  p
+}
+
+
 
 ESS <- function(w) 1 / sum(w^2)
 
@@ -189,13 +277,19 @@ mh_step <- function(p, data_up_to_t, skeleton, cfg) {
   ll_curr <- sum(log(pmax(dvinecop(data_up_to_t, vine_curr),
                           .Machine$double.eps)))
   
-  log_acc <- (ll_prop + log_prior(prop$theta, cfg)) -
-    (ll_curr + log_prior(p$theta, cfg))
+  # log_acc <- (ll_prop + log_prior(prop$theta, cfg)) -
+  #   (ll_curr + log_prior(p$theta, cfg))
+  log_acc <- (ll_prop + log_prior(prop, cfg)) -      # ← pass WHOLE prop
+    (ll_curr + log_prior(p,    cfg))       # ← pass WHOLE p
   
   if (log(runif(1)) < log_acc) {
     p$theta <- prop$theta
     p$last_accept <- TRUE
   } else p$last_accept <- FALSE
+  
+  ## NEW ---------------------------------------------------------------
+  p <- update_tau2(p, cfg)
+  
   p
 }
 
@@ -246,7 +340,12 @@ propagate_particles <- function(particles, cfg) {
     if (length(flip)) {
       for (e in flip) {
         if (p$gamma[e]) { p$gamma[e] <- 0L; p$theta[e] <- 0 }
-        else { p$gamma[e] <- 1L; p$theta[e] <- rnorm(1, 0, cfg$slab_sd) }
+        #else { p$gamma[e] <- 1L; p$theta[e] <- rnorm(1, 0, cfg$slab_sd) }
+        else {
+          tau          <- sqrt(p$tau2)
+          p$gamma[e]   <- 1L
+          p$theta[e]   <- rnorm(1, 0, slab_sd_from_tau(tau, cfg))
+        }
       }
     }
     p
@@ -361,12 +460,29 @@ w_quantile <- function(x, w, probs = c(0.025, 0.975)) {
   vapply(probs, function(p) x[which.max(cw >= p)], numeric(1))
 }
 
-responsibility <- function(theta, cfg) {
-  spike <- cfg$pi_spike  * dnorm(theta, 0, cfg$spike_sd)
-  slab  <- (1-cfg$pi_spike) * dnorm(theta, 0, cfg$slab_sd)
-  w     <- slab / (spike + slab)
-  if (is.null(dim(w))) w <- matrix(w, nrow = 1L)
-  w
+# responsibility <- function(theta, cfg) {
+#   spike <- cfg$pi_spike  * dnorm(theta, 0, cfg$spike_sd)
+#   slab  <- (1-cfg$pi_spike) * dnorm(theta, 0, cfg$slab_sd)
+#   w     <- slab / (spike + slab)
+#   if (is.null(dim(w))) w <- matrix(w, nrow = 1L)
+#   w
+# }
+
+responsibility <- function(theta_mat, tau_vec, cfg){
+  if (missing(cfg)) {
+    stop("responsibility() now expects (theta_mat, tau_vec, cfg); ",
+         "you called it with only two arguments.")
+  }
+  tau_vec <- as.numeric(tau_vec)               # convert once
+  M <- nrow(theta_mat); K <- ncol(theta_mat)
+  
+  spike_sd <- matrix(tau_vec, nrow = M, ncol = K)
+  slab_sd  <- spike_sd * cfg$c_slab
+  
+  spike <- cfg$pi_spike  * dnorm(theta_mat, 0, spike_sd)
+  slab  <- (1 - cfg$pi_spike) * dnorm(theta_mat, 0, slab_sd)
+  
+  slab / (spike + slab + 1e-300)
 }
 
 ## ───────────── diagnostic & plotting ────────────────────────────
@@ -382,11 +498,20 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
   theta_mat <- do.call(rbind, lapply(particles, `[[`, "theta"))
   rho_mat   <- tanh(theta_mat)
   
-  slab_w <- responsibility(theta_mat, cfg)   # M × K
+  #slab_w <- responsibility(theta_mat, cfg)   # M × K
+  tau_vec <- sqrt(vapply(particles, function(p) p$tau2, numeric(1)))
+  slab_w   <- responsibility(theta_mat, tau_vec, cfg)
   
   ## 2. normalise weights (essential) -----------------------------------------
   w_new <- w_new / sum(w_new)
   ess_t <- 1 / sum(w_new^2)
+  
+  tau_vec <- sqrt(vapply(particles, `[[`, numeric(1), "tau2"))
+  mu_tau  <- w_mean(tau_vec, w_new)
+  sd_tau  <- sqrt( w_var(tau_vec, w_new, mu_tau) )
+  
+  # print
+  cat(sprintf(" | τ = %.4f ± %.4f\n", mu_tau, sd_tau))
   
   ## 3. global diagnostics ----------------------------------------------------
   edge_ct    <- rowSums(slab_w)
@@ -447,8 +572,12 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
   
   
   
-  invisible(list(ESS = ess_t, unique = n_unique,
-                 euc = avg_dist, edges = edge_df))
+  invisible(list(ESS  = ess_t,
+                 unique = n_unique,
+                 euc = avg_dist,
+                 tau_mean = mu_tau,      # pass back
+                 tau_sd   = sd_tau,
+                 edges = edge_df))
 }
 
 
@@ -500,8 +629,11 @@ compute_predictive_metrics <- function(u_obs, particles, skel, w_prev_for_predic
   ## -- 2. posterior mean + s.e. of θ -----------------------------------
   theta_mat <- do.call(rbind, lapply(particles, `[[`, "theta"))
   rho_mat <- tanh(theta_mat)
+  tau_vec   <- sqrt(vapply(particles, function(p) p$tau2, numeric(1)))
   #gamma_mat <- do.call(rbind, lapply(particles, `[[`, "gamma"))
-  slab_w <- responsibility(theta_mat, cfg)
+  slab_w <- responsibility(theta_mat,              # M × K matrix of θ
+                           tau_vec,                # length-M numeric vector of τ
+                           cfg) 
   gamma_mean_now <- colSums(slab_w * w_prev_for_prediction)
   gamma_sd_now   <- sqrt(gamma_mean_now * (1 - gamma_mean_now))
   ## mean
