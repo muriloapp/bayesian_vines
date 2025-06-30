@@ -52,7 +52,9 @@ run_standard_smc <- function(U,
       unique = integer(N),
       euc    = numeric(N),
       tau_mean = numeric(N),      # NEW
-      tau_sd   = numeric(N)       # NEW
+      tau_sd   = numeric(N),       # NEW
+      pi_mean = numeric(N),      # NEW
+      pi_sd   = numeric(N)       # NEW
     ),
     mh_acc_pct      = rep(NA_real_, N),
     theta_hist      = array(NA_real_,    dim = c(M, N, K)),
@@ -74,7 +76,7 @@ run_standard_smc <- function(U,
   
   parallel::clusterExport(
     cl,
-    c("mh_step_in_tree", "vine_from_particle", "log_prior", "slab_sd_from_tau", "spike_sd_from_tau", "update_tau2", "rinvgamma", "dinvgamma",
+    c("mh_step_in_tree", "vine_from_particle", "log_prior", "slab_sd_from_tau", "spike_sd_from_tau", "update_tau2", "rinvgamma", "dinvgamma", "update_pi",
       "bicop_dist", "vinecop_dist", "dvinecop", "skeleton", "cfg",
       "mh_step", "propagate_particles", "update_weights", "ESS",
       "diagnostic_report", "systematic_resample", "resample_move",
@@ -118,7 +120,9 @@ run_standard_smc <- function(U,
       unique = dg$unique,
       euc  = dg$euc,
       tau_mean = dg$tau_mean,        # NEW
-      tau_sd   = dg$tau_sd           # NEW
+      tau_sd   = dg$tau_sd,           # NEW
+      pi_mean = dg$pi_mean,
+      pi_sd = dg$pi_sd 
     )]
     pos <- pos + 1L
     
@@ -145,7 +149,8 @@ run_standard_smc <- function(U,
     tau_vec   <- sqrt(vapply(particles, function(p) p$tau2, numeric(1)))
     
     ## NEW: inclusion weights with the corrected responsibility()
-    slab_w    <- responsibility(theta_mat, tau_vec, cfg)
+    pi_vec  <- vapply(particles, function(p) p$pi, numeric(1))
+    slab_w  <- responsibility(theta_mat, tau_vec, pi_vec, cfg)  
     
     out$incl_hist[t_idx, ] <- colSums(slab_w * w_new)
   }

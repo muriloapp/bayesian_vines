@@ -60,7 +60,7 @@ build_cfg <- function(d, tau_prior = c("fixed", "inv_gamma"),
     c_slab    = c_slab,        #  **NEW**
     tau_prior = tau_prior,     #  **NEW**  "fixed" | "inv_gamma"
     tau0      = tau0,          #  **NEW**  fixed value *or* IG centre
-    a0        = a0, b0 = b0,    #  **NEW**  only used if tau_prior = "inv_gamma"
+    a0        = a0, b0 = b0    #  **NEW**  only used if tau_prior = "inv_gamma"
   )
 }
 

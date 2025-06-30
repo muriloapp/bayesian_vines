@@ -43,9 +43,12 @@ cfg_variants <- list(
   #   tau_prior  = "fixed"
   # ) ,
   list(
-    label      = "nmh1_N200_ivgamma",
+    label      = "nmh1_N200_ivgamma_beta",
     n_mh       = 1,
-    tau_prior  = "inv_gamma"
+    tau_prior  = "inv_gamma",
+    pi_prior   = "beta",
+     a_pi       = 2, 
+     b_pi       = 2 
   )
 )
 
