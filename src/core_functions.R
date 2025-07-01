@@ -106,8 +106,8 @@ log_prior <- function(p,cfg){
 
 new_particle <- function(cfg){
   # --- τ² block unchanged -----------------------------------
-  tau2 <- if(cfg$tau_prior=="fixed") cfg$tau0^2
-  else rinvgamma(1, cfg$a0, cfg$b0)
+  tau2 <- if(cfg$tau_prior=="fixed") {cfg$tau0^2}
+  else {rinvgamma(1, cfg$a0, cfg$b0)}
   tau  <- sqrt(tau2)
   
   # --- NEW π draw ------------------------------------------
@@ -130,7 +130,8 @@ new_particle <- function(cfg){
        w     = 1/cfg$M,
        last_accept = FALSE,
        aux_slab = aux_slab,
-       aux_spike = aux_spike
+       aux_spike = aux_spike,
+       is_slab = is_slab
        )
 }
 

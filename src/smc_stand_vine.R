@@ -65,6 +65,7 @@ run_standard_smc <- function(U,
   
   # ── initial state ──────────────────────────────────────────────────────────
   particles <- replicate(M, new_particle(cfg), simplify = FALSE)
+  
   out$ancestorIndices[, 1] <- seq_len(M)
   tr  <- 0L        #  “tree” counter — keep if you resample by tree else 0
   pos <- 1L        #  row pointer for diag_log
