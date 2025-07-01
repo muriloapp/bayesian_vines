@@ -47,7 +47,7 @@ cfg_variants <- list(
     n_mh       = 1,
     tau_prior  = "inv_gamma",
     pi_prior   = "beta",
-     a_pi       = 2, 
+     a_pi       = 2.5, 
      b_pi       = 2 
   )
 )
@@ -62,7 +62,7 @@ for (i in seq_along(cfg_variants)) {
   cfg    <- modifyList(build_cfg(d), tweaks)
   cfg$label <- tag
   
-  for (alg in c("standard")) {
+  for (alg in c("block")) {
     set.seed(cfg$seed)
     run_and_save(U, cfg, alg, tag)
   }
