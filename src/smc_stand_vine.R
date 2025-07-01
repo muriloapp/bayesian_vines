@@ -1,5 +1,4 @@
 
-
 # Block vine Block_vine
 # Gene tree
 
@@ -23,9 +22,6 @@ assignInNamespace("see_if", function(...) invisible(TRUE), ns = "assertthat")
 source(here('src','core_functions.R'))
 source(here('src','simulation.R'))
 
-#set.seed(42)
-
-# acc_ratio <- rep(NA_real_, nrow(U)) # to check acceptance
 
 run_standard_smc <- function(U,
                     cfg,
@@ -43,8 +39,8 @@ run_standard_smc <- function(U,
     log_pred   = numeric(N),
     theta_mean = matrix(NA_real_, N, K),
     theta_se   = matrix(NA_real_, N, K),
-    #gamma_mean = matrix(NA_real_, N, K),
-    #gamma_se   = matrix(NA_real_, N, K),
+    gamma_mean = matrix(NA_real_, N, K),
+    gamma_se   = matrix(NA_real_, N, K),
     diag_log   = data.table::data.table(
       t      = integer(N),
       tr     = integer(N),
@@ -103,8 +99,8 @@ run_standard_smc <- function(U,
       out$log_pred[t_idx]    <- pm$log_pred_density
       out$theta_mean[t_idx,] <- pm$theta_mean
       out$theta_se[t_idx,]   <- pm$theta_se
-      #out$gamma_mean[t_idx,] <- pm$gamma_mean
-      #out$gamma_se[t_idx,]   <- pm$gamma_se
+      out$gamma_mean[t_idx,] <- pm$gamma_mean
+      out$gamma_se[t_idx,]   <- pm$gamma_se
     }
     
     # 3. weight update ──────────────────────────────────────────────────────
@@ -120,8 +116,8 @@ run_standard_smc <- function(U,
       ESS  = dg$ESS,
       unique = dg$unique,
       euc  = dg$euc,
-      tau_mean = dg$tau_mean,        # NEW
-      tau_sd   = dg$tau_sd,           # NEW
+      tau_mean = dg$tau_mean,        
+      tau_sd   = dg$tau_sd,           
       pi_mean = dg$pi_mean,
       pi_sd = dg$pi_sd 
     )]
@@ -146,17 +142,14 @@ run_standard_smc <- function(U,
     #out$gamma_hist[, t_idx, ] <- t(vapply(particles, `[[`, integer(K), "gamma"))
     
     theta_mat <- do.call(rbind, lapply(particles, `[[`, "theta"))
-    ## NEW: build the per-particle τ vector
     tau_vec   <- sqrt(vapply(particles, function(p) p$tau2, numeric(1)))
     
-    ## NEW: inclusion weights with the corrected responsibility()
     pi_vec  <- vapply(particles, function(p) p$pi, numeric(1))
     slab_w  <- responsibility(theta_mat, tau_vec, pi_vec, cfg)  
     
     out$incl_hist[t_idx, ] <- colSums(slab_w * w_new)
   }
   
-  # ── finish ────────────────────────────────────────────────────────────────
   out$log_model_evidence <- sum(out$log_pred, na.rm = TRUE)
   out$particles_final    <- particles
   return(out)
