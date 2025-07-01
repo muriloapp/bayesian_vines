@@ -74,7 +74,7 @@ run_standard_smc <- function(U,
   parallel::clusterExport(
     cl,
     c("mh_step_in_tree", "vine_from_particle", "log_prior", "slab_sd_from_tau", "spike_sd_from_tau", "update_tau2", "rinvgamma", "dinvgamma", "update_pi",
-      "bicop_dist", "vinecop_dist", "dvinecop", "skeleton", "cfg",
+      "bicop_dist", "vinecop_dist", "dvinecop", "skeleton", "cfg", "fast_vine_from_particle",
       "mh_step", "propagate_particles", "update_weights", "ESS",
       "diagnostic_report", "systematic_resample", "resample_move",
       "compute_predictive_metrics", "compute_log_incr"),
