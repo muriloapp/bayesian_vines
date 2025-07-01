@@ -59,8 +59,7 @@ new_particle <- function(cfg){
 }
 
 
-vine_from_particle <- function(p, skel, cfg) {
-  with(cfg, {
+vine_from_particle <- function(p, skel) {
     pcs <- lapply(skel$pair_copulas, function(lvl) lapply(lvl, identity))
     idx <- 1L
     for (tr in seq_along(pcs)) {
@@ -70,8 +69,25 @@ vine_from_particle <- function(p, skel, cfg) {
       }
     }
     vinecop_dist(pcs, structure = skel$structure)
-  })
 }
+
+
+fast_vine_from_particle <- function(p, skel) {
+  
+  rho <- tanh(p$theta)
+  pcs <- rlang::duplicate(skel$pair_copulas, shallow = TRUE)  # or FALSE in parallel
+  
+  idx <- 1L
+  for (tr in seq_along(pcs)){
+    for (ed in seq_along(pcs[[tr]])) {
+      pcs[[tr]][[ed]]$parameters <- matrix(rho[idx], 1, 1)    # ← key change
+      pcs[[tr]][[ed]]$npars      <- 1L                        # be explicit
+      idx <- idx + 1L
+    }}
+  
+  vinecop_dist(pcs, skel$structure)
+}
+
 
 
 update_pi <- function(p,cfg){
@@ -155,11 +171,11 @@ mh_step_in_tree <- function(p, tr, data_up_to_t, temp_skel, cfg) {
   ## ──────────────────────────────
   ## 3.  Log-likelihood + prior
   ## ──────────────────────────────
-  vine_prop <- vine_from_particle(prop, temp_skel, cfg)
+  vine_prop <- fast_vine_from_particle(prop, temp_skel)
   prop_ll   <- sum(log(pmax(dvinecop(data_up_to_t, vine_prop),
                             .Machine$double.eps)))
   
-  vine_curr <- vine_from_particle(p, temp_skel, cfg)
+  vine_curr <- fast_vine_from_particle(p, temp_skel)
   curr_ll   <- sum(log(pmax(dvinecop(data_up_to_t, vine_curr),
                             .Machine$double.eps)))
   
@@ -186,8 +202,8 @@ mh_step <- function(p, data_up_to_t, skeleton, cfg) {
   prop <- p
   prop$theta <- p$theta + rnorm(cfg$K, 0, cfg$step_sd)
   
-  vine_prop <- vine_from_particle(prop, skeleton, cfg)
-  vine_curr <- vine_from_particle(p,    skeleton, cfg)
+  vine_prop <- fast_vine_from_particle(prop, skeleton)
+  vine_curr <- fast_vine_from_particle(p,    skeleton)
   
   ll_prop <- sum(log(pmax(dvinecop(data_up_to_t, vine_prop),
                           .Machine$double.eps)))
@@ -226,7 +242,7 @@ mh_step <- function(p, data_up_to_t, skeleton, cfg) {
 calculate_log_lik_tree_tr <- function(particle, skel_tr, u_row, t, tr, tr_prev, skeletons_by_tr, cfg) {
   # If it's the first tree, calculate its log-density
   if (tr == 1) {
-    vine_j <- vine_from_particle(particle, skel_tr, cfg)
+    vine_j <- vine_from_particle(particle, skel_tr)
     dens_val <- dvinecop(u_row, vine_j)
     return(log(dens_val + 1e-100))
   }
@@ -235,10 +251,10 @@ calculate_log_lik_tree_tr <- function(particle, skel_tr, u_row, t, tr, tr_prev, 
   # The pre-computation of skeletons_by_tr makes this much faster.
   skel_tr_minus_1 <- skeletons_by_tr[[tr_prev]]
 
-  vine_j_tr <- vine_from_particle(particle, skel_tr, cfg)
+  vine_j_tr <- vine_from_particle(particle, skel_tr)
   dens_val_tr <- dvinecop(u_row, vine_j_tr)
 
-  vine_j_prev <- vine_from_particle(particle, skel_tr_minus_1, cfg)
+  vine_j_prev <- vine_from_particle(particle, skel_tr_minus_1)
   dens_val_prev <- dvinecop(u_row, vine_j_prev)
 
   # Return the log-difference
@@ -271,9 +287,11 @@ propagate_particles <- function(particles, cfg) {
 
 compute_log_incr <- function(particles, u_row, skeleton, cfg) {
   log_incr <- numeric(cfg$M)
+  
   for (j in seq_along(particles)) {
       p <- particles[[j]]
-      vine_j     <- vine_from_particle(p, skeleton, cfg)
+      #vine_from_particle(p, skeleton)
+      vine_j     <- fast_vine_from_particle(p, skeleton)
       dens_val     <- dvinecop(u_row, vine_j)
       li           <- ifelse(dens_val <= 0, -1e100, log(dens_val))
       log_incr[j]  <- li
@@ -526,7 +544,7 @@ compute_predictive_metrics <- function(u_obs, particles, skel, w_prev_for_predic
   
   # --- 1. Compute Log Predictive Density (using original weighted particles) ---
   likelihoods <- sapply(particles, function(p) {
-    vine_p <- vine_from_particle(p, skel, cfg)
+    vine_p <- vine_from_particle(p, skel)
     dvinecop(u_obs, vine_p)
   })
   weighted_likelihood <- sum(w_prev_for_prediction * likelihoods)

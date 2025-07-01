@@ -5,6 +5,8 @@
 library(here)
 source(here::here("src","config.R"))
 
+library(profvis)
+
 
 dir.create(here::here("simul_results/static_dgp"), showWarnings = FALSE)
 
@@ -33,7 +35,7 @@ run_and_save <- function(U, cfg, alg = c("standard", "block"), tag = NULL) {
 
 
 set.seed(126)
-U  <- sim_static_cop_3(N = 200)              
+U  <- sim_static_cop_3(N = 50)              
 d  <- ncol(U)
 
 cfg_variants <- list(
@@ -55,17 +57,20 @@ cfg_variants <- list(
 
 system.time(
 for (i in seq_along(cfg_variants)) {
-  v    <- cfg_variants[[i]]          # pull the i-th inner list
-  tag  <- v[["label"]]               # safe even if names = NULL
+  v    <- cfg_variants[[i]]         
+  tag  <- v[["label"]]               
   
-  tweaks <- v[ setdiff(names(v), "label") ]   # drop label for merging
+  tweaks <- v[ setdiff(names(v), "label") ]   
   cfg    <- modifyList(build_cfg(d), tweaks)
   cfg$label <- tag
   
   for (alg in c("standard")) {
     set.seed(cfg$seed)
+    #p <- profvis::profvis({
     run_and_save(U, cfg, alg, tag)
+    #})
   }
 })
 
-
+#htmlwidgets::saveWidget(p, "profile.html")
+#browseURL("profile.html")
