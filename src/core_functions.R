@@ -239,10 +239,21 @@ mh_step <- function(p, data_up_to_t, skeleton, cfg) {
 #   return(proc_sd)
 # }
 
+compute_adapt_step_sd <- function(cfg, acc_pct, lambda = 0.2, target_acc = 0.10, sd_min = 0.02, sd_max=0.1){
+  log_sd_new <- log(cfg$step_sd) + lambda * (acc_pct/100 - target_acc)
+  step_sd <- pmin(pmax(exp(log_sd_new), sd_min), sd_max)
+  cat(sprintf(
+    "step_sd = %4f \n\n",
+    step_sd
+  ))
+  return(step_sd)
+}
+
+
 calculate_log_lik_tree_tr <- function(particle, skel_tr, u_row, t, tr, tr_prev, skeletons_by_tr, cfg) {
   # If it's the first tree, calculate its log-density
   if (tr == 1) {
-    vine_j <- vine_from_particle(particle, skel_tr)
+    vine_j <- fast_vine_from_particle(particle, skel_tr)
     dens_val <- dvinecop(u_row, vine_j)
     return(log(dens_val + 1e-100))
   }
@@ -251,10 +262,10 @@ calculate_log_lik_tree_tr <- function(particle, skel_tr, u_row, t, tr, tr_prev, 
   # The pre-computation of skeletons_by_tr makes this much faster.
   skel_tr_minus_1 <- skeletons_by_tr[[tr_prev]]
 
-  vine_j_tr <- vine_from_particle(particle, skel_tr)
+  vine_j_tr <- fast_vine_from_particle(particle, skel_tr)
   dens_val_tr <- dvinecop(u_row, vine_j_tr)
 
-  vine_j_prev <- vine_from_particle(particle, skel_tr_minus_1)
+  vine_j_prev <- fast_vine_from_particle(particle, skel_tr_minus_1)
   dens_val_prev <- dvinecop(u_row, vine_j_prev)
 
   # Return the log-difference
@@ -441,7 +452,7 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
   mean_edges <- w_mean(edge_ct, w_new)
   se_edges   <- mc_se(edge_ct, w_new, ess_t)
   
-  key_vec   <- apply(cbind(slab_w, theta_mat), 1L,
+  key_vec   <- apply(cbind(theta_mat), 1L,
                      \(row) paste(row, collapse = ","))
   n_unique  <- length(unique(key_vec))
   
@@ -464,7 +475,7 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
     gamma_e <- slab_w[, e]
     rho_e   <- rho_mat[,  e]
     w_cond  <- w_new * gamma_e
-    if (sum(w_cond) < 1e-12) {
+    if (sum(w_cond) < 1e-4) {
       cat(sprintf("  Edge %2d : P(dep)=%.3f ± %.3f | never present\n",
                   e, inc_prob[e], se_inc))
       return(list(edge = e, p_dep = inc_prob[e], se_inc = se_inc,
@@ -544,7 +555,7 @@ compute_predictive_metrics <- function(u_obs, particles, skel, w_prev_for_predic
   
   # --- 1. Compute Log Predictive Density (using original weighted particles) ---
   likelihoods <- sapply(particles, function(p) {
-    vine_p <- vine_from_particle(p, skel)
+    vine_p <- fast_vine_from_particle(p, skel)
     dvinecop(u_obs, vine_p)
   })
   weighted_likelihood <- sum(w_prev_for_prediction * likelihoods)

@@ -27,16 +27,18 @@ source(here('src','simulation.R'))
 #Rcpp::sourceCpp(here::here("src", "calc_loglik_tree_tr.cpp"))
 
 
-run_block_smc <- function(U,
+run_block_smc <- function(data,
                           cfg,
                           type       = "block",
                           n_cores    = max(parallel::detectCores() - 1, 1)) {
+  
+  U <- data$U
   
   N  <- nrow(U);  d <- ncol(U)
   M  <- cfg$M;    K <- cfg$K;     G <- cfg$G
   S  <- N * G                         #  total sub-steps
 
-  full_skeleton <- vinecop(U, family_set = "gaussian")        # complete tree
+  full_skeleton <- vinecop(U, family_set = "gaussian", structure = data$RVM$Matrix[nrow(data$RVM$Matrix):1, ])        
   skeletons_by_tr <- lapply(seq_len(d - 1L), function(tr) {
     vinecop(U,
             family_set = "gaussian",
@@ -63,10 +65,13 @@ run_block_smc <- function(U,
       pi_sd   = numeric(n_pairs)       # NEW
     ),
     mh_acc_pct      = rep(NA_real_, n_pairs),
+    step_sd_hist      = rep(NA_real_, N),
     theta_hist      = array(NA_real_,    dim = c(M, S, K)),
     #gamma_hist      = array(NA_integer_, dim = c(M, S, K)),
     ancestorIndices = matrix(0L, M, S),
-    incl_hist = matrix(NA_real_, S, K)
+    incl_hist = matrix(NA_real_, S, K),
+    #theta_q025   = matrix(NA_real_, N, K),
+    #theta_q975   = matrix(NA_real_, N, K)
   )
   out$ancestorIndices[, 1L] <- seq_len(M)
   
@@ -77,7 +82,7 @@ run_block_smc <- function(U,
   
   parallel::clusterExport(
     cl, c("mh_step_in_tree", "vine_from_particle", "log_prior", "slab_sd_from_tau", "spike_sd_from_tau", "update_tau2", "rinvgamma", "dinvgamma", "update_pi",
-          "bicop_dist", "vinecop_dist", "dvinecop", "full_skeleton",
+          "bicop_dist", "vinecop_dist", "dvinecop", "full_skeleton", "fast_vine_from_particle",
           "skeletons_by_tr", "cfg", "ESS", "propagate_particles",
           "update_weights", "diagnostic_report", "systematic_resample",
           "resample_move", "calculate_log_lik_tree_tr",
@@ -150,6 +155,11 @@ run_block_smc <- function(U,
                                       cl, type, cfg, tr=tr_idx, temp_skel = tmp_skel)
         particles <- move_out$particles
         out$mh_acc_pct[step_id] <- move_out$acc_pct
+        
+        if (cfg$adapt_step_sd) {
+          {cfg$step_sd <- compute_adapt_step_sd(cfg, move_out$acc_pct)}
+          out$step_sd_hist[t_idx] <- cfg$step_sd
+        }
       } else {
         prev_step <- step_id - 1L
         newAnc    <- if (prev_step < 1L) seq_len(M) else out$ancestorIndices[, prev_step]
@@ -167,6 +177,8 @@ run_block_smc <- function(U,
       slab_w  <- responsibility(theta_mat, tau_vec, pi_vec, cfg)  
       
       out$incl_hist[step_id, ] <- colSums(slab_w * w_new) 
+      #out$theta_q025[step_id, ] <- dg$edges$q025
+      #out$theta_q975[step_id, ] <- dg$edges$q975
     }  # end tr
   } # end t 
   

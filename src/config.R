@@ -19,10 +19,11 @@ load_packages <- function() {
 build_cfg <- function(d, tau_prior = c("fixed", "inv_gamma"),
                       tau0      = 0.025,      # ≈ old spike_sd
                       c_slab    = 37,      # so c*tau0 ≈ old slab_sd = 0.50
-                      a0 = 2, b0 = (a0 - 1) * tau0^2,   # hyper-pars if IG
+                      a0 = 3, b0 = (a0 - 1) * tau0^2,   # hyper-pars if IG
                       pi_prior = c("fixed","beta"),
                       pi0   = 0.50,                     # centre if fixed
-                      a_pi  = 1, b_pi = 1 
+                      a_pi  = 2, b_pi = 2,
+                      adapt_step_sd = TRUE
   ) {
   tau_prior <- match.arg(tau_prior)
   
@@ -37,11 +38,12 @@ build_cfg <- function(d, tau_prior = c("fixed", "inv_gamma"),
     p_dyn_flip   = 0,
     n_mh         = 3L,
     step_sd      = 0.05,
-    p_flip_edge  = 0.25,
-    indep_copula = bicop_dist("indep"),
-    W_predict    = 200L,
-    seed         = 126, #42
+    #p_flip_edge  = 0.25,
+    #indep_copula = bicop_dist("indep"),
+    W_predict    = 750L,
+    seed         = 42,
     G            = 2L,                      # Group in which tree
+    adapt_step_sd = adapt_step_sd,
     pi_prior     = pi_prior,
     pi0          = pi0,                     # centre if fixed
     a_pi         = a_pi, 
@@ -60,6 +62,7 @@ source(here("src", "simulation.R"))
 source(here("src", "smc_stand_vine.R"))
 source(here("src", "smc_block_vine.R"))
 source(here("src", "results_helpers.R"))
+#source(here("src", "mc_simulation_exercise.R"))
 
 quiet_assert()                       
 load_packages()                      
