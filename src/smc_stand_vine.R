@@ -22,14 +22,15 @@ assignInNamespace("see_if", function(...) invisible(TRUE), ns = "assertthat")
 source(here('src','core_functions.R'))
 source(here('src','simulation.R'))
 
-
-run_standard_smc <- function(U,
+run_standard_smc <- function(data,
                     cfg,
                     type       = c("standard", "block"),
                     n_cores    = max(parallel::detectCores() - 1, 1)) {
   
+  U <- data$U
+  
   type <- match.arg(type)
-  skeleton  <- vinecop(U, family_set = "gaussian")
+  skeleton  <- vinecop(U, family_set = "gaussian", structure = data$RVM$Matrix[nrow(data$RVM$Matrix):1, ])
 
   # ── dimensions ───────────────────────────────────────────────────
   N <- nrow(U); K <- cfg$K; M <- cfg$M
@@ -53,10 +54,13 @@ run_standard_smc <- function(U,
       pi_sd   = numeric(N)       # NEW
     ),
     mh_acc_pct      = rep(NA_real_, N),
+    step_sd_hist      = rep(NA_real_, N),
     theta_hist      = array(NA_real_,    dim = c(M, N, K)),
     #gamma_hist      = array(NA_integer_, dim = c(M, N, K)),
     ancestorIndices = matrix(0L, M, N),
     incl_hist = matrix(NA_real_, N, K)
+    #theta_q025   = matrix(NA_real_, N, K),
+    #theta_q975   = matrix(NA_real_, N, K)
   )
   
   # ── initial state ──────────────────────────────────────────────────────────
@@ -119,7 +123,7 @@ run_standard_smc <- function(U,
       tau_mean = dg$tau_mean,        
       tau_sd   = dg$tau_sd,           
       pi_mean = dg$pi_mean,
-      pi_sd = dg$pi_sd 
+      pi_sd = dg$pi_sd
     )]
     pos <- pos + 1L
     
@@ -131,6 +135,11 @@ run_standard_smc <- function(U,
                                     cl, type, cfg, skeleton=skeleton)
       particles <- move_out$particles
       out$mh_acc_pct[t_idx] <- move_out$acc_pct
+      
+      if (cfg$adapt_step_sd) {
+      {cfg$step_sd <- compute_adapt_step_sd(cfg, move_out$acc_pct)}
+      out$step_sd_hist[t_idx] <- cfg$step_sd
+      }
     } else {
       step_prev <- t_idx - 1L
       newAnc    <- if (step_prev < 1L) seq_len(M) else out$ancestorIndices[, step_prev]
@@ -148,6 +157,8 @@ run_standard_smc <- function(U,
     slab_w  <- responsibility(theta_mat, tau_vec, pi_vec, cfg)  
     
     out$incl_hist[t_idx, ] <- colSums(slab_w * w_new)
+    #out$theta_q025[t_idx, ] <- dg$edges$q025[[1]]
+    #out$theta_q975[t_idx, ] <- dg$edges$q975[[1]]
   }
   
   out$log_model_evidence <- sum(out$log_pred, na.rm = TRUE)

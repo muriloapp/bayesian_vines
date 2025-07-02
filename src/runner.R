@@ -8,15 +8,16 @@ source(here::here("src","config.R"))
 library(profvis)
 
 
+
 dir.create(here::here("simul_results/static_dgp"), showWarnings = FALSE)
 
-run_and_save <- function(U, cfg, alg = c("standard", "block"), tag = NULL) {
+run_and_save <- function(data, cfg, alg = c("standard", "block"), tag = NULL) {
   alg <- match.arg(alg)
   
   res <- switch(
     alg,
-    standard = run_standard_smc(U, cfg, type = "standard"),
-    block    = run_block_smc(U, cfg, type = "block")
+    standard = run_standard_smc(data, cfg, type = "standard"),
+    block    = run_block_smc(data, cfg, type = "block")
   )
   
   res$cfg <- cfg                                   
@@ -34,8 +35,9 @@ run_and_save <- function(U, cfg, alg = c("standard", "block"), tag = NULL) {
 }
 
 
-set.seed(126)
-U  <- sim_static_cop_3(N = 50)              
+set.seed(42)
+data  <- sim_static_cop_6(N = 300)    
+U <- data$U
 d  <- ncol(U)
 
 cfg_variants <- list(
@@ -45,12 +47,10 @@ cfg_variants <- list(
   #   tau_prior  = "fixed"
   # ) ,
   list(
-    label      = "nmh1_N200_ivgamma_beta",
-    n_mh       = 1,
+    label      = "M200_ivgamma_beta",
     tau_prior  = "inv_gamma",
     pi_prior   = "beta",
-     a_pi       = 1, 
-     b_pi       = 1 
+    M           = 2000
   )
 )
 
@@ -67,10 +67,10 @@ for (i in seq_along(cfg_variants)) {
   for (alg in c("standard")) {
     set.seed(cfg$seed)
     #p <- profvis::profvis({
-    run_and_save(U, cfg, alg, tag)
+    run_and_save(data, cfg, alg, tag)
     #})
   }
 })
 
-#htmlwidgets::saveWidget(p, "profile.html")
-#browseURL("profile.html")
+# htmlwidgets::saveWidget(p, "profile.html")
+# browseURL("profile.html")
