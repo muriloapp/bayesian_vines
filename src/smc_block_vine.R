@@ -177,8 +177,8 @@ run_block_smc <- function(data,
       slab_w  <- responsibility(theta_mat, tau_vec, pi_vec, cfg)  
       
       out$incl_hist[step_id, ] <- colSums(slab_w * w_new) 
-      out$theta_q025[step_id, ] <- dg$edges$q025
-      out$theta_q975[step_id, ] <- dg$edges$q975
+      out$theta_q025[step_id, ] <- dg$edges$q025[[1]]
+      out$theta_q975[step_id, ] <- dg$edges$q975[[1]]
     }  # end tr
   } # end t 
   
