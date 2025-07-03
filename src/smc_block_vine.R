@@ -60,8 +60,8 @@ run_block_smc <- function(data,
     #gamma_hist      = array(NA_integer_, dim = c(M, S, K)),
     ancestorIndices = matrix(0L, M, S),
     incl_hist = matrix(NA_real_, S, K),
-    theta_q025   = matrix(NA_real_, N, K),
-    theta_q975   = matrix(NA_real_, N, K)
+    theta_q025   = matrix(NA_real_, S, K),
+    theta_q975   = matrix(NA_real_, S, K)
   )
   out$ancestorIndices[, 1L] <- seq_len(M)
   
