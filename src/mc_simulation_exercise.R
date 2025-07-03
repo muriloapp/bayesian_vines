@@ -7,7 +7,7 @@ source(here("src", "config.R"))          # build_cfg(), sim_static_cop_6(), …
 # source(here("src", "smc_kernels.R"))   # run_standard_smc(), run_block_smc()
 
 ## -------- 1. experiment specs ------------------------------------------------
-n_sim     <- 4        # Monte-Carlo replications
+n_sim     <- 5        # Monte-Carlo replications
 N_obs     <- 1000        # sample size per replication
 seed_base <- 42   # reproducible but different for each sim
 
@@ -52,7 +52,7 @@ for (sim in seq_len(n_sim)) {
     cfg    <- modifyList(build_cfg(d), tweaks)
     cfg$label <- label
     
-    for (alg in c("standard", "block")) {
+    for (alg in c("block")) {
       
       t_sec <- system.time(
       res <- switch(
@@ -77,7 +77,7 @@ for (sim in seq_len(n_sim)) {
 
 
 
-# 
+
 # library(here)
 # 
 # # all block-SMC fits for the “M200_ivgamma_beta” variant
@@ -107,7 +107,6 @@ for (sim in seq_len(n_sim)) {
 # plot_theta_paths(tanh(theta_mean), theta_sd, k=12, theta_true = -0.37)
 # 
 # 
-
 
 
 
