@@ -413,70 +413,174 @@ responsibility <- function(theta_mat, tau_vec, pi_vec, cfg){
 }
 
 ## ───────────── diagnostic & plotting ────────────────────────────
+# diagnostic_report <- function(t, tr, U, particles, w_new,
+#                               cfg, q_probs  = c(0.025, 0.975)) {
+#   
+#   k_step <- cfg$k_step
+#   M <- cfg$M
+#   
+#   if (t %% k_step != 0L && t != nrow(U)) return(invisible())
+#   ## 1. unpack particle state -------------------------------------------------
+#   #gamma_mat <- do.call(rbind, lapply(particles, `[[`, "gamma"))
+#   theta_mat <- do.call(rbind, lapply(particles, `[[`, "theta"))
+#   rho_mat   <- tanh(theta_mat)
+#   
+#   #slab_w <- responsibility(theta_mat, cfg)   # M × K
+#   tau_vec <- sqrt(vapply(particles, function(p) p$tau2, numeric(1)))
+#   pi_vec  <- vapply(particles, function(p) p$pi, numeric(1))
+#   slab_w  <- responsibility(theta_mat, tau_vec, pi_vec, cfg)
+#   
+#   ## 2. normalise weights (essential) -----------------------------------------
+#   w_new <- w_new / sum(w_new)
+#   ess_t <- 1 / sum(w_new^2)
+#   
+#   tau_vec <- sqrt(vapply(particles, `[[`, numeric(1), "tau2"))
+#   mu_tau  <- w_mean(tau_vec, w_new)
+#   sd_tau  <- sqrt( w_var(tau_vec, w_new, mu_tau) )
+#   
+#   # print
+#   pi_mean <- w_mean(pi_vec, w_new)
+#   pi_sd   <- sqrt(w_var(pi_vec, w_new, pi_mean))
+#   cat(sprintf(" | π = %.3f ± %.3f", pi_mean, pi_sd))
+#   
+#   
+#   cat(sprintf(" | τ = %.4f ± %.4f\n", mu_tau, sd_tau))
+#   
+#   ## 3. global diagnostics ----------------------------------------------------
+#   edge_ct    <- rowSums(slab_w)
+#   mean_edges <- w_mean(edge_ct, w_new)
+#   se_edges   <- mc_se(edge_ct, w_new, ess_t)
+#   
+#   key_vec   <- apply(cbind(theta_mat), 1L,
+#                      \(row) paste(row, collapse = ","))
+#   n_unique  <- length(unique(key_vec))
+#   
+#   dists     <- as.matrix(dist(theta_mat))
+#   avg_dist  <- mean(dists[lower.tri(dists)])
+#   
+#   cat(sprintf(
+#     "t = %4d | tr = %4d | ESS/M = %.3f | mean #edges = %.3f ± %.3f | unique = %d\n | Euclidean dist = %.4f\n",
+#     t, tr, ess_t / M, mean_edges, se_edges, n_unique, avg_dist))
+#   
+#   ## 4. per-edge summaries ----------------------------------------------------
+#   inc_prob <- colSums(slab_w  * w_new)
+#   
+#   edge_summ <- lapply(seq_along(inc_prob), function(e) {
+#     
+#     ## MC-SE of inclusion probability
+#     se_inc <- sqrt(inc_prob[e] * (1 - inc_prob[e]) / ess_t)
+#     
+#     ## conditional posterior of rho if edge present at all
+#     gamma_e <- slab_w[, e]
+#     rho_e   <- rho_mat[,  e]
+#     w_cond  <- w_new * gamma_e
+#     if (sum(w_cond) < 1e-4) {
+#       cat(sprintf("  Edge %2d : P(dep)=%.3f ± %.3f | never present\n",
+#                   e, inc_prob[e], se_inc))
+#       return(list(edge = e, p_dep = inc_prob[e], se_inc = se_inc,
+#                   mu_rho = NA, sd_rho = NA,
+#                   q025 = NA, q975 = NA, se_rho = NA))
+#     }
+#     
+#     w_cond <- w_cond / sum(w_cond)
+#     mu_rho <- sum(w_cond * rho_e)
+#     sd_rho <- sqrt( sum(w_cond * (rho_e - mu_rho)^2) )
+#     qs     <- w_quantile(rho_e, w_cond, q_probs)
+#     
+#     ## MC-SE of the mean (zero-padded variance / ESS)
+#     var_rho_zpad <- w_var(rho_e * slab_w[, e], w_new,
+#                           mu_rho * inc_prob[e])          # PATCH
+#     se_rho       <- sqrt(var_rho_zpad / ess_t)
+#     
+#     cat(sprintf(
+#       "  Edge %2d : P(dep)=%.3f ± %.3f | ρ = %.3f (SD %.3f, MC-SE %.3f) | 95%% CI = [%.3f, %.3f]\n",
+#       e, inc_prob[e], se_inc, mu_rho, sd_rho, se_rho, qs[1], qs[2]))
+#     
+#     list(edge = e, p_dep = inc_prob[e], se_inc = se_inc,
+#          mu_rho = mu_rho, sd_rho = sd_rho,
+#          q025 = qs[1], q975 = qs[2], se_rho = se_rho)
+#   })
+#   
+#   edge_df <- do.call(rbind.data.frame, edge_summ)
+#   
+#   
+#   
+#   invisible(list(ESS  = ess_t,
+#                  unique = n_unique,
+#                  euc = avg_dist,
+#                  tau_mean = mu_tau,      # pass back
+#                  tau_sd   = sd_tau,
+#                  edges = edge_df,
+#                  pi_mean = pi_mean,
+#                  pi_sd = pi_sd))
+# }
+
+
 diagnostic_report <- function(t, tr, U, particles, w_new,
-                              cfg, q_probs  = c(0.025, 0.975)) {
+                              cfg, q_probs = c(0.025, 0.975)) {
+  k_step     <- cfg$k_step
+  M          <- cfg$M
+  print_flag <- (t %% k_step == 0L) || (t == nrow(U))
   
-  k_step <- cfg$k_step
-  M <- cfg$M
-  
-  if (t %% k_step != 0L && t != nrow(U)) return(invisible())
   ## 1. unpack particle state -------------------------------------------------
-  #gamma_mat <- do.call(rbind, lapply(particles, `[[`, "gamma"))
   theta_mat <- do.call(rbind, lapply(particles, `[[`, "theta"))
   rho_mat   <- tanh(theta_mat)
   
-  #slab_w <- responsibility(theta_mat, cfg)   # M × K
   tau_vec <- sqrt(vapply(particles, function(p) p$tau2, numeric(1)))
-  pi_vec  <- vapply(particles, function(p) p$pi, numeric(1))
+  pi_vec  <- vapply(particles, function(p) p$pi,  numeric(1))
   slab_w  <- responsibility(theta_mat, tau_vec, pi_vec, cfg)
   
-  ## 2. normalise weights (essential) -----------------------------------------
+  ## 2. normalise weights (essential) ----------------------------------------
   w_new <- w_new / sum(w_new)
   ess_t <- 1 / sum(w_new^2)
   
   tau_vec <- sqrt(vapply(particles, `[[`, numeric(1), "tau2"))
   mu_tau  <- w_mean(tau_vec, w_new)
-  sd_tau  <- sqrt( w_var(tau_vec, w_new, mu_tau) )
+  sd_tau  <- sqrt(w_var(tau_vec, w_new, mu_tau))
   
-  # print
-  pi_mean <- w_mean(pi_vec, w_new)
-  pi_sd   <- sqrt(w_var(pi_vec, w_new, pi_mean))
-  cat(sprintf(" | π = %.3f ± %.3f", pi_mean, pi_sd))
-  
-  
-  cat(sprintf(" | τ = %.4f ± %.4f\n", mu_tau, sd_tau))
+  ## console summary (global) -------------------------------------------------
+  if (print_flag) {
+    pi_mean <- w_mean(pi_vec, w_new)
+    pi_sd   <- sqrt(w_var(pi_vec, w_new, pi_mean))
+    cat(sprintf(" | π = %.3f ± %.3f", pi_mean, pi_sd))
+    cat(sprintf(" | τ = %.4f ± %.4f\n", mu_tau, sd_tau))
+  } else {
+    # still need these later for the return value
+    pi_mean <- w_mean(pi_vec, w_new)
+    pi_sd   <- sqrt(w_var(pi_vec, w_new, pi_mean))
+  }
   
   ## 3. global diagnostics ----------------------------------------------------
   edge_ct    <- rowSums(slab_w)
   mean_edges <- w_mean(edge_ct, w_new)
   se_edges   <- mc_se(edge_ct, w_new, ess_t)
   
-  key_vec   <- apply(cbind(theta_mat), 1L,
-                     \(row) paste(row, collapse = ","))
+  key_vec   <- apply(theta_mat, 1L, \(row) paste(row, collapse = ","))
   n_unique  <- length(unique(key_vec))
   
-  dists     <- as.matrix(dist(theta_mat))
+  dists     <- as.matrix(stats::dist(theta_mat))
   avg_dist  <- mean(dists[lower.tri(dists)])
   
-  cat(sprintf(
-    "t = %4d | tr = %4d | ESS/M = %.3f | mean #edges = %.3f ± %.3f | unique = %d\n | Euclidean dist = %.4f\n",
-    t, tr, ess_t / M, mean_edges, se_edges, n_unique, avg_dist))
+  if (print_flag) {
+    cat(sprintf(
+      "t = %4d | tr = %4d | ESS/M = %.3f | mean #edges = %.3f ± %.3f | unique = %d\n | Euclidean dist = %.4f\n",
+      t, tr, ess_t / M, mean_edges, se_edges, n_unique, avg_dist))
+  }
   
   ## 4. per-edge summaries ----------------------------------------------------
-  inc_prob <- colSums(slab_w  * w_new)
+  inc_prob <- colSums(slab_w * w_new)
   
   edge_summ <- lapply(seq_along(inc_prob), function(e) {
+    se_inc  <- sqrt(inc_prob[e] * (1 - inc_prob[e]) / ess_t)
     
-    ## MC-SE of inclusion probability
-    se_inc <- sqrt(inc_prob[e] * (1 - inc_prob[e]) / ess_t)
-    
-    ## conditional posterior of rho if edge present at all
     gamma_e <- slab_w[, e]
     rho_e   <- rho_mat[,  e]
     w_cond  <- w_new * gamma_e
+    
     if (sum(w_cond) < 1e-4) {
-      cat(sprintf("  Edge %2d : P(dep)=%.3f ± %.3f | never present\n",
-                  e, inc_prob[e], se_inc))
+      if (print_flag)
+        cat(sprintf("  Edge %2d : P(dep)=%.3f ± %.3f | never present\n",
+                    e, inc_prob[e], se_inc))
       return(list(edge = e, p_dep = inc_prob[e], se_inc = se_inc,
                   mu_rho = NA, sd_rho = NA,
                   q025 = NA, q975 = NA, se_rho = NA))
@@ -484,17 +588,18 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
     
     w_cond <- w_cond / sum(w_cond)
     mu_rho <- sum(w_cond * rho_e)
-    sd_rho <- sqrt( sum(w_cond * (rho_e - mu_rho)^2) )
+    sd_rho <- sqrt(sum(w_cond * (rho_e - mu_rho)^2))
     qs     <- w_quantile(rho_e, w_cond, q_probs)
     
-    ## MC-SE of the mean (zero-padded variance / ESS)
     var_rho_zpad <- w_var(rho_e * slab_w[, e], w_new,
-                          mu_rho * inc_prob[e])          # PATCH
-    se_rho       <- sqrt(var_rho_zpad / ess_t)
+                          mu_rho * inc_prob[e])
+    se_rho <- sqrt(var_rho_zpad / ess_t)
     
-    cat(sprintf(
-      "  Edge %2d : P(dep)=%.3f ± %.3f | ρ = %.3f (SD %.3f, MC-SE %.3f) | 95%% CI = [%.3f, %.3f]\n",
-      e, inc_prob[e], se_inc, mu_rho, sd_rho, se_rho, qs[1], qs[2]))
+    if (print_flag) {
+      cat(sprintf(
+        "  Edge %2d : P(dep)=%.3f ± %.3f | ρ = %.3f (SD %.3f, MC-SE %.3f) | 95%% CI = [%.3f, %.3f]\n",
+        e, inc_prob[e], se_inc, mu_rho, sd_rho, se_rho, qs[1], qs[2]))
+    }
     
     list(edge = e, p_dep = inc_prob[e], se_inc = se_inc,
          mu_rho = mu_rho, sd_rho = sd_rho,
@@ -503,16 +608,15 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
   
   edge_df <- do.call(rbind.data.frame, edge_summ)
   
-  
-  
-  invisible(list(ESS  = ess_t,
-                 unique = n_unique,
-                 euc = avg_dist,
-                 tau_mean = mu_tau,      # pass back
-                 tau_sd   = sd_tau,
-                 edges = edge_df,
-                 pi_mean = pi_mean,
-                 pi_sd = pi_sd))
+  ## 5. invisibly return everything ------------------------------------------
+  invisible(list(ESS       = ess_t,
+                 unique    = n_unique,
+                 euc       = avg_dist,
+                 tau_mean  = mu_tau,
+                 tau_sd    = sd_tau,
+                 edges     = edge_df,
+                 pi_mean   = pi_mean,
+                 pi_sd     = pi_sd))
 }
 
 
