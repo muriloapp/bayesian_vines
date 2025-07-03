@@ -29,7 +29,7 @@ save_fit <- function(res, label, alg, sim_tag) {
   dir.create(file.path(out_root, label), showWarnings = FALSE)
   saveRDS(res,
           file.path(out_root, label, sprintf("%s_%s.rds", alg, sim_tag)))
-  message(sprintf("✓ saved %s | %s | %s", label, alg, sim_tag))
+  message(sprintf("saved %s | %s | %s", label, alg, sim_tag))
 }
 
 ## -------- 3. Monte-Carlo loop ------------------------------------------------
@@ -52,7 +52,7 @@ for (sim in seq_len(n_sim)) {
     cfg    <- modifyList(build_cfg(d), tweaks)
     cfg$label <- label
     
-    for (alg in c("block")) {
+    for (alg in c("standard","block")) {
       
       t_sec <- system.time(
       res <- switch(
@@ -107,6 +107,36 @@ for (sim in seq_len(n_sim)) {
 # plot_theta_paths(tanh(theta_mean), theta_sd, k=12, theta_true = -0.37)
 # 
 # 
+
+
+
+
+
+
+
+
+# 
+# pkgs <- unique(renv::dependencies()$Package)
+# 
+# # create a vector of "package==version"
+# lines <- sapply(pkgs, function(pkg) {
+#   ver <- tryCatch(as.character(packageVersion(pkg)), error = function(e) "not_installed")
+#   paste0(pkg, "==", ver)
+# })
+# 
+# writeLines(lines, "package_versions.txt")
+# 
+
+
+
+
+
+
+
+
+
+
+
 
 
 
