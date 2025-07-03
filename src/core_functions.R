@@ -2,7 +2,6 @@ library(rvinecopulib)
 library(VineCopula)
 library(data.table)
 library(tictoc)
-library(Rcpp)
 library(matrixStats)
 
 
