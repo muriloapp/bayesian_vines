@@ -239,7 +239,7 @@ mh_step <- function(p, data_up_to_t, skeleton, cfg) {
 #   return(proc_sd)
 # }
 
-compute_adapt_step_sd <- function(cfg, acc_pct, lambda = 0.2, target_acc = 0.10, sd_min = 0.02, sd_max=0.1){
+compute_adapt_step_sd <- function(cfg, acc_pct, lambda = 0.25, target_acc = 0.10, sd_min = 0.02, sd_max=0.1){
   log_sd_new <- log(cfg$step_sd) + lambda * (acc_pct/100 - target_acc)
   step_sd <- pmin(pmax(exp(log_sd_new), sd_min), sd_max)
   cat(sprintf(

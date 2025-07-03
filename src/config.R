@@ -62,7 +62,6 @@ source(here("src", "simulation.R"))
 source(here("src", "smc_stand_vine.R"))
 source(here("src", "smc_block_vine.R"))
 source(here("src", "results_helpers.R"))
-#source(here("src", "mc_simulation_exercise.R"))
 
 quiet_assert()                       
 load_packages()                      

@@ -210,3 +210,53 @@ edges_in_tree <- function(tree_level_mat, tree) {
 # edges_t2 <- edges_in_tree(attr(U, "tree_level"), tree = 2)
 
 
+
+
+
+
+sim_static_cop_6 <- function(N      = 200,
+                             p_zero = 0.5,
+                             rho_lo = -0.99,
+                             rho_hi =  0.99) {
+  d <- 6
+  
+  ## 1. C-vine structure matrix (same pattern as your 3-D prototype)
+  sim_matrix <- matrix(0, d, d)
+  for (j in 1:d)
+    sim_matrix[j:d, j] <- j:d         # column j :  j, j+1, …, d
+  
+  ## 2. Family- and parameter matrices (lower-triangular part only)
+  family_matrix <- matrix(0, d, d)
+  theta_matrix  <- matrix(0, d, d)
+  
+  for (j in 1:(d - 1)) {              # columns
+    for (i in (j + 1):d) {            # rows below the diagonal
+      if (runif(1) > p_zero) {        # keep the edge?
+        family_matrix[i, j] <- 1      # 1 = Gaussian copula
+        theta_matrix[i,  j] <- runif(1, rho_lo, rho_hi)
+      }
+    }
+  }
+  
+  ## 3. Build the R-vine object and simulate data
+  RVM <- RVineMatrix(sim_matrix,
+                     family = family_matrix,
+                     par    = theta_matrix)
+  
+  U <- RVineSim(N, RVM)
+  colnames(U) <- paste0("U", 1:d)
+  
+  ## 4. Return both the data and the true specification
+  list(U      = U,           # simulated observations
+       RVM    = RVM,         # full C-vine object
+       family = family_matrix,
+       theta  = theta_matrix)
+}
+
+
+# out <- sim_static_cop_6(N = 200, seed = 2)
+# print(out$RVM)        # concise summary of structure, families, and θ
+# out$family            # 6 × 6 family matrix (0 = independence, 1 = Gaussian)
+# out$theta             # 6 × 6 correlation matrix (zeros on skipped edges)
+# head(out$U)           # your data
+

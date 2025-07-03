@@ -58,9 +58,9 @@ run_standard_smc <- function(data,
     theta_hist      = array(NA_real_,    dim = c(M, N, K)),
     #gamma_hist      = array(NA_integer_, dim = c(M, N, K)),
     ancestorIndices = matrix(0L, M, N),
-    incl_hist = matrix(NA_real_, N, K)
-    #theta_q025   = matrix(NA_real_, N, K),
-    #theta_q975   = matrix(NA_real_, N, K)
+    incl_hist = matrix(NA_real_, N, K),
+    theta_q025   = matrix(NA_real_, N, K),
+    theta_q975   = matrix(NA_real_, N, K)
   )
   
   # ── initial state ──────────────────────────────────────────────────────────
@@ -157,8 +157,8 @@ run_standard_smc <- function(data,
     slab_w  <- responsibility(theta_mat, tau_vec, pi_vec, cfg)  
     
     out$incl_hist[t_idx, ] <- colSums(slab_w * w_new)
-    #out$theta_q025[t_idx, ] <- dg$edges$q025[[1]]
-    #out$theta_q975[t_idx, ] <- dg$edges$q975[[1]]
+    out$theta_q025[t_idx, ] <- dg$edges$q025[[1]]
+    out$theta_q975[t_idx, ] <- dg$edges$q975[[1]]
   }
   
   out$log_model_evidence <- sum(out$log_pred, na.rm = TRUE)
