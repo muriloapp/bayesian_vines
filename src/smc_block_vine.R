@@ -20,7 +20,7 @@ source(here('src','simulation.R'))
 run_block_smc <- function(data,
                           cfg,
                           type       = "block",
-                          n_cores    = max(parallel::detectCores() - 1, 1)) {
+                          n_cores    = max(parallel::detectCores(), 1)) {
   
   U <- data$U
   
