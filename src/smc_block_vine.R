@@ -5,16 +5,6 @@
 # ================================================================
 #  SMC para C-vine com spike-and-slab 
 # ================================================================
-library(rvinecopulib)
-library(VineCopula)
-library(data.table)
-library(tictoc)
-library(Rcpp)
-library(here)
-library(parallel)
-library(RcppThread)
-library(assertthat)
-library(profvis)
 
 
 assignInNamespace("assert_that", function(...) invisible(TRUE), ns = "assertthat")
