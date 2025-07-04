@@ -36,7 +36,7 @@ run_and_save <- function(data, cfg, alg = c("standard", "block"), tag = NULL) {
 
 
 set.seed(42)
-data  <- sim_static_cop_6(N = 300)    
+data  <- sim_static_cop_6(N = 500)    
 U <- data$U
 d  <- ncol(U)
 
@@ -47,7 +47,7 @@ cfg_variants <- list(
   #   tau_prior  = "fixed"
   # ) ,
   list(
-    label      = "M200_ivgamma_beta",
+    label      = "M200_ivgamma_beta_M1000",
     tau_prior  = "inv_gamma",
     pi_prior   = "beta",
     M           = 2000
@@ -64,7 +64,7 @@ for (i in seq_along(cfg_variants)) {
   cfg    <- modifyList(build_cfg(d), tweaks)
   cfg$label <- tag
   
-  for (alg in c("standard")) {
+  for (alg in c("block")) {
     set.seed(cfg$seed)
     #p <- profvis::profvis({
     run_and_save(data, cfg, alg, tag)

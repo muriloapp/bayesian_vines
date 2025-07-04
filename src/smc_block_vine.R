@@ -25,9 +25,12 @@ run_block_smc <- function(data,
   U <- data$U
   
   N  <- nrow(U);  d <- ncol(U)
+  B <- cfg$batch_size
+  n_batches <- ceiling(N / B)
   M  <- cfg$M;    K <- cfg$K;     G <- cfg$G
-  S  <- N * G                         #  total sub-steps
-
+  #S  <- N * G                         #  total sub-steps
+  S  <- n_batches * G 
+  
   full_skeleton <- vinecop(U, family_set = "gaussian", structure = data$RVM$Matrix[nrow(data$RVM$Matrix):1, ])        
   skeletons_by_tr <- lapply(seq_len(d - 1L), function(tr) {
     vinecop(U,
@@ -81,9 +84,12 @@ run_block_smc <- function(data,
   )
   
   step_id <- 0L    # flat counter for sub-steps
-  for (t_idx in seq_len(N)) {
+  t_idx <- 1L
+  while (t_idx <= N) {
+    idx_end <- min(t_idx + B - 1L, N)          # last row of this batch
+    u_block <- U[t_idx:idx_end, , drop = FALSE]
+    block_len <- nrow(u_block)  
     
-    u_row     <- U[t_idx, , drop = FALSE]
     #particles <- propagate_particles(particles, cfg)   # state advance
     
     # ---- Predictive metrics once per row ----------------------------------
@@ -115,7 +121,7 @@ run_block_smc <- function(data,
       log_incr <- vapply(
         particles,
         function(p) calculate_log_lik_tree_tr(
-          p, tmp_skel, u_row, t_idx, tr_idx, tr_prev,
+          p, tmp_skel, u_block, t_idx, tr_idx, tr_prev,
           skeletons_by_tr, cfg),
         numeric(1)
       )
@@ -170,6 +176,7 @@ run_block_smc <- function(data,
       out$theta_q025[step_id, ] <- dg$edges$q025[[1]]
       out$theta_q975[step_id, ] <- dg$edges$q975[[1]]
     }  # end tr
+    t_idx <- idx_end + 1L
   } # end t 
   
   out$log_model_evidence <- sum(out$log_pred, na.rm = TRUE)

@@ -238,7 +238,7 @@ mh_step <- function(p, data_up_to_t, skeleton, cfg) {
 #   return(proc_sd)
 # }
 
-compute_adapt_step_sd <- function(cfg, acc_pct, lambda = 0.25, target_acc = 0.10, sd_min = 0.02, sd_max=0.1){
+compute_adapt_step_sd <- function(cfg, acc_pct, lambda = 0.25, target_acc = 0.30, sd_min = 0.02, sd_max=0.1){
   log_sd_new <- log(cfg$step_sd) + lambda * (acc_pct/100 - target_acc)
   step_sd <- pmin(pmax(exp(log_sd_new), sd_min), sd_max)
   cat(sprintf(
@@ -249,26 +249,49 @@ compute_adapt_step_sd <- function(cfg, acc_pct, lambda = 0.25, target_acc = 0.10
 }
 
 
-calculate_log_lik_tree_tr <- function(particle, skel_tr, u_row, t, tr, tr_prev, skeletons_by_tr, cfg) {
+# calculate_log_lik_tree_tr <- function(particle, skel_tr, u_row, t, tr, tr_prev, skeletons_by_tr, cfg) {
+#   # If it's the first tree, calculate its log-density
+#   if (tr == 1) {
+#     vine_j <- fast_vine_from_particle(particle, skel_tr)
+#     dens_val <- dvinecop(u_row, vine_j)
+#     return(log(dens_val + 1e-100))
+#   }
+# 
+#   # For subsequent trees, we need the density of the current and previous model
+#   # The pre-computation of skeletons_by_tr makes this much faster.
+#   skel_tr_minus_1 <- skeletons_by_tr[[tr_prev]]
+# 
+#   vine_j_tr <- fast_vine_from_particle(particle, skel_tr)
+#   dens_val_tr <- dvinecop(u_row, vine_j_tr)
+# 
+#   vine_j_prev <- fast_vine_from_particle(particle, skel_tr_minus_1)
+#   dens_val_prev <- dvinecop(u_row, vine_j_prev)
+# 
+#   # Return the log-difference
+#   return(log(dens_val_tr + 1e-100) - log(dens_val_prev + 1e-100))
+# }
+
+calculate_log_lik_tree_tr <- function(particle, skel_tr, u_block, t, tr, tr_prev, skeletons_by_tr, cfg) {
   # If it's the first tree, calculate its log-density
   if (tr == 1) {
-    vine_j <- fast_vine_from_particle(particle, skel_tr)
-    dens_val <- dvinecop(u_row, vine_j)
-    return(log(dens_val + 1e-100))
-  }
-
+            vine_j   <- fast_vine_from_particle(particle, skel_tr)
+            dens_vec <- dvinecop(u_block, vine_j)        # length = n
+            return(sum(log(dens_vec + 1e-100)))
+        }
+  
   # For subsequent trees, we need the density of the current and previous model
   # The pre-computation of skeletons_by_tr makes this much faster.
   skel_tr_minus_1 <- skeletons_by_tr[[tr_prev]]
-
-  vine_j_tr <- fast_vine_from_particle(particle, skel_tr)
-  dens_val_tr <- dvinecop(u_row, vine_j_tr)
-
+  
+  vine_j_tr   <- fast_vine_from_particle(particle, skel_tr)
+  dens_vec_tr <- dvinecop(u_block, vine_j_tr)
+  
   vine_j_prev <- fast_vine_from_particle(particle, skel_tr_minus_1)
-  dens_val_prev <- dvinecop(u_row, vine_j_prev)
-
-  # Return the log-difference
-  return(log(dens_val_tr + 1e-100) - log(dens_val_prev + 1e-100))
+  dens_vec_pr <- dvinecop(u_block, vine_j_prev)
+  
+        ## sum over the whole block
+  return(sum(log(dens_vec_tr + 1e-100) -
+                      log(dens_vec_pr + 1e-100)))
 }
 
 propagate_particles <- function(particles, cfg) {
@@ -697,4 +720,20 @@ compute_predictive_metrics <- function(u_obs, particles, skel, w_prev_for_predic
 }
 
 
+compute_log_incr_block <- function(particles, u_block, skeleton, cfg) {
+  B <- nrow(u_block)                 # block length
+  log_incr <- numeric(cfg$M)
+  
+  for (j in seq_along(particles)) {
+    p         <- particles[[j]]
+    vine_j    <- fast_vine_from_particle(p, skeleton)
+    
+    # vector of densities for the whole block
+    dens_vec  <- dvinecop(u_block, vine_j)        # length = B
+    ll        <- sum(log(pmax(dens_vec, .Machine$double.eps)))
+    
+    log_incr[j] <- ll
+  }
+  log_incr
+}
 

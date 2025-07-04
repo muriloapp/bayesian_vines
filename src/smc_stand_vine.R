@@ -78,16 +78,18 @@ run_standard_smc <- function(data,
   parallel::clusterExport(
     cl,
     c("mh_step_in_tree", "vine_from_particle", "log_prior", "slab_sd_from_tau", "spike_sd_from_tau", "update_tau2", "rinvgamma", "dinvgamma", "update_pi",
-      "bicop_dist", "vinecop_dist", "dvinecop", "skeleton", "cfg", "fast_vine_from_particle",
+      "bicop_dist", "vinecop_dist", "dvinecop", "skeleton", "cfg", "fast_vine_from_particle", "compute_log_incr_block",
       "mh_step", "propagate_particles", "update_weights", "ESS",
       "diagnostic_report", "systematic_resample", "resample_move",
       "compute_predictive_metrics", "compute_log_incr"),
     envir = environment()
   )
   
-  # ── main SMC loop ──────────────────────────────────────────────────────────
-  for (t_idx in seq_len(N)) {
-    u_row <- U[t_idx, , drop = FALSE]
+  t_idx <- 1L
+  while (t_idx <= N) {
+    idx_end   <- min(t_idx + cfg$batch_size - 1L, N)
+    u_block   <- U[t_idx:idx_end, , drop = FALSE]   # *** matrix, not row ***
+    block_len <- nrow(u_block)
     
     # 1. propagate step ──────────────────────────────────────────────────────
     #particles <- propagate_particles(particles, cfg)
@@ -108,7 +110,7 @@ run_standard_smc <- function(data,
     }
     
     # 3. weight update ──────────────────────────────────────────────────────
-    log_incr  <- compute_log_incr(particles, u_row, skeleton, cfg)
+    log_incr  <- compute_log_incr_block(particles, u_block, skeleton, cfg)
     particles <- update_weights(particles, log_incr)
     w_new     <- vapply(particles, `[[`, numeric(1), "w")
     
@@ -159,6 +161,8 @@ run_standard_smc <- function(data,
     out$incl_hist[t_idx, ] <- colSums(slab_w * w_new)
     out$theta_q025[t_idx, ] <- dg$edges$q025[[1]]
     out$theta_q975[t_idx, ] <- dg$edges$q975[[1]]
+    
+    t_idx <- idx_end + 1L #NEW
   }
   
   out$log_model_evidence <- sum(out$log_pred, na.rm = TRUE)

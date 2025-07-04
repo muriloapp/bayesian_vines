@@ -15,7 +15,10 @@ sim_static_cop_3 = function(N=200){
   #theta_matrix  <- matrix(c(0,0.1,-0.7, 0,0,0.7, 0,0,0), 3, 3, byrow = FALSE)
   RVM <- RVineMatrix(sim_matrix, family = family_matrix, par = theta_matrix)
   U   <- RVineSim(N, RVM);  colnames(U) <- paste0("U", 1:d)
-  return(U)
+  return(list(U      = U,           # simulated observations
+              RVM    = RVM,         # full C-vine object
+              family = family_matrix,
+              theta  = theta_matrix))
 }
 
 sim_static_cop_8 = function(N=200){
