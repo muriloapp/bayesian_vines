@@ -34,7 +34,11 @@ build_cfg <- function(d) {
     indep_copula = bicop_dist("indep"),
     W_predict    = 5L,
     seed         = 126, #42
-    G            = 2L                      # Group in which tree
+    G            = 2L,                      # Group in which tree
+    
+    p_birth      = 0.25,   # prob of proposing a birth vs. death when edge set ≠ {0,K}
+    p_within     = 0.50,   # prob of proposing a RW inside the current model
+    q_theta_sd   = 0.50    # proposal SD for brand-new θ at birth
   )
 }
 

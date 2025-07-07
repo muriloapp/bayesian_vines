@@ -7,10 +7,19 @@ library(matrixStats)
 
 #set.seed(42)
 
-log_prior <- function(p, cfg) {
+# log_prior <- function(p, cfg) {
+#   with(cfg, {
+#     sum(dnorm(p$theta[p$gamma == 1L], 0, slab_sd, log = TRUE)) +
+#       sum(ifelse(p$gamma == 1L, log(1 - pi0_edge), log(pi0_edge)))
+#   })
+# }
+
+
+## for rjmcmc
+log_prior <- function(p, cfg) { 
   with(cfg, {
-    sum(dnorm(p$theta[p$gamma == 1L], 0, slab_sd, log = TRUE)) +
-      sum(ifelse(p$gamma == 1L, log(1 - pi0_edge), log(pi0_edge)))
+    ## θ only when γ=1
+    sum(dnorm(p$theta[p$gamma == 1L], 0, slab_sd, log = TRUE))
   })
 }
 
@@ -249,7 +258,7 @@ resample_move <- function(particles, newAncestors, data_up_to_t, cl, type, cfg, 
       p <- particles_local[[i]]
       local_acc <- 0L
       for (k in seq_len(cfg$n_mh)) {
-        p <- mh_step(p, data_up_to_t, skeleton, cfg) 
+        p <- rj_step(p, data_up_to_t, skeleton, cfg) 
         if (isTRUE(p$last_accept)) {
           local_acc <- local_acc + 1L
         }
@@ -454,4 +463,91 @@ compute_predictive_metrics <- function(u_obs, particles, skel, w_prev_for_predic
 }
 
 
+
+
+
+
+
+
+
+
+
+
+# Choose a single edge index with a given logical mask
+pick_edge <- function(mask) {
+  idx <- which(mask)
+  if (length(idx) == 0L) return(NA_integer_)
+  sample(idx, 1L)
+}
+
+
+rj_step <- function(p, data_up_to_t, skeleton, cfg) {
+  
+  # --- decide which type of move ------------------------------------------
+  g      <- p$gamma
+  n_on   <- sum(g)
+  move   <- "within"                              # default
+  if (n_on == 0)               move <- "birth"
+  else if (n_on == cfg$K)      move <- "death"
+  else if (runif(1) < cfg$p_within) move <- "within"
+  else if (runif(1) < cfg$p_birth)  move <- "birth" else move <- "death"
+  
+  prop <- p            # deep copy
+  log_q_fwd  <- 0
+  log_q_back <- 0
+  
+  if (move == "within") {
+    ## standard RW on an active θ
+    e <- pick_edge(g == 1L)
+    prop$theta[e] <- prop$theta[e] + rnorm(1, 0, cfg$step_sd)
+    
+  } else if (move == "birth") {
+    ## turn one zero–edge on -----------------------------------------------
+    e <- pick_edge(g == 0L)
+    prop$gamma[e] <- 1L
+    theta_new     <- rnorm(1, 0, cfg$q_theta_sd)
+    prop$theta[e] <- theta_new
+    
+    ## proposal densities
+    log_q_fwd  <- dnorm(theta_new, 0, cfg$q_theta_sd, log = TRUE) -
+      log(sum(g == 0L))         # choose which edge to switch on
+    ## backward: we would have to pick that *same* edge to die
+    log_q_back <- -log(sum(prop$gamma == 1L))
+    
+  } else { # death
+    ## turn one active edge off --------------------------------------------
+    e <- pick_edge(g == 1L)
+    theta_old     <- prop$theta[e]
+    prop$gamma[e] <- 0L
+    prop$theta[e] <- 0
+    
+    log_q_fwd  <- -log(n_on)        # choose which edge to kill
+    log_q_back <- dnorm(theta_old, 0, cfg$q_theta_sd, log = TRUE) -
+      log(sum(prop$gamma == 0L))
+  }
+  
+  ## --- likelihoods & priors -----------------------------------------------
+  vine_prop <- vine_from_particle(prop, skeleton, cfg)
+  vine_curr <- vine_from_particle(p,    skeleton, cfg)
+  
+  ll_prop <- sum(log(pmax(dvinecop(data_up_to_t, vine_prop), .Machine$double.eps)))
+  ll_curr <- sum(log(pmax(dvinecop(data_up_to_t, vine_curr), .Machine$double.eps)))
+  
+  ## Prior: now **no Bernoulli term** — only continuous θ when present
+  log_prior_prop <- sum(dnorm(prop$theta[prop$gamma == 1L], 0, cfg$slab_sd, log = TRUE))
+  log_prior_curr <- sum(dnorm(    p$theta[    p$gamma == 1L], 0, cfg$slab_sd, log = TRUE))
+  
+  ## --- Metropolis–Hastings ratio ------------------------------------------
+  log_acc <- (ll_prop + log_prior_prop) - (ll_curr + log_prior_curr) +
+    (log_q_back - log_q_fwd)          # Jacobian = 0 (log 1)
+  
+  if (log(runif(1)) < log_acc) {
+    prop$last_accept <- TRUE
+    return(prop)
+  } else {
+    p$last_accept <- FALSE
+    return(p)
+  }
+}
+  
 

@@ -1,0 +1,6 @@
+dkde1d                  Working with a kde1d object
+equi_jitter             Conditionally equidistant jittering
+kde1d                   Univariate local-polynomial likelihood kernel
+                        density estimation
+kde1d-package           One-Dimensional Kernel Density Estimation
+plot.kde1d              Plotting kde1d objects

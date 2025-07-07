@@ -1,0 +1,38 @@
+as.bicop                Convert list to bicop object
+as_rvine_structure      Coerce various kind of objects to R-vine
+                        structures and matrices
+bicop                   Fit and select bivariate copula models
+bicop_dist              Bivariate copula models
+bicop_distributions     Bivariate copula distributions
+bicop_predict_and_fitted
+                        Predictions and fitted values for a bivariate
+                        copula model
+emp_cdf                 Corrected Empirical CDF
+getters                 Extracts components of 'bicop_dist' and
+                        'vinecop_dist' objects
+mBICV                   Modified vine copula Bayesian information
+                        criterion (mBICv)
+pairs_copula_data       Exploratory pairs plot for copula data
+par_to_ktau             Conversion between Kendall's tau and parameters
+plot.bicop_dist         Plotting tools for 'bicop_dist' and 'bicop'
+                        objects
+plot.rvine_structure    Plotting R-vine structures
+plot.vinecop_dist       Plotting 'vinecop_dist' and 'vinecop' objects.
+pseudo_obs              Pseudo-Observations
+rosenblatt              (Inverse) Rosenblatt transform
+rvine_structure         R-vine structure
+rvine_structure_sim     Simulate R-vine structures
+rvinecopulib            High Performance Algorithms for Vine Copula
+                        Modeling
+truncate_model          Truncate a vine copula model
+vine                    Vine copula models
+vine_distributions      Vine based distributions
+vine_predict_and_fitted
+                        Predictions and fitted values for a vine copula
+                        model
+vinecop                 Fitting vine copula models
+vinecop_dist            Vine copula models
+vinecop_distributions   Vine copula distributions
+vinecop_predict_and_fitted
+                        Predictions and fitted values for a vine copula
+                        model
