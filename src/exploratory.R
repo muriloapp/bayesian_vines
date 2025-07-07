@@ -11,13 +11,13 @@ res_block <- readRDS("simul_results/static_dgp/block_stat_3.rds")
 res_stand$log_model_evidence
 res_block$log_model_evidence
 
-res_stand <- readRDS("simul_results/static_dgp/standard_3_pi05_nmh1_N250_KM")
+res_stand <- readRDS("simul_results/static_dgp/standard_6_M200_ivgamma_beta_l_2000_alt4")
 res_SS <- readRDS("simul_results/static_dgp/standard_3_pi05_nmh1_N250_SSVS")
 
 res_stand$theta_mean
 
 
-plot_theta_paths(res_stand$theta_mean, res_stand$theta_se, k=3, theta_true = 0.2)
+plot_theta_paths(res_stand$theta_mean, res_stand$theta_se, k=1, theta_true = 0.6)
 plot_theta_paths(res_SS$theta_mean, res_SS$theta_se, k=3, theta_true = 0.2)
 
 
@@ -65,6 +65,8 @@ plots <- lapply(seq_along(true_values_list), function(k) {
   )
 })
 
+
+################################################################################################
 # Add empty placeholders to fill 3x3 layout
 while (length(plots) < 4) {
   plots[[length(plots) + 1]] <- patchwork::plot_spacer()
@@ -152,7 +154,33 @@ plot_genealogy_theta(res_SS$theta_hist, res_SS$ancestorIndices, edge_id = 1)
 #results <- readRDS("simul_results/block_stat_3.rds")
 
 
-sum(res_SS$diag_log$ESS<500)
+mean(res_stand$diag_log$ESS)
+
+
+res_stand$mh_acc_pct
+
+
+res_stand$diag_log$unique
+
+
+
+theta_mean <- apply(res_stand$theta_hist, MARGIN = c(2, 3), FUN = mean)
+theta_sd <- apply(res_stand$theta_hist, MARGIN = c(2, 3), FUN = sd)
+
+
+
+plot_theta_paths(tanh(theta_mean), 2*theta_sd, k=1, theta_true = 0)
+
+
+
+
+
+theta_matrix  <- matrix(c(0,0.4, 0.6, 0,0,0.4, 0,0,0), 3, 3, byrow = FALSE)
+RVineGrad(U, data$RVM, theta_matrix)
+
+
+
+data$RVM
 
 
 
@@ -161,4 +189,24 @@ sum(res_SS$diag_log$ESS<500)
 
 
 
+
+
+
+
+# In 2D, we only have one pair of variables (1, 2) and one copula.
+# The structure matrix is fixed.
+sim_matrix    <- matrix(c(2,1, 0,1), 2, 2, byrow = FALSE)
+family_matrix <- matrix(c( 0,1, 0,0), 2, 2, byrow = FALSE)
+theta_matrix  <- matrix(c( 0,0.4, 0,0), 2, 2, byrow = FALSE)
+
+# Construct the 2D RVineMatrix object.
+RVM <- RVineMatrix(Matrix = sim_matrix, 
+                   family = family_matrix,
+                   par = theta_matrix, 
+                   names = c("V1", "V2"))
+
+part  <- matrix(c( 0, 0.20, 0, 0), 2, 2, byrow = FALSE)
+
+out2 <- RVineGrad(simdata, RVM, par = part)
+out2$gradient/nrow(simdata)
 

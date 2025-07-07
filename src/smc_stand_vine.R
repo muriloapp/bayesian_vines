@@ -22,6 +22,8 @@ assignInNamespace("see_if", function(...) invisible(TRUE), ns = "assertthat")
 source(here('src','core_functions.R'))
 source(here('src','simulation.R'))
 
+#Rcpp::sourceCpp("src/grad_first_tree.cpp")
+
 run_standard_smc <- function(data,
                     cfg,
                     type       = c("standard", "block"),
@@ -78,13 +80,13 @@ run_standard_smc <- function(data,
   parallel::clusterExport(
     cl,
     c("mh_step_in_tree", "vine_from_particle", "log_prior", "slab_sd_from_tau", "spike_sd_from_tau", "update_tau2", "rinvgamma", "dinvgamma", "update_pi",
-      "bicop_dist", "vinecop_dist", "dvinecop", "skeleton", "cfg", "fast_vine_from_particle",
-      "mh_step", "propagate_particles", "update_weights", "ESS",
+      "bicop_dist", "vinecop_dist", "dvinecop", "skeleton", "cfg", "fast_vine_from_particle", "mala_rw_step", #"grad_first_tree_gaussian",
+      "mh_step", "propagate_particles", "update_weights", "ESS", "grad_first_tree_gaussian_from_vineCopula", "build_last_row_matrix", "RVineMatrix", "RVineGrad",
       "diagnostic_report", "systematic_resample", "resample_move",
       "compute_predictive_metrics", "compute_log_incr"),
     envir = environment()
   )
-  
+  #parallel::clusterEvalQ(cl, Rcpp::sourceCpp("src/grad_first_tree.cpp"))
   # ── main SMC loop ──────────────────────────────────────────────────────────
   for (t_idx in seq_len(N)) {
     u_row <- U[t_idx, , drop = FALSE]

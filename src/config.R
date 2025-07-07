@@ -17,7 +17,7 @@ load_packages <- function() {
 }
 
 build_cfg <- function(d, tau_prior = c("fixed", "inv_gamma"),
-                      tau0      = 0.025,      # ≈ old spike_sd
+                      tau0      = 0.010,      # ≈ old spike_sd
                       c_slab    = 37,      # so c*tau0 ≈ old slab_sd = 0.50
                       a0 = 3, b0 = (a0 - 1) * tau0^2,   # hyper-pars if IG
                       pi_prior = c("fixed","beta"),
@@ -52,7 +52,8 @@ build_cfg <- function(d, tau_prior = c("fixed", "inv_gamma"),
     c_slab    = c_slab,       
     tau_prior = tau_prior,     
     tau0      = tau0,          
-    a0        = a0, b0 = b0    
+    a0        = a0, b0 = b0,
+    eps       = 0.50
   )
 }
 

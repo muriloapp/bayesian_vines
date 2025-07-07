@@ -4,6 +4,10 @@ library(data.table)
 library(tictoc)
 library(matrixStats)
 
+adapt <- function(acc, eps) {
+  eps <- exp(log(eps) + 0.01*(acc - 0.57))
+  eps}
+
 
 spike_sd_from_tau <- function(tau){tau}
 
@@ -199,7 +203,14 @@ mh_step_in_tree <- function(p, tr, data_up_to_t, temp_skel, cfg) {
 
 mh_step <- function(p, data_up_to_t, skeleton, cfg) {
   prop <- p
-  prop$theta <- p$theta + rnorm(cfg$K, 0, cfg$step_sd)
+  
+  sd_rw <- ifelse(abs(p$theta) > 0.4,
+                  0.1,
+                  cfg$step_sd)
+  
+  prop$theta <- p$theta + rnorm(cfg$K, 0, sd_rw)
+  
+  #prop$theta <- p$theta + rnorm(cfg$K, 0, cfg$step_sd)
   
   vine_prop <- fast_vine_from_particle(prop, skeleton)
   vine_curr <- fast_vine_from_particle(p,    skeleton)
@@ -225,6 +236,100 @@ mh_step <- function(p, data_up_to_t, skeleton, cfg) {
   p
 }
 
+build_last_row_matrix <- function(params) {
+  
+  d <- length(params)+1
+  # --- 1. Validate inputs ---
+  # The number of parameters must be one less than the dimension.
+  if (length(params) != d - 1) {
+    stop(paste("This function requires d-1 =", d-1, "parameters for a", d, "x", d, "matrix."))
+  }
+  
+  # --- 2. Create a matrix of all zeros ---
+  my_matrix <- matrix(0, nrow = d, ncol = d)
+  
+  # --- 3. Assign the parameters to the last row ---
+  # This selects the last row (d) and columns 1 through d-1.
+  my_matrix[d, 1:(d-1)] <- params
+  
+  return(my_matrix)
+}
+
+
+grad_first_tree_gaussian_from_vineCopula <- function(u_block, params){
+  #sim_matrix    <- matrix(c(3,2,1, 0,2,1, 0,0,1), 3, 3, byrow = FALSE)
+  #family_matrix <- matrix(c(0,0,1, 0,0,1, 0,0,0), 3, 3, byrow = FALSE)
+  d <- length(params)+1
+  sim_matrix <- matrix(0, d, d)
+  for (j in 1:d) {
+    # The original values are j:d
+    # The transformed values are (d + 1) - (j:d)
+    sim_matrix[j:d, j] <- (d + 1) - (j:d)
+  }        # column j :  j, j+1, …, d
+  family_matrix <- matrix(c(0,0,0, 0,0,1, 0,0,0, 0,0,1,0,0,0, 0,0,1,0,0,0, 0,0,1,0,0,0, 0,0,1,0,0,0, 0,0,0), 6, 6, byrow = FALSE)
+  ## 2. Family- and parameter matrices (lower-triangular part only)
+
+  theta_matrix  <- build_last_row_matrix(tanh(params))
+  RVM <- RVineMatrix(Matrix = sim_matrix, 
+                     family = family_matrix
+                     #par = theta_matrix, 
+                     )
+  grad <- RVineGrad(u_block, RVM, theta_matrix)
+  grad$gradient[1:length(params)]/nrow(u_block)
+}
+
+
+mala_rw_step <- function(p, u_block, skeleton, cfg) {
+  L1 <- cfg$d - 1L     
+  eps <- cfg$eps
+  # first-tree length
+  # ---- 1. gradient for tree-1 edges ----
+  #g1  <- grad_first_tree_gaussian(u_block, p$theta[1:L1])
+  g1  <- grad_first_tree_gaussian_from_vineCopula(u_block, p$theta[1:L1])
+  # ---- 2. MALA proposal for tree-1 ----
+  theta_prop <- p$theta
+  #theta_prop[1:L1] <- theta_prop[1:L1] + 0.5*eps^2 * g1 +
+  #  eps * rnorm(L1)
+  theta_prop[1:L1] <- theta_prop[1:L1] + eps^2 * g1 +
+     rnorm(L1, 0, cfg$step_sd)
+  # ---- 3. Random-walk for deeper trees ----
+  theta_prop[(L1+1):cfg$K] <-
+    theta_prop[(L1+1):cfg$K] + rnorm(cfg$K-L1, 0, cfg$step_sd)
+  
+  prop        <- p
+  prop$theta  <- theta_prop
+  
+  # ---- 4. log-likelihoods ----
+  vine_prop <- fast_vine_from_particle(prop, skeleton)
+  vine_curr <- fast_vine_from_particle(p,    skeleton)
+  ll_prop   <- sum(log(pmax(dvinecop(u_block, vine_prop), .Machine$double.eps)))
+  ll_curr   <- sum(log(pmax(dvinecop(u_block, vine_curr), .Machine$double.eps)))
+  
+  # ---- 5. Metropolis correction (only tree-1 matters) ----
+  log_q_fwd <- sum(dnorm(theta_prop[1:L1],
+                         p$theta[1:L1] + eps^2 * g1,
+                         eps, log = TRUE))
+  ## gradient at proposal (needed for reverse kernel)
+  g1_prop <- grad_first_tree_gaussian_from_vineCopula(u_block, theta_prop[1:L1])
+  log_q_rev <- sum(dnorm(p$theta[1:L1],
+                         theta_prop[1:L1] + eps^2 * g1_prop,
+                         eps, log = TRUE))
+  
+  log_acc <- (ll_prop + log_prior(prop, cfg) -
+                ll_curr - log_prior(p,    cfg)) +
+    (log_q_rev - log_q_fwd)
+  
+  if (log(runif(1)) < log_acc) {
+    p$theta <- theta_prop
+    p$last_accept <- TRUE
+  } else   p$last_accept <- FALSE
+  
+  # ---- 6. Gibbs updates τ² and π (unchanged) ----
+  p <- update_tau2(p, cfg)
+  p <- update_pi(p, cfg)
+  p
+}
+
 
 # # Adaptive Proposal SD
 # adaptive_proc_sd <- function(theta_mat, w_new, scale = 0.3, floor_val = 1e-3) {
@@ -238,7 +343,7 @@ mh_step <- function(p, data_up_to_t, skeleton, cfg) {
 #   return(proc_sd)
 # }
 
-compute_adapt_step_sd <- function(cfg, acc_pct, lambda = 0.25, target_acc = 0.10, sd_min = 0.02, sd_max=0.1){
+compute_adapt_step_sd <- function(cfg, acc_pct, lambda = 0.25, target_acc = 0.30, sd_min = 0.02, sd_max=0.1){
   log_sd_new <- log(cfg$step_sd) + lambda * (acc_pct/100 - target_acc)
   step_sd <- pmin(pmax(exp(log_sd_new), sd_min), sd_max)
   cat(sprintf(
@@ -382,6 +487,8 @@ resample_move <- function(particles, newAncestors, data_up_to_t, cl, type, cfg, 
     "MH acceptance = %4d / %4d  =  %.2f%%\n\n",
     mh_n_acc, mh_n_prop, acc_pct
   ))
+  
+  #cfg$eps <- adapt(acc_pct / 100, cfg$eps)          #  ←  HERE
   
   return(list(particles = particles, acc_pct = acc_pct))
 }
@@ -695,6 +802,11 @@ compute_predictive_metrics <- function(u_obs, particles, skel, w_prev_for_predic
     gamma_se      = gamma_sd_now
   ))
 }
+
+
+
+
+
 
 
 

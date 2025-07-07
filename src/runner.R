@@ -47,10 +47,10 @@ cfg_variants <- list(
   #   tau_prior  = "fixed"
   # ) ,
   list(
-    label      = "M200_ivgamma_beta",
+    label      = "M200_ivgamma_beta_1000_alt5",
     tau_prior  = "inv_gamma",
     pi_prior   = "beta",
-    M           = 2000
+    M           = 1000
   )
 )
 
