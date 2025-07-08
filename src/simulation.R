@@ -10,12 +10,16 @@ library(here)
 sim_static_cop_3 = function(N=200){
   d=3
   sim_matrix    <- matrix(c(1,2,3, 0,2,3, 0,0,3), 3, 3, byrow = FALSE)
-  family_matrix <- matrix(c(0,1,1, 0,0,1, 0,0,0), 3, 3, byrow = FALSE)
-  theta_matrix  <- matrix(c(0,0.0, 0.6, 0,0,0.4, 0,0,0), 3, 3, byrow = FALSE)
+  family_matrix <- matrix(c(0,3,1, 0,0,1, 0,0,0), 3, 3, byrow = FALSE)
+  theta_matrix  <- matrix(c(0,0.5, 0.6, 0,0,0.4, 0,0,0), 3, 3, byrow = FALSE)
   #theta_matrix  <- matrix(c(0,0.1,-0.7, 0,0,0.7, 0,0,0), 3, 3, byrow = FALSE)
   RVM <- RVineMatrix(sim_matrix, family = family_matrix, par = theta_matrix)
   U   <- RVineSim(N, RVM);  colnames(U) <- paste0("U", 1:d)
-  return(U)
+  return(  ## 4. Return both the data and the true specification
+    list(U      = U,           # simulated observations
+         RVM    = RVM,         # full C-vine object
+         family = family_matrix,
+         theta  = theta_matrix))
 }
 
 sim_static_cop_8 = function(N=200){
@@ -259,4 +263,55 @@ sim_static_cop_6 <- function(N      = 200,
 # out$family            # 6 × 6 family matrix (0 = independence, 1 = Gaussian)
 # out$theta             # 6 × 6 correlation matrix (zeros on skipped edges)
 # head(out$U)           # your data
+
+
+library(VineCopula)
+
+sim_static_cop_6_3f <- function(N      = 200,
+                             p_zero = 0.5,      # prob. to drop the edge
+                             p_clayton = 0.2,   # prob. Clayton (if kept)
+                             rho_lo = -0.99,
+                             rho_hi =  0.99) {
+  d <- 6
+  
+  ## 1. C-vine structure matrix
+  sim_matrix <- matrix(0, d, d)
+  for (j in 1:d)
+    sim_matrix[j:d, j] <- j:d
+  
+  ## 2. Family- and parameter matrices
+  family_matrix <- matrix(0, d, d)
+  theta_matrix  <- matrix(0, d, d)
+  
+  for (j in 1:(d - 1)) {
+    for (i in (j + 1):d) {
+      if (runif(1) > p_zero) {  # keep the edge?
+        if (runif(1) < p_clayton) {
+          ## assign Clayton (3)
+          family_matrix[i, j] <- 3
+          theta_matrix[i,  j] <- runif(1, 0.01, 0.99)
+        } else {
+          ## assign Gaussian (1)
+          family_matrix[i, j] <- 1
+          theta_matrix[i, j]  <- runif(1, rho_lo, rho_hi)
+        }
+      }
+    }
+  }
+  
+  ## 3. Build the R-vine object and simulate data
+  RVM <- RVineMatrix(sim_matrix,
+                     family = family_matrix,
+                     par    = theta_matrix)
+  
+  U <- RVineSim(N, RVM)
+  colnames(U) <- paste0("U", 1:d)
+  
+  ## 4. Return both the data and the true specification
+  list(U      = U,
+       RVM    = RVM,
+       family = family_matrix,
+       theta  = theta_matrix)
+}
+
 

@@ -38,6 +38,7 @@ run_standard_smc <- function(data,
   # ── pre-allocate diagnostics ───────────────────────────────────────────────
   out <- list(
     log_pred   = numeric(N),
+    waic  = matrix(NA_real_, N, 3),
     theta_mean = matrix(NA_real_, N, K),
     theta_se   = matrix(NA_real_, N, K),
     gamma_mean = matrix(NA_real_, N, K),
@@ -56,6 +57,8 @@ run_standard_smc <- function(data,
     mh_acc_pct      = rep(NA_real_, N),
     step_sd_hist      = rep(NA_real_, N),
     theta_hist      = array(NA_real_,    dim = c(M, N, K)),
+    model_hist      = array(NA_real_,    dim = c(M, N, K)),
+    is_slab_hist      = array(NA_real_,    dim = c(M, N, K)),
     #gamma_hist      = array(NA_integer_, dim = c(M, N, K)),
     ancestorIndices = matrix(0L, M, N),
     incl_hist = matrix(NA_real_, N, K),
@@ -78,7 +81,7 @@ run_standard_smc <- function(data,
   parallel::clusterExport(
     cl,
     c("mh_step_in_tree", "vine_from_particle", "log_prior", "slab_sd_from_tau", "spike_sd_from_tau", "update_tau2", "rinvgamma", "dinvgamma", "update_pi",
-      "bicop_dist", "vinecop_dist", "dvinecop", "skeleton", "cfg", "fast_vine_from_particle",
+      "bicop_dist", "vinecop_dist", "dvinecop", "skeleton", "cfg", "fast_vine_from_particle", "try_family_switch", "valid_tau", "tau2par", "update_is_slab", "waic_ibis",
       "mh_step", "propagate_particles", "update_weights", "ESS",
       "diagnostic_report", "systematic_resample", "resample_move",
       "compute_predictive_metrics", "compute_log_incr"),
@@ -92,10 +95,11 @@ run_standard_smc <- function(data,
     # 1. propagate step ──────────────────────────────────────────────────────
     #particles <- propagate_particles(particles, cfg)
     
+    w_prev <- vapply(particles, `[[`, numeric(1), "w")
+    w_prev <- w_prev / sum(w_prev)
     # 2. predictive metrics (after burn-in) ──────────────────────────────────
     if (t_idx > cfg$W_predict) {
-      w_prev <- vapply(particles, `[[`, numeric(1), "w")
-      w_prev <- w_prev / sum(w_prev)
+      
       
       pm <- compute_predictive_metrics(u_row, particles,
                                        skeleton, w_prev, cfg)
@@ -106,9 +110,11 @@ run_standard_smc <- function(data,
       out$gamma_mean[t_idx,] <- pm$gamma_mean
       out$gamma_se[t_idx,]   <- pm$gamma_se
     }
-    
     # 3. weight update ──────────────────────────────────────────────────────
-    log_incr  <- compute_log_incr(particles, u_row, skeleton, cfg)
+    out_log  <- compute_log_incr(particles, u_row, skeleton, cfg)
+    log_incr <- out_log$log_incr
+    out$waic[t_idx, ] <- unlist(waic_ibis(out_log$log_li, w_prev))
+    
     particles <- update_weights(particles, log_incr)
     w_new     <- vapply(particles, `[[`, numeric(1), "w")
     
@@ -149,6 +155,8 @@ run_standard_smc <- function(data,
     # 6. save history ───────────────────────────────────────────────────────
     out$theta_hist[, t_idx, ] <- t(vapply(particles, `[[`, numeric(K), "theta"))
     #out$gamma_hist[, t_idx, ] <- t(vapply(particles, `[[`, integer(K), "gamma"))
+    out$model_hist[, t_idx, ] <- t(vapply(particles, `[[`, numeric(K), "m"))
+    out$is_slab_hist[, t_idx, ] <- t(vapply(particles, `[[`, numeric(K), "is_slab"))
     
     theta_mat <- do.call(rbind, lapply(particles, `[[`, "theta"))
     tau_vec   <- sqrt(vapply(particles, function(p) p$tau2, numeric(1)))

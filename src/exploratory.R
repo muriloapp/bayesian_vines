@@ -11,7 +11,7 @@ res_block <- readRDS("simul_results/static_dgp/block_stat_3.rds")
 res_stand$log_model_evidence
 res_block$log_model_evidence
 
-res_stand <- readRDS("simul_results/static_dgp/standard_3_pi05_nmh1_N250_KM")
+res_stand <- readRDS("simul_results/static_dgp/standard_3_N250_3F")
 res_SS <- readRDS("simul_results/static_dgp/standard_3_pi05_nmh1_N250_SSVS")
 
 res_stand$theta_mean
@@ -158,7 +158,89 @@ sum(res_SS$diag_log$ESS<500)
 
 
 
+tic()
+for (i in 1:1000){j= i+1
+print(j)}
+toc()
 
 
+
+
+mean_theta <- apply(res_stand$theta_hist, c(2, 3), mean)
+
+
+plot_theta_paths(results$theta_mean, results$theta_se, k=1, theta_true = 0.6)
+
+
+dim(res_stand$model_hist)
+
+
+
+
+
+
+
+
+
+
+
+
+
+## --------------------------------------------------
+##  Inputs (already in your workspace)
+##  res_stand$is_slab_hist : 1000 × 20 × 3   (0 = spike, 1 = slab)
+##  res_stand$model_hist   : 1000 × 20 × 3   (1 = Gaussian, 2 = Clayton)
+##  res_stand$theta_hist   : 1000 × 20 × 3   (θ values)
+## --------------------------------------------------
+
+## 1.  Derive a single “family code” array.
+##     0 = independent, 1 = Gaussian, 2 = Clayton
+family <- ifelse(res_stand$is_slab_hist == 0L,
+                 0L,                               # spike → independent
+                 res_stand$model_hist)             # slab  → use model id
+
+N <- dim(family)[1]     # number of particles  (= 1000)
+T <- dim(family)[2]     # time points          (= 20)
+P <- dim(family)[3]     # parameters           (= 3)
+
+## 2.  Proportion of each family, for every (t, p) pair.
+prop_family <- array(NA_real_, c(T, P, 3),
+                     dimnames = list(time   = seq_len(T),
+                                     param  = seq_len(P),
+                                     family = c("indep","gauss","clayton")))
+
+for (t in seq_len(T)) {
+  for (p in seq_len(P)) {
+    counts <- tabulate(family[, t, p] + 1L, nbins = 3)  # +1 → 1-based ids
+    prop_family[t, p, ] <- counts / N
+  }
+}
+
+## 3.  Conditional means of θ for each family.
+mean_theta <- array(NA_real_, c(T, P, 3),
+                    dimnames = dimnames(prop_family))
+
+for (t in seq_len(T)) {
+  for (p in seq_len(P)) {
+    for (f in 0:2) {                    # 0 = indep, 1 = gauss, 2 = clayton
+      idx <- family[, t, p] == f
+      if (any(idx)) {
+        mean_theta[t, p, f + 1] <- mean(res_stand$theta_hist[idx, t, p])
+      }
+    }
+  }
+}
+
+## 4.  (Optional) Split outputs into convenient lists of 20×3 matrices
+prop_list  <- lapply(1:3, \(k) prop_family[ , , k])
+mean_list  <- lapply(1:3, \(k) mean_theta[ , , k])
+names(prop_list) <- names(mean_list) <- c("indep", "gauss", "clayton")
+
+##  prop_list[["gauss"]][t, p]  is the proportion of Gaussian particles
+##  mean_list[["clayton"]][t, p] is E[θ | Clayton]  at time t, parameter p
+
+
+
+res_stand
 
 

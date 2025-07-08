@@ -23,8 +23,44 @@ log_prior <- function(p,cfg){
   ll_pi  <- if(cfg$pi_prior=="fixed") 0
   else dbeta(pi, cfg$a_pi, cfg$b_pi, log=TRUE)
   
-  ll_mix + ll_tau + ll_pi
+  
+  ll_m  <- sum(log(cfg$omega[p$m]))
+  
+  ll_mix + ll_tau + ll_pi + ll_m            
 }
+
+# new_particle <- function(cfg){
+#   # --- τ² block unchanged -----------------------------------
+#   tau2 <- if(cfg$tau_prior=="fixed") {cfg$tau0^2}
+#   else {rinvgamma(1, cfg$a0, cfg$b0)}
+#   tau  <- sqrt(tau2)
+#   
+#   # --- NEW π draw ------------------------------------------
+#   pi   <- if(cfg$pi_prior=="fixed") cfg$pi0
+#   else rbeta(1, cfg$a_pi, cfg$b_pi)
+#   
+#   # --- θ draws from *mixture* -------------------------------
+#   is_slab <- rbinom(cfg$K, 1, 1 - pi)
+#   
+#   aux_slab <- slab_sd_from_tau(tau,cfg)
+#   aux_spike <- spike_sd_from_tau(tau)
+#   theta   <- rnorm(cfg$K, 0,
+#                    ifelse(is_slab,
+#                           aux_slab,
+#                           aux_spike))
+#   
+#   list(theta = tanh(theta),
+#        tau2  = tau2,
+#        pi    = pi,        # << store π
+#        w     = 1/cfg$M,
+#        m     = sample.int(cfg$n_fam, cfg$K, TRUE),
+#        last_accept = FALSE,
+#        aux_slab = aux_slab,
+#        aux_spike = aux_spike,
+#        is_slab = is_slab
+#        )
+# }
+
 
 new_particle <- function(cfg){
   # --- τ² block unchanged -----------------------------------
@@ -46,17 +82,25 @@ new_particle <- function(cfg){
                           aux_slab,
                           aux_spike))
   
-  list(theta = theta,
+  is_slab[ abs(theta) < cfg$delta_spike ] <- 0L
+  
+  m     = sample.int(cfg$n_fam, cfg$K, TRUE)
+  ## ---- Rule B: Clayton & τ ≤ 0  → spike -----------------------
+  tau <- tanh(theta)               # because θ is still raw latent
+  bad  <- which(m == 2L & theta <= 0)
+  if (length(bad))  is_slab[bad] <- 0L
+  
+  list(theta = tau,
        tau2  = tau2,
        pi    = pi,        # << store π
        w     = 1/cfg$M,
+       m     = m,
        last_accept = FALSE,
        aux_slab = aux_slab,
        aux_spike = aux_spike,
        is_slab = is_slab
-       )
+  )
 }
-
 
 vine_from_particle <- function(p, skel) {
     pcs <- lapply(skel$pair_copulas, function(lvl) lapply(lvl, identity))
@@ -71,21 +115,91 @@ vine_from_particle <- function(p, skel) {
 }
 
 
+tau2par <- function(tau, m) {
+  switch(as.character(m),
+         "1" = sin(pi * tau / 2),              # Gaussian: ρ = sin(π τ / 2)
+         "2" = {                               # Clayton: θ = 2 τ / (1-τ),  τ>0
+           if (tau <= 0) return(0.001)             #   τ≤0 → independence (or rotated)
+           if (2 * tau / (1 - tau) >= 27.99){
+             27.99
+           } else{
+             2 * tau / (1 - tau) 
+           }
+         },
+         stop("unknown family id")
+  )
+}
+
+valid_tau <- function(tau, m) {
+  switch(as.character(m),
+         "1" = TRUE,        # Gaussian: any τ ∈ (-1,1)
+         "2" = tau > 0,     # Clayton  : τ must be > 0
+         FALSE
+  )
+}
+
+# ------------------------------------------------------------------
+# Build a vinecop_dist that reflects (m, θ) for *one* particle
+# ------------------------------------------------------------------
 fast_vine_from_particle <- function(p, skel) {
   
-  rho <- tanh(p$theta)
-  pcs <- rlang::duplicate(skel$pair_copulas, shallow = TRUE)  # or FALSE in parallel
-  
+  pcs <- rlang::duplicate(skel$pair_copulas, shallow = TRUE)
   idx <- 1L
-  for (tr in seq_along(pcs)){
+  
+  for (tr in seq_along(pcs)) {
     for (ed in seq_along(pcs[[tr]])) {
-      pcs[[tr]][[ed]]$parameters <- matrix(rho[idx], 1, 1)    # ← key change
-      pcs[[tr]][[ed]]$npars      <- 1L                        # be explicit
+      
+      # ---- latent → Kendall’s τ -----------------------------------------
+      tau    <- tanh(p$theta[idx])            # now bounded (-1,1)
+      fam_id <- p$m[idx]
+      
+      if (!valid_tau(tau, fam_id)) {
+        # put an *exact* independence copula if τ outside support
+        pcs[[tr]][[ed]]$family     <- "gaussian"
+        pcs[[tr]][[ed]]$parameters <- matrix(0, 1, 1)
+        pcs[[tr]][[ed]]$npars      <- 1L
+      } else {
+        # ---- τ  →  family parameter -------------------------------------
+        par <- tau2par(tau, fam_id)
+        
+        if (fam_id == 1L) {                         # Gaussian
+          pcs[[tr]][[ed]]$family     <- "gaussian"
+          pcs[[tr]][[ed]]$parameters <- matrix(par, 1, 1)
+          
+        } else if (fam_id == 2L) {                  # Clayton
+          pcs[[tr]][[ed]]$family     <- "clayton"
+          pcs[[tr]][[ed]]$parameters <- matrix(par, 1, 1)
+          
+        } else {
+          stop(sprintf("Edge %d: unsupported family id %d", idx, fam_id))
+        }
+        
+        pcs[[tr]][[ed]]$npars <- 1L
+      }
+      
       idx <- idx + 1L
-    }}
+    }
+  }
   
   vinecop_dist(pcs, skel$structure)
 }
+
+
+# fast_vine_from_particle <- function(p, skel) {
+#   
+#   rho <- tanh(p$theta)
+#   pcs <- rlang::duplicate(skel$pair_copulas, shallow = TRUE)  # or FALSE in parallel
+#   
+#   idx <- 1L
+#   for (tr in seq_along(pcs)){
+#     for (ed in seq_along(pcs[[tr]])) {
+#       pcs[[tr]][[ed]]$parameters <- matrix(rho[idx], 1, 1)    # ← key change
+#       pcs[[tr]][[ed]]$npars      <- 1L                        # be explicit
+#       idx <- idx + 1L
+#     }}
+#   
+#   vinecop_dist(pcs, skel$structure)
+# }
 
 
 
@@ -135,6 +249,35 @@ update_tau2 <- function(p, cfg){
   b_post <- cfg$b0 + 0.5 * (s0 + s1)
   
   p$tau2 <- rinvgamma(1, a_post, b_post)
+  p
+}
+
+update_is_slab <- function(p, cfg) {
+  
+  tau  <- sqrt(p$tau2)
+  v_sp <- tau
+  v_sl <- slab_sd_from_tau(tau, cfg)
+  
+  ## posterior responsibility for slab
+  den_sp <- p$pi      * dnorm(p$theta, 0, v_sp)
+  den_sl <- (1 - p$pi) * dnorm(p$theta, 0, v_sl)
+  w_sl   <- den_sl / (den_sp + den_sl + 1e-300)
+  
+  # ## ----- Rule: keep overlap strictly positive ------------------
+  # eps <- cfg$eps_overlap
+  # w_sl <- pmin(pmax(w_sl, eps), 1 - eps)
+  
+  ## ----- Rule A: near-zero θ ⇒ spike ---------------------------
+  near0 <- abs(p$theta) < 0.05
+  w_sl[near0] <- 0       # deterministic spike
+  
+  ## ----- Rule B: Clayton with τ≤0 ⇒ spike ----------------------
+  tau_raw <- tanh(p$theta)
+  bad <- which(p$m == 2L & tau_raw <= 0)
+  if (length(bad))  w_sl[bad] <- 0
+  
+  ## final draw
+  p$is_slab <- rbinom(cfg$K, 1, w_sl)
   p
 }
 
@@ -201,6 +344,10 @@ mh_step <- function(p, data_up_to_t, skeleton, cfg) {
   prop <- p
   prop$theta <- p$theta + rnorm(cfg$K, 0, cfg$step_sd)
   
+  prop <- try_family_switch(prop, cfg)
+  
+  ## Need to run a family switch possibility
+  
   vine_prop <- fast_vine_from_particle(prop, skeleton)
   vine_curr <- fast_vine_from_particle(p,    skeleton)
   
@@ -222,7 +369,30 @@ mh_step <- function(p, data_up_to_t, skeleton, cfg) {
   ## NEW ---------------------------------------------------------------
   p <- update_tau2(p, cfg)
   p <- update_pi(p,cfg)        # << NEW
+  
+  p <- update_is_slab(p, cfg)
   p
+}
+
+# -----------------------------------------------------------
+# Attempt a family flip for every *slab* edge with probability p_switch
+# Keeps τ (⇒ raw θ) unchanged; only m is changed if the new family is valid
+# -----------------------------------------------------------
+try_family_switch <- function(prop, cfg) {
+  
+  idx_slab <- which(prop$is_slab == 1L)     # or use gamma==1L
+  if (!length(idx_slab)) return(prop)
+  
+  for (e in idx_slab) if (runif(1) < cfg$p_switch) {
+    
+    m_old <- prop$m[e]
+    m_new <- sample(setdiff(seq_len(cfg$n_fam), m_old), 1)
+    
+    tau_e <- tanh(prop$theta[e])             # latent θ → τ
+    if (valid_tau(tau_e, m_new))             # family supports that τ
+      prop$m[e] <- m_new                     # flip accepted into proposal
+  }
+  prop
 }
 
 
@@ -297,6 +467,7 @@ propagate_particles <- function(particles, cfg) {
 
 compute_log_incr <- function(particles, u_row, skeleton, cfg) {
   log_incr <- numeric(cfg$M)
+  log_li <- numeric(cfg$M)
   
   for (j in seq_along(particles)) {
       p <- particles[[j]]
@@ -305,9 +476,10 @@ compute_log_incr <- function(particles, u_row, skeleton, cfg) {
       dens_val     <- dvinecop(u_row, vine_j)
       li           <- ifelse(dens_val <= 0, -1e100, log(dens_val))
       log_incr[j]  <- li
+      log_li[j] <- log(dens_val + 1e-300)
     }
  
-  log_incr
+  list(log_incr=log_incr,log_li=log_li)
 }
 
 
@@ -696,5 +868,44 @@ compute_predictive_metrics <- function(u_obs, particles, skel, w_prev_for_predic
   ))
 }
 
+
+
+# ---------------------------------------------------------------
+#  WAIC for an IBIS / particle filter run
+#  --------------------------------------------------------------
+#  loglik_mat : T × M  matrix of per-particle log p(y_t | θ_{t-1,i})
+#  wprev_mat  : T × M  matrix of normalised weights w_{t-1,i}
+#  --------------------------------------------------------------
+waic_ibis <- function(loglik_mat, wprev_mat) {
+  
+  if (!all(dim(loglik_mat) == dim(wprev_mat)))
+    stop("loglik_mat and wprev_mat must have identical dimensions")
+  
+  ## helper for weighted mean
+  wmean <- function(x, w) sum(w * x)
+  
+  T  <- length(loglik_mat)
+  lppd  <- 0
+  p_waic <- 0
+  
+  for (t in 1:T) {
+    
+    ll  <- loglik_mat[t]
+    w   <- wprev_mat[t]
+    
+    ## pointwise predictive density E_{θ|y}(p(y_t|θ))
+    lppd_t <- log( wmean( exp(ll), w ) + 1e-300 )
+    lppd   <- lppd + lppd_t
+    
+    ## posterior variance of log-likelihood
+    mu  <- wmean(ll, w)
+    var <- wmean( (ll - mu)^2, w )
+    p_waic <- p_waic + var
+  }
+  
+  waic <- -2*lppd + 2*p_waic
+  
+  list(LPPD = lppd, p_WAIC = p_waic, WAIC = waic)
+}
 
 

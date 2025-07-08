@@ -23,7 +23,8 @@ build_cfg <- function(d, tau_prior = c("fixed", "inv_gamma"),
                       pi_prior = c("fixed","beta"),
                       pi0   = 0.50,                     # centre if fixed
                       a_pi  = 2, b_pi = 2,
-                      adapt_step_sd = TRUE
+                      adapt_step_sd = TRUE,
+                      n_fam = 2
   ) {
   tau_prior <- match.arg(tau_prior)
   
@@ -40,7 +41,7 @@ build_cfg <- function(d, tau_prior = c("fixed", "inv_gamma"),
     step_sd      = 0.05,
     #p_flip_edge  = 0.25,
     #indep_copula = bicop_dist("indep"),
-    W_predict    = 750L,
+    W_predict    = 5L,
     seed         = 42,
     G            = 2L,                      # Group in which tree
     adapt_step_sd = adapt_step_sd,
@@ -52,7 +53,14 @@ build_cfg <- function(d, tau_prior = c("fixed", "inv_gamma"),
     c_slab    = c_slab,       
     tau_prior = tau_prior,     
     tau0      = tau0,          
-    a0        = a0, b0 = b0    
+    a0        = a0, b0 = b0,
+    
+    n_fam  = n_fam,                      # Gaussian, Frank, Clayton, Gumbel …
+    omega  = rep(1/n_fam, n_fam),   # π(m) – eq. (6)
+    p_switch = 0.20,
+    
+    delta_spike <- 0.05,      # |θ| < δ → forced spike
+    eps_overlap <- 1e-3 
   )
 }
 

@@ -36,7 +36,7 @@ run_and_save <- function(data, cfg, alg = c("standard", "block"), tag = NULL) {
 
 
 set.seed(42)
-data  <- sim_static_cop_6(N = 300)    
+data  <- sim_static_cop_3(N = 20)    
 U <- data$U
 d  <- ncol(U)
 
@@ -47,10 +47,10 @@ cfg_variants <- list(
   #   tau_prior  = "fixed"
   # ) ,
   list(
-    label      = "M200_ivgamma_beta",
+    label      = "N250_3F",
     tau_prior  = "inv_gamma",
-    pi_prior   = "beta",
-    M           = 2000
+    pi_prior   = "beta"
+    #M           = 2000
   )
 )
 
