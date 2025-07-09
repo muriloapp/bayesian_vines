@@ -89,6 +89,9 @@ run_standard_smc <- function(data,
     envir = environment()
   )
   
+  
+  #cehck parLapplyLB()
+  
   # ── main SMC loop ──────────────────────────────────────────────────────────
   for (t_idx in seq_len(N)) {
     u_row <- U[t_idx, , drop = FALSE]
