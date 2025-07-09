@@ -2,7 +2,7 @@
 #  C-vine SMC with spike-and-slab prior
 #  2025-06-16
 # ──────────────────────────────────────────────────────────────────────────────
-set.seed(126)
+
 quiet_assert <- function() {
   assignInNamespace("assert_that", function(...) invisible(TRUE), ns = "assertthat")
   assignInNamespace("see_if",      function(...) invisible(TRUE), ns = "assertthat")
@@ -75,11 +75,11 @@ build_cfg <- function(d, tau_prior = c("fixed", "inv_gamma"),
 
 
 source(here("src", "core_functions.R"))
-source(here("src", "core_functions_rjmcmc.R"))
+#source(here("src", "core_functions_rjmcmc.R"))
 source(here("src", "simulation.R"))
 source(here("src", "smc_stand_vine.R"))
 source(here("src", "smc_block_vine.R"))
-source(here("src", "smc_vines_rjmcmc.R"))
+#source(here("src", "smc_vines_rjmcmc.R"))
 source(here("src", "results_helpers.R"))
 
 quiet_assert()                       

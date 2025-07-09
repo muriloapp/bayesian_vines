@@ -16,8 +16,8 @@ library(RcppThread)
 library(assertthat)
 library(profvis)
 
-#assignInNamespace("assert_that", function(...) invisible(TRUE), ns = "assertthat")
-#assignInNamespace("see_if", function(...) invisible(TRUE), ns = "assertthat")
+assignInNamespace("assert_that", function(...) invisible(TRUE), ns = "assertthat")
+assignInNamespace("see_if", function(...) invisible(TRUE), ns = "assertthat")
 
 source(here('src','core_functions.R'))
 source(here('src','simulation.R'))

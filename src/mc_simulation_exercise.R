@@ -7,16 +7,22 @@ source(here("src", "config.R"))          # build_cfg(), sim_static_cop_6(), …
 # source(here("src", "smc_kernels.R"))   # run_standard_smc(), run_block_smc()
 
 ## -------- 1. experiment specs ------------------------------------------------
-n_sim     <- 5        # Monte-Carlo replications
-N_obs     <- 1000        # sample size per replication
+n_sim     <- 10        # Monte-Carlo replications
+N_obs     <- 1500        # sample size per replication
 seed_base <- 42   # reproducible but different for each sim
 
 cfg_variants <- list(
   list(
-    label      = "rjmcmc",
-    #tau_prior  = "inv_gamma",
-    #pi_prior   = "beta",
-    #M          = 2000
+    label      = "M3000",
+    tau_prior  = "inv_gamma",
+    pi_prior   = "beta",
+    M          = 3000
+  ),
+  list(
+    label      = "M1000",
+    tau_prior  = "inv_gamma",
+    pi_prior   = "beta",
+    M          = 1000
   )
   ## add more variants here
 )
@@ -52,13 +58,13 @@ for (sim in seq_len(n_sim)) {
     cfg    <- modifyList(build_cfg(d), tweaks)
     cfg$label <- label
     
-    for (alg in c("standard","rjmcmc")) {
+    for (alg in c("standard")) {
       
       t_sec <- system.time(
       res <- switch(
         alg,
         standard = run_standard_smc(data, cfg, type = "standard"),
-        rjcmcm    = run_standard_smc_rjmcmc(data,    cfg, type = "rjmcmc")
+        #rjcmcm    = run_standard_smc_rjmcmc(data,    cfg, type = "rjmcmc")
       )
       )[["elapsed"]]                       # elapsed wall-clock time (s)
       res$cfg      <- cfg

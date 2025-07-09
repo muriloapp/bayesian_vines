@@ -267,12 +267,12 @@ sim_static_cop_6 <- function(N      = 200,
 
 library(VineCopula)
 
-sim_static_cop_6_3f <- function(N      = 200,
-                             p_zero = 0.5,      # prob. to drop the edge
-                             p_clayton = 0.2,   # prob. Clayton (if kept)
+sim_static_cop_3_3f <- function(N      = 200,
+                             p_zero = 0.4,      # prob. to drop the edge
+                             p_clayton = 0.3,   # prob. Clayton (if kept)
                              rho_lo = -0.99,
                              rho_hi =  0.99) {
-  d <- 6
+  d <- 3
   
   ## 1. C-vine structure matrix
   sim_matrix <- matrix(0, d, d)
