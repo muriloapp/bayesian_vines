@@ -17,7 +17,7 @@ res_SS <- readRDS("simul_results/static_dgp/standard_3_pi05_nmh1_N250_SSVS")
 res_stand$theta_mean
 
 
-plot_theta_paths(res_stand$theta_mean, res_stand$theta_se, k=3, theta_true = 0.2)
+plot_theta_paths(res_stand$theta_mean, res_stand$theta_se, k=1, theta_true = 0.2)
 plot_theta_paths(res_SS$theta_mean, res_SS$theta_se, k=3, theta_true = 0.2)
 
 

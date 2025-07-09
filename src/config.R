@@ -24,7 +24,7 @@ build_cfg <- function(d, tau_prior = c("fixed", "inv_gamma"),
                       pi0   = 0.50,                     # centre if fixed
                       a_pi  = 2, b_pi = 2,
                       adapt_step_sd = TRUE,
-                      n_fam = 2
+                      n_fam = 1
   ) {
   tau_prior <- match.arg(tau_prior)
   

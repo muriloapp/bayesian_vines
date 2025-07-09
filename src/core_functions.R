@@ -82,7 +82,7 @@ new_particle <- function(cfg){
                           aux_slab,
                           aux_spike))
   
-  is_slab[ abs(theta) < cfg$delta_spike ] <- 0L
+  is_slab[ abs(theta) < cfg$delta_spike ] <- 0L ## ADJUST THIS TO HOLD EVERYWHERE
   
   m     = sample.int(cfg$n_fam, cfg$K, TRUE)
   ## ---- Rule B: Clayton & τ ≤ 0  → spike -----------------------
@@ -344,7 +344,10 @@ mh_step <- function(p, data_up_to_t, skeleton, cfg) {
   prop <- p
   prop$theta <- p$theta + rnorm(cfg$K, 0, cfg$step_sd)
   
-  prop <- try_family_switch(prop, cfg)
+  prop$is_slab[ abs(prop$theta) < cfg$delta_spike ] <- 0L
+  
+  
+  #prop <- try_family_switch(prop, cfg)
   
   ## Need to run a family switch possibility
   
@@ -408,7 +411,7 @@ try_family_switch <- function(prop, cfg) {
 #   return(proc_sd)
 # }
 
-compute_adapt_step_sd <- function(cfg, acc_pct, lambda = 0.25, target_acc = 0.30, sd_min = 0.02, sd_max=0.1){
+compute_adapt_step_sd <- function(cfg, acc_pct, lambda = 0.25, target_acc = 0.30, sd_min = 0.01, sd_max=0.05){
   log_sd_new <- log(cfg$step_sd) + lambda * (acc_pct/100 - target_acc)
   step_sd <- pmin(pmax(exp(log_sd_new), sd_min), sd_max)
   cat(sprintf(

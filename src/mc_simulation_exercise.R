@@ -82,13 +82,14 @@ for (sim in seq_len(n_sim)) {
 
 
 
-
-
+# 
+# 
 # library(here)
+# library(VineCopula)
 # 
 # # all block-SMC fits for the “M200_ivgamma_beta” variant
 # block_files <- list.files(
-#   here("simul_results/mc_static_dgp/M200_ivgamma_beta"),
+#   here("simul_results/mc_static_dgp/M3000"),
 #   pattern = "^standard_.*\\.rds$", full.names = TRUE
 # )
 # res <- lapply(block_files, readRDS)
@@ -110,14 +111,14 @@ for (sim in seq_len(n_sim)) {
 # 
 # 
 # 
-# plot_theta_paths(tanh(theta_mean), theta_sd, k=12, theta_true = -0.37)
+# plot_theta_paths(tanh(theta_mean), theta_sd, k=1, theta_true = 0.37)
 # 
 # 
-
-
-
-
-
+# 
+# res_stand <- res[[1]]
+# 
+# res_stand$
+# 
 
 
 
