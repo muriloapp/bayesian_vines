@@ -39,8 +39,17 @@ build_cfg <- function(d, tau_prior = c("fixed", "inv_gamma"),
     p_dyn_flip   = 0,
     n_mh         = 3L,
     step_sd      = 0.05,
-    #p_flip_edge  = 0.25,
-    #indep_copula = bicop_dist("indep"),
+    
+    #RJCMCM
+    pi0_edge     = 0.50,
+    slab_sd      = 0.50,
+    p_flip_edge  = 0.25,
+    indep_copula = bicop_dist("indep"),
+    p_birth      = 0.20,   # prob of proposing a birth vs. death when edge set ≠ {0,K}
+    p_within     = 0.60,   # prob of proposing a RW inside the current model
+    p_death      = 0.20,  
+    q_theta_sd   = 0.50, 
+    
     W_predict    = 5L,
     seed         = 42,
     G            = 2L,                      # Group in which tree
@@ -57,18 +66,20 @@ build_cfg <- function(d, tau_prior = c("fixed", "inv_gamma"),
     
     n_fam  = n_fam,                      # Gaussian, Frank, Clayton, Gumbel …
     omega  = rep(1/n_fam, n_fam),   # π(m) – eq. (6)
-    p_switch = 0.20,
+    p_switch = 0.30,
     
-    delta_spike <- 0.05,      # |θ| < δ → forced spike
-    eps_overlap <- 1e-3 
+    delta_spike <- 0.05      # |θ| < δ → forced spike
+    #eps_overlap <- 1e-3 
   )
 }
 
 
 source(here("src", "core_functions.R"))
+source(here("src", "core_functions_rjmcmc.R"))
 source(here("src", "simulation.R"))
 source(here("src", "smc_stand_vine.R"))
 source(here("src", "smc_block_vine.R"))
+source(here("src", "smc_vines_rjmcmc.R"))
 source(here("src", "results_helpers.R"))
 
 quiet_assert()                       

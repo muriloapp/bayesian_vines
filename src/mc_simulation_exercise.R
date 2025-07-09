@@ -13,10 +13,10 @@ seed_base <- 42   # reproducible but different for each sim
 
 cfg_variants <- list(
   list(
-    label      = "M200_ivgamma_beta",
-    tau_prior  = "inv_gamma",
-    pi_prior   = "beta",
-    M          = 2000
+    label      = "rjmcmc",
+    #tau_prior  = "inv_gamma",
+    #pi_prior   = "beta",
+    #M          = 2000
   )
   ## add more variants here
 )
@@ -38,7 +38,7 @@ for (sim in seq_len(n_sim)) {
   sim_tag <- sprintf("sim%03d", sim)
   
   ## 3a. simulate data and store it once --------------------------------------
-  data <- sim_static_cop_6(N = N_obs)
+  data <- sim_static_cop_3(N = N_obs)
   d    <- ncol(data$U)
   data_dir <- file.path(out_root, "_data")
   dir.create(data_dir, showWarnings = FALSE)
@@ -52,13 +52,13 @@ for (sim in seq_len(n_sim)) {
     cfg    <- modifyList(build_cfg(d), tweaks)
     cfg$label <- label
     
-    for (alg in c("standard","block")) {
+    for (alg in c("standard","rjmcmc")) {
       
       t_sec <- system.time(
       res <- switch(
         alg,
         standard = run_standard_smc(data, cfg, type = "standard"),
-        block    = run_block_smc(data,    cfg, type = "block")
+        rjcmcm    = run_standard_smc_rjmcmc(data,    cfg, type = "rjmcmc")
       )
       )[["elapsed"]]                       # elapsed wall-clock time (s)
       res$cfg      <- cfg

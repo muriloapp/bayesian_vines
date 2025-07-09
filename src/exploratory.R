@@ -11,7 +11,7 @@ res_block <- readRDS("simul_results/static_dgp/block_stat_3.rds")
 res_stand$log_model_evidence
 res_block$log_model_evidence
 
-res_stand <- readRDS("simul_results/static_dgp/standard_3_N250_3F")
+res_stand <- readRDS("simul_results/static_dgp/rjmcmc_3_RJMCMC")
 res_SS <- readRDS("simul_results/static_dgp/standard_3_pi05_nmh1_N250_SSVS")
 
 res_stand$theta_mean
@@ -241,6 +241,24 @@ names(prop_list) <- names(mean_list) <- c("indep", "gauss", "clayton")
 
 
 
-res_stand
+res_stand$model_hist[,,]
+
+mean_theta <- apply(res_stand$model_hist, c(2, 3), mean)
+
+
+
+apply(res_stand$gamma_hist, c(2, 3), mean)
+
+
+
+
+
+
+
+
+
+
+
+
 
 

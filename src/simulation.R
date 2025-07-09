@@ -11,7 +11,7 @@ sim_static_cop_3 = function(N=200){
   d=3
   sim_matrix    <- matrix(c(1,2,3, 0,2,3, 0,0,3), 3, 3, byrow = FALSE)
   family_matrix <- matrix(c(0,3,1, 0,0,1, 0,0,0), 3, 3, byrow = FALSE)
-  theta_matrix  <- matrix(c(0,0.5, 0.6, 0,0,0.4, 0,0,0), 3, 3, byrow = FALSE)
+  theta_matrix  <- matrix(c(0,0.3, 0.6, 0,0,0.4, 0,0,0), 3, 3, byrow = FALSE)
   #theta_matrix  <- matrix(c(0,0.1,-0.7, 0,0,0.7, 0,0,0), 3, 3, byrow = FALSE)
   RVM <- RVineMatrix(sim_matrix, family = family_matrix, par = theta_matrix)
   U   <- RVineSim(N, RVM);  colnames(U) <- paste0("U", 1:d)

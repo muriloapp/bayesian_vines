@@ -11,13 +11,14 @@ library(profvis)
 
 dir.create(here::here("simul_results/static_dgp"), showWarnings = FALSE)
 
-run_and_save <- function(data, cfg, alg = c("standard", "block"), tag = NULL) {
+run_and_save <- function(data, cfg, alg = c("standard", "block", "rjmcmc"), tag = NULL) {
   alg <- match.arg(alg)
   
   res <- switch(
     alg,
     standard = run_standard_smc(data, cfg, type = "standard"),
-    block    = run_block_smc(data, cfg, type = "block")
+    block    = run_block_smc(data, cfg, type = "block"),
+    rjmcmc    = run_standard_smc_rjmcmc(data$U, cfg, type = "rjmcmc")
   )
   
   res$cfg <- cfg                                   
@@ -36,7 +37,7 @@ run_and_save <- function(data, cfg, alg = c("standard", "block"), tag = NULL) {
 
 
 set.seed(42)
-data  <- sim_static_cop_3(N = 20)    
+data  <- sim_static_cop_3(N = 100)    
 U <- data$U
 d  <- ncol(U)
 
@@ -47,10 +48,10 @@ cfg_variants <- list(
   #   tau_prior  = "fixed"
   # ) ,
   list(
-    label      = "N250_3F",
+    label      = "s",
     tau_prior  = "inv_gamma",
-    pi_prior   = "beta"
-    #M           = 2000
+    pi_prior   = "beta",
+    M           = 2000
   )
 )
 
