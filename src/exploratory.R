@@ -5,7 +5,7 @@ source(here::here("src","config.R"))
 
 ######################################################################
 
-res_stand <- readRDS("simul_results/static_dgp/standard_stat_3.rds")
+res_stand <- readRDS("simul_results/static_dgp/standard_3_test.rds")
 res_block <- readRDS("simul_results/static_dgp/block_stat_3.rds")
 
 res_stand$log_model_evidence
@@ -153,6 +153,65 @@ plot_genealogy_theta(res_SS$theta_hist, res_SS$ancestorIndices, edge_id = 1)
 
 
 sum(res_SS$diag_log$ESS<500)
+
+
+
+###----------------------------------------------------------------------------------------------------------------------------------------------------------
+# NEW
+
+
+
+res <- readRDS("simul_results/static_dgp/standard_3_test")
+
+
+## fam_hist[ particle , time , edge ]
+fh <- res$fam_hist            # 1000 × 300 × K   ➊
+T  <- dim(fh)[2]              # 300
+K  <- dim(fh)[3]              # number of edges (3 here)
+
+## --- utility: returns a data.frame for ONE edge -------------------
+edge_family_ts <- function(e, fh) {
+  prop <- function(code) colMeans(fh[ , , e] == code)   # over particles
+  data.frame(
+    t        = seq_len(dim(fh)[2]),
+    indep    = prop(0L),
+    gaussian = prop(1L),
+    bb1      = prop(2L)
+  )
+}
+
+## --- compute all edges --------------------------------------------
+edge_series <- lapply(seq_len(K), edge_family_ts, fh = fh)
+
+## --- plot each edge ------------------------------------------------
+old_par <- par(mfrow = c(K, 1), mar = c(3, 4, 2, 1))     # one panel per edge
+on.exit(par(old_par), add = TRUE)
+
+cols <- c("black", "blue", "red")       # indep, gaussian, bb1
+for (e in seq_len(K)) {
+  df <- edge_series[[e]]
+  matplot(df$t, df[ , 2:4], type = "l", lty = 1, col = cols,
+          xlab = "time t", ylab = "proportion",
+          main = paste("Edge", e, ": family probabilities over time"))
+  legend("topright", legend = c("indep", "gaussian", "bb1"),
+         col = cols, lty = 1, bty = "n")
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

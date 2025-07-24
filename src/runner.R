@@ -47,7 +47,7 @@ cfg_variants <- list(
   )
 )
 
-
+i=1
 system.time(
 for (i in seq_along(cfg_variants)) {
   v    <- cfg_variants[[i]]         

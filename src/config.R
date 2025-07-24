@@ -60,29 +60,31 @@ load_packages <- function() {
 build_cfg <- function(d,
                       lambda        = 1,
                       step_sd       = 0.05,
-                      q_flip        = 1 / (d * (d - 1) / 2 + 1),  # ≈ 1/(K+1)
+                      q_flip   = NULL,
+                      K       = d * (d - 1) / 2,
+                      families      = c("indep", "gaussian", "bb1"),  # NEW
                       adapt_step_sd = TRUE) {
+  
+  if (is.null(q_flip))        # default that mimics “stay vs leave equal”
+    q_flip <- 1 / (K + 1)
   
   list(
     d       = d,
-    K       = d * (d - 1) / 2,
+    K       = K,
     M       = 1000,
     ess_thr = 0.50,
     W       = 1000L,
     k_step  = 1L,
     n_mh    = 3L,
+    W_predict    = 750L,
+    q_flip=q_flip,
     step_sd = step_sd,
-    q_flip  = q_flip,          # ♦ probability to flip EACH edge
     lambda  = lambda,
+    families = families,          # ← store user choice
     adapt_step_sd = adapt_step_sd,
-    seed    = 42,
-    G       = 2L,
-    W_predict = 5L
+    seed    = 42, G = 2L
   )
 }
-
-
-
 
 
 source(here("src", "core_functions.R"))
