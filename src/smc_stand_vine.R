@@ -25,7 +25,7 @@ source(here('src','simulation.R'))
 run_standard_smc <- function(data,
                     cfg,
                     type       = c("standard", "block"),
-                    n_cores    = max(parallel::detectCores(), 1)) {
+                    n_cores    = max(parallel::detectCores()-1, 1)) {
   
   U <- data$U
   
@@ -48,15 +48,12 @@ run_standard_smc <- function(data,
       ESS    = numeric(N),
       unique = integer(N),
       euc    = numeric(N),
-      tau_mean = numeric(N),      # NEW
-      tau_sd   = numeric(N),       # NEW
-      pi_mean = numeric(N),      # NEW
-      pi_sd   = numeric(N)       # NEW
+      sparsity = numeric(N)
     ),
     mh_acc_pct      = rep(NA_real_, N),
     step_sd_hist      = rep(NA_real_, N),
     theta_hist      = array(NA_real_,    dim = c(M, N, K)),
-    #gamma_hist      = array(NA_integer_, dim = c(M, N, K)),
+    gamma_hist      = array(NA_integer_, dim = c(M, N, K)),
     ancestorIndices = matrix(0L, M, N),
     incl_hist = matrix(NA_real_, N, K),
     theta_q025   = matrix(NA_real_, N, K),
@@ -77,13 +74,24 @@ run_standard_smc <- function(data,
   
   parallel::clusterExport(
     cl,
-    c("mh_step_in_tree", "vine_from_particle", "log_prior", "slab_sd_from_tau", "spike_sd_from_tau", "update_tau2", "rinvgamma", "dinvgamma", "update_pi",
-      "bicop_dist", "vinecop_dist", "dvinecop", "skeleton", "cfg", "fast_vine_from_particle",
-      "mh_step", "propagate_particles", "update_weights", "ESS",
-      "diagnostic_report", "systematic_resample", "resample_move",
-      "compute_predictive_metrics", "compute_log_incr"),
+    c(
+      ## core SMC kernels
+      "mh_step", "mh_step_in_tree", #, "propagate_particles",
+      "update_weights", "ESS", "systematic_resample", "resample_move",
+      ## log-target & proposals
+      "log_prior", "fast_vine_from_particle", "rtnorm_vec",
+      ## likelihood helpers from rvinecopulib
+      "bicop_dist", "vinecop_dist", "dvinecop",
+      ## shared data objects
+      "skeleton", "cfg",
+      ## diagnostics & prediction
+      "diagnostic_report", "compute_predictive_metrics", "compute_log_incr",
+      ## small utilities needed inside workers
+      "w_mean", "w_var", "mc_se", "w_quantile"
+    ),
     envir = environment()
   )
+  
   
   # ── main SMC loop ──────────────────────────────────────────────────────────
   for (t_idx in seq_len(N)) {
@@ -92,7 +100,7 @@ run_standard_smc <- function(data,
     # 1. propagate step ──────────────────────────────────────────────────────
     #particles <- propagate_particles(particles, cfg)
     
-    # 2. predictive metrics (after burn-in) ──────────────────────────────────
+    # 1. predictive metrics (after burn-in) ──────────────────────────────────
     if (t_idx > cfg$W_predict) {
       w_prev <- vapply(particles, `[[`, numeric(1), "w")
       w_prev <- w_prev / sum(w_prev)
@@ -107,23 +115,20 @@ run_standard_smc <- function(data,
       out$gamma_se[t_idx,]   <- pm$gamma_se
     }
     
-    # 3. weight update ──────────────────────────────────────────────────────
+    # 1. weight update ──────────────────────────────────────────────────────
     log_incr  <- compute_log_incr(particles, u_row, skeleton, cfg)
     particles <- update_weights(particles, log_incr)
     w_new     <- vapply(particles, `[[`, numeric(1), "w")
     
-    # 4. diagnostics ────────────────────────────────────────────────────────
+    ## 3. diagnostics ------------------------------------------
     dg <- diagnostic_report(t_idx, tr, U, particles, w_new, cfg)
     out$diag_log[pos, `:=`(
-      t    = t_idx,
-      tr   = tr,
-      ESS  = dg$ESS,
-      unique = dg$unique,
-      euc  = dg$euc,
-      tau_mean = dg$tau_mean,        
-      tau_sd   = dg$tau_sd,           
-      pi_mean = dg$pi_mean,
-      pi_sd = dg$pi_sd
+      t        = t_idx,
+      tr       = tr,
+      ESS      = dg$ESS,
+      unique   = dg$unique,
+      euc      = dg$euc,
+      sparsity = dg$sparsity
     )]
     pos <- pos + 1L
     
@@ -148,15 +153,8 @@ run_standard_smc <- function(data,
     
     # 6. save history ───────────────────────────────────────────────────────
     out$theta_hist[, t_idx, ] <- t(vapply(particles, `[[`, numeric(K), "theta"))
-    #out$gamma_hist[, t_idx, ] <- t(vapply(particles, `[[`, integer(K), "gamma"))
+    out$gamma_hist[, t_idx, ] <- t(vapply(particles, `[[`, integer(K), "gamma"))
     
-    theta_mat <- do.call(rbind, lapply(particles, `[[`, "theta"))
-    tau_vec   <- sqrt(vapply(particles, function(p) p$tau2, numeric(1)))
-    
-    pi_vec  <- vapply(particles, function(p) p$pi, numeric(1))
-    slab_w  <- responsibility(theta_mat, tau_vec, pi_vec, cfg)  
-    
-    out$incl_hist[t_idx, ] <- colSums(slab_w * w_new)
     out$theta_q025[t_idx, ] <- dg$edges$q025[[1]]
     out$theta_q975[t_idx, ] <- dg$edges$q975[[1]]
   }
