@@ -5,22 +5,20 @@ source(here::here("src","config.R"))
 
 ######################################################################
 
-res_stand <- readRDS("simul_results/static_dgp/standard_stat_3.rds")
+res_stand <- readRDS("simul_results/static_dgp/standard_3_test.rds")
 res_block <- readRDS("simul_results/static_dgp/block_stat_3.rds")
 
 res_stand$log_model_evidence
 res_block$log_model_evidence
 
+res_stand <- readRDS("simul_results/static_dgp/standard_3_pi05_nmh1_N250_KM")
+res_SS <- readRDS("simul_results/static_dgp/standard_3_pi05_nmh1_N250_SSVS")
+
+res_stand$theta_mean
 
 
-
-res_stand <- readRDS("simul_results/static_dgp/standard_8_pi07_M2000_G3_nmh5")
-res_block <- readRDS("simul_results/static_dgp/block_8_pi07_M2000_G3_nmh5")
-
-res_stand$
-
-
-plot_theta_paths(res_block$theta_mean, res_block$theta_se, k=1, theta_true = 0.5)
+plot_theta_paths(res_stand$theta_mean, res_stand$theta_se, k=3, theta_true = 0.2)
+plot_theta_paths(res_SS$theta_mean, res_SS$theta_se, k=3, theta_true = 0.2)
 
 
 
@@ -140,9 +138,9 @@ ggsave(filename = "figures/static_3d_unique_block.png", plot = p, width = 8, hei
 # Explore results
 #================================================================================
 
-# plot(results$diag_log$unique, type="l")
+plot(res_stand$diag_log$ESS, type="l")
 #  
-# plot_genealogy_theta(results$theta_hist, results$ancestorIndices, edge_id = 1, ylim = c(0.5, 1.1))   
+plot_genealogy_theta(res_SS$theta_hist, res_SS$ancestorIndices, edge_id = 1)   
 #  
 # plot_theta_histograms(results$theta_mean, k_set = c(1))
 # 
@@ -152,6 +150,65 @@ ggsave(filename = "figures/static_3d_unique_block.png", plot = p, width = 8, hei
 
 
 #results <- readRDS("simul_results/block_stat_3.rds")
+
+
+sum(res_SS$diag_log$ESS<500)
+
+
+
+###----------------------------------------------------------------------------------------------------------------------------------------------------------
+# NEW
+
+
+
+res <- readRDS("simul_results/static_dgp/standard_3_test")
+
+
+## fam_hist[ particle , time , edge ]
+fh <- res$fam_hist            # 1000 × 300 × K   ➊
+T  <- dim(fh)[2]              # 300
+K  <- dim(fh)[3]              # number of edges (3 here)
+
+## --- utility: returns a data.frame for ONE edge -------------------
+edge_family_ts <- function(e, fh) {
+  prop <- function(code) colMeans(fh[ , , e] == code)   # over particles
+  data.frame(
+    t        = seq_len(dim(fh)[2]),
+    indep    = prop(0L),
+    gaussian = prop(1L),
+    bb1      = prop(2L)
+  )
+}
+
+## --- compute all edges --------------------------------------------
+edge_series <- lapply(seq_len(K), edge_family_ts, fh = fh)
+
+## --- plot each edge ------------------------------------------------
+old_par <- par(mfrow = c(K, 1), mar = c(3, 4, 2, 1))     # one panel per edge
+on.exit(par(old_par), add = TRUE)
+
+cols <- c("black", "blue", "red")       # indep, gaussian, bb1
+for (e in seq_len(K)) {
+  df <- edge_series[[e]]
+  matplot(df$t, df[ , 2:4], type = "l", lty = 1, col = cols,
+          xlab = "time t", ylab = "proportion",
+          main = paste("Edge", e, ": family probabilities over time"))
+  legend("topright", legend = c("indep", "gaussian", "bb1"),
+         col = cols, lty = 1, bty = "n")
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

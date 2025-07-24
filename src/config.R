@@ -16,28 +16,6 @@ load_packages <- function() {
   lapply(pkgs, require, character.only = TRUE)
 }
 
-build_cfg <- function(d) {
-  list(
-    d            = d,
-    K            = d * (d - 1) / 2,
-    M            = 1000,
-    pi0_edge     = 0.50, #0.3
-    slab_sd      = 0.50,
-    ess_thr      = 0.50,
-    W            = 1000L,      #1000L,
-    k_step       = 1L,                  
-    proc_sd      = 0,
-    p_dyn_flip   = 0,
-    n_mh         = 3L,
-    step_sd      = 0.05,
-    p_flip_edge  = 0.25,
-    indep_copula = bicop_dist("indep"),
-    W_predict    = 5L,
-    seed         = 126, #42
-    G            = 2L                      # Group in which tree
-  )
-}
-
 
 source(here("src", "core_functions.R"))
 source(here("src", "simulation.R"))
@@ -45,9 +23,46 @@ source(here("src", "smc_stand_vine.R"))
 source(here("src", "smc_block_vine.R"))
 source(here("src", "results_helpers.R"))
 
-quiet_assert()                       # your helper that silences assertthat
-load_packages()                      # loads rvinecopulib, here(), … (already defined)
 
+## build_cfg()  ─────────────────────────────────────────────────────────
+build_cfg <- function(d,
+                      lambda        = 1,
+                      step_sd       = 0.05,
+                      q_flip   = NULL,
+                      K       = d * (d - 1) / 2,
+                      families      = c("indep", "gaussian", "bb1"),  # NEW
+                      families_first = c("indep", "gaussian", "bb1"),
+                      families_deep  = c("indep", "gaussian"),
+                      adapt_step_sd = TRUE) {
+  
+  if (is.null(q_flip))        # default that mimics “stay vs leave equal”
+    q_flip <- 1 / (K + 1)
+  
+  list(
+    d       = d,
+    K       = K,
+    M       = 1000,
+    ess_thr = 0.50,
+    W       = 1000L,
+    k_step  = 1L,
+    n_mh    = 3L,
+    W_predict    = 2000L,
+    q_flip=q_flip,
+    step_sd = step_sd,
+    lambda  = lambda,
+    families = families,          # ← store user choice
+    families_first = families_first,
+    families_deep  = families_deep,
+    adapt_step_sd = adapt_step_sd,
+    seed    = 42, G = 2L,
+    edge_tree  = edge_tree_map(d)
+  )
+}
+
+
+
+quiet_assert()                       
+load_packages()                      
 
 
 

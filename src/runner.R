@@ -5,16 +5,19 @@
 library(here)
 source(here::here("src","config.R"))
 
+library(profvis)
+
+
 
 dir.create(here::here("simul_results/static_dgp"), showWarnings = FALSE)
 
-run_and_save <- function(U, cfg, alg = c("standard", "block"), tag = NULL) {
+run_and_save <- function(data, cfg, alg = c("standard", "block"), tag = NULL) {
   alg <- match.arg(alg)
   
   res <- switch(
     alg,
-    standard = run_standard_smc(U, cfg, type = "standard"),
-    block    = run_block_smc(U, cfg, type = "block")
+    standard = run_standard_smc(data, cfg, type = "standard"),
+    block    = run_block_smc(data, cfg, type = "block")
   )
   
   res$cfg <- cfg                                   
@@ -32,42 +35,35 @@ run_and_save <- function(U, cfg, alg = c("standard", "block"), tag = NULL) {
 }
 
 
-set.seed(126)
-U  <- sim_static_cop_8(N = 1000)              
+set.seed(42)
+data  <- sim_static_cop(d = 6, N = 400)  
+U <- data$U
 d  <- ncol(U)
 
 cfg_variants <- list(
   list(
-    pi0_edge   = 0.70,
-    label      = "pi07_M2000_G3_nmh5",
-    G          = 3,
-    M          = 2000,
-    n_mh       = 5
-  ) #,
-  # list(                            
-  #   pi0_edge   = 0.70,
-  #   W          = 30,
-  #   label      = "pi07_W30"
-  # )
+    label      = "test"
+
+  )
 )
 
-
+i=1
+system.time(
 for (i in seq_along(cfg_variants)) {
-  v    <- cfg_variants[[i]]          # pull the i-th inner list
-  tag  <- v[["label"]]               # safe even if names = NULL
+  v    <- cfg_variants[[i]]         
+  tag  <- v[["label"]]               
   
-  tweaks <- v[ setdiff(names(v), "label") ]   # drop label for merging
+  tweaks <- v[ setdiff(names(v), "label") ]   
   cfg    <- modifyList(build_cfg(d), tweaks)
   cfg$label <- tag
   
-  for (alg in c("standard", "block")) {
+  for (alg in c("standard")) {
     set.seed(cfg$seed)
-    run_and_save(U, cfg, alg, tag)
+    #p <- profvis::profvis({
+    run_and_save(data, cfg, alg, tag)
+    #})
   }
-}
+})
 
-
-
-
-
-
+# htmlwidgets::saveWidget(p, "profile.html")
+# browseURL("profile.html")
