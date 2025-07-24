@@ -6,74 +6,68 @@ library(here)
 source(here("src", "config.R"))          # build_cfg(), sim_static_cop_6(), …
 # source(here("src", "smc_kernels.R"))   # run_standard_smc(), run_block_smc()
 
-## -------- 1. experiment specs ------------------------------------------------
-n_sim     <- 5        # Monte-Carlo replications
-N_obs     <- 1000        # sample size per replication
-seed_base <- 42   # reproducible but different for each sim
+## ---------- experiment specs -------------------------------------------------
+n_sim     <- 10
+N_obs     <- 1500
+seed_base <- 42
+dims      <- c(3, 6)                     # <-- asked for both
 
 cfg_variants <- list(
-  list(
-    label      = "M200_ivgamma_beta",
-    tau_prior  = "inv_gamma",
-    pi_prior   = "beta",
-    M          = 2000
-  )
-  ## add more variants here
+  list(label = "M2000", M = 2000),
+  list(label = "M1000", M = 1000)
 )
 
-## -------- 2. utilities -------------------------------------------------------
+## ---------- helpers ----------------------------------------------------------
 out_root <- here("simul_results", "mc_static_dgp")
 dir.create(out_root, recursive = TRUE, showWarnings = FALSE)
 
-save_fit <- function(res, label, alg, sim_tag) {
-  dir.create(file.path(out_root, label), showWarnings = FALSE)
-  saveRDS(res,
-          file.path(out_root, label, sprintf("%s_%s.rds", alg, sim_tag)))
-  message(sprintf("saved %s | %s | %s", label, alg, sim_tag))
+save_fit <- function(res, label, alg, sim_tag, d) {
+  path <- file.path(out_root, sprintf("d%d", d), label)
+  dir.create(path, recursive = TRUE, showWarnings = FALSE)
+  saveRDS(res, file.path(path, sprintf("%s_%s.rds", alg, sim_tag)))
+  message(sprintf("saved   d=%d | %s | %s | %s",
+                  d, label, alg, sim_tag))
 }
 
-## -------- 3. Monte-Carlo loop ------------------------------------------------
+## ---------- Monte-Carlo ------------------------------------------------------
 for (sim in seq_len(n_sim)) {
-  set.seed(seed_base + sim)
-  sim_tag <- sprintf("sim%03d", sim)
-  
-  ## 3a. simulate data and store it once --------------------------------------
-  data <- sim_static_cop_6(N = N_obs)
-  d    <- ncol(data$U)
-  data_dir <- file.path(out_root, "_data")
-  dir.create(data_dir, showWarnings = FALSE)
-  saveRDS(data, file.path(data_dir,
-                          sprintf("data_%s.rds", sim_tag)))
-  
-  ## 3b. loop over cfg variants and algorithms --------------------------------
-  for (v in cfg_variants) {
-    label  <- v$label
-    tweaks <- v[ setdiff(names(v), "label") ]
-    cfg    <- modifyList(build_cfg(d), tweaks)
-    cfg$label <- label
+  for (d in dims) {
     
-    for (alg in c("standard","block")) {
+    set.seed(seed_base + 100 * d + sim)          # unique per (d, sim)
+    sim_tag <- sprintf("sim%03d", sim)
+    
+    ## 1️⃣  simulate data once per replication
+    data <- sim_static_cop(d = d, N = N_obs)
+    data_dir <- file.path(out_root, sprintf("d%d", d), "_data")
+    dir.create(data_dir, showWarnings = FALSE)
+    saveRDS(data, file.path(data_dir,
+                            sprintf("data_%s.rds", sim_tag)))
+    
+    ## 2️⃣  run all cfg variants
+    for (v in cfg_variants) {
+      label  <- v$label
+      cfg    <- modifyList(build_cfg(d), v)      # M overwritten
+      cfg$label <- label
       
-      t_sec <- system.time(
-      res <- switch(
-        alg,
-        standard = run_standard_smc(data, cfg, type = "standard"),
-        block    = run_block_smc(data,    cfg, type = "block")
-      )
-      )[["elapsed"]]                       # elapsed wall-clock time (s)
-      res$cfg      <- cfg
-      res$sim_tag  <- sim_tag
-      res$alg      <- alg
-      res$elapsed <- t_sec 
-      
-      save_fit(res, label, alg, sim_tag)
+      ## === choose algorithms here =====================================
+      for (alg in "standard") {
+        t_sec <- system.time(
+          res <- run_standard_smc(data, cfg, type = "standard")
+        )[["elapsed"]]
+        
+        res$cfg      <- cfg
+        res$sim_tag  <- sim_tag
+        res$alg      <- alg
+        res$elapsed  <- t_sec
+        res$d        <- d
+        
+        save_fit(res, label, alg, sim_tag, d)
+      }
     }
+    
+    rm(data); gc(verbose = FALSE)
   }
-  
-  ## optional -- keep memory tidy between reps
-  rm(data); gc(verbose = FALSE)
 }
-
 
 
 

@@ -36,7 +36,7 @@ run_and_save <- function(data, cfg, alg = c("standard", "block"), tag = NULL) {
 
 
 set.seed(42)
-data  <- sim_static_cop_3(N = 300)    
+data  <- sim_static_cop(d = 6, N = 400)  
 U <- data$U
 d  <- ncol(U)
 

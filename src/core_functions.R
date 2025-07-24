@@ -11,58 +11,34 @@ FAM_INFO <- data.frame(
   npar = c(0L, 1L, 2L)
 )
 
-# 0 = indep, 1 = gaussian, 2 = bb1
 FAM_INDEP   <- 0L
 FAM_GAUSS   <- 1L
 FAM_BB1     <- 2L
 
-## ------------------------------------------------------------------
-##  prepare ONE template per family 
-## ------------------------------------------------------------------
 T_INDEP  <- bicop_dist("indep")
 T_GAUSS  <- bicop_dist("gaussian", parameters = 0)
 T_BB1    <- bicop_dist("bb1",      parameters = c(1, 2))  # dummy θ,δ
 
-
-
-
 active_fams <- function(cfg) FAM_INFO[FAM_INFO$name %in% cfg$families, ]
 
+edge_tree_map <- function(d) {
+  K   <- d * (d - 1) / 2
+  map <- integer(K)
+  idx <- 1L
+  for (tr in 1:(d - 1)) {          # tree index
+    n_edges <- d - tr              # edges in that tree
+    map[idx:(idx + n_edges - 1)] <- tr
+    idx <- idx + n_edges
+  }
+  map
+}
 
-# spike_sd_from_tau <- function(tau){tau}
-# 
-# slab_sd_from_tau  <- function(tau, cfg){cfg$c_slab * tau}
-# 
-# log_prior <- function(p,cfg){
-#   tau <- sqrt(p$tau2)
-#   pi  <- p$pi                             
-#   
-#   ll_mix <- sum(
-#     log( pi      * dnorm(p$theta,0, spike_sd_from_tau(tau)) +
-#            (1-pi)  * dnorm(p$theta,0, slab_sd_from_tau(tau,cfg)) + 1e-300))
-#   
-#   ll_tau <- if(cfg$tau_prior=="fixed") 0
-#   else dinvgamma(p$tau2, cfg$a0, cfg$b0, log=TRUE)
-#   
-#   ll_pi  <- if(cfg$pi_prior=="fixed") 0
-#   else dbeta(pi, cfg$a_pi, cfg$b_pi, log=TRUE)
-#   
-#   ll_mix + ll_tau + ll_pi
-# }
-
-## ---------------------------------------------------------------
-##  Exponential prior   p(γ,θ) ∝ exp(-λ Σγ)  ×  ∏_{γ=1}  N(0,σ²)
-## ---------------------------------------------------------------
-## ---------------------------------------------------------------
-##  Truncated normal sampler  N(μ,σ²) ∩ (a,b)
-## ---------------------------------------------------------------
 rtnorm1 <- function(mu, sd, a = -0.99, b = 0.99) {
   repeat {
     x <- rnorm(1, mu, sd)
     if (x > a && x < b) return(x)
   }
 }
-
 
 
 log_prior_edge <- function(fam, th1, th2, cfg) {
@@ -89,84 +65,37 @@ log_prior <- function(p, cfg) {
 }
 
 
-# new_particle <- function(cfg){
-#   # --- τ² block unchanged -----------------------------------
-#   tau2 <- if(cfg$tau_prior=="fixed") {cfg$tau0^2}
-#   else {rinvgamma(1, cfg$a0, cfg$b0)}
-#   tau  <- sqrt(tau2)
-#   
-#   # --- NEW π draw ------------------------------------------
-#   pi   <- if(cfg$pi_prior=="fixed") cfg$pi0
-#   else rbeta(1, cfg$a_pi, cfg$b_pi)
-#   
-#   # --- θ draws from *mixture* -------------------------------
-#   is_slab <- rbinom(cfg$K, 1, 1 - pi)
-#   
-#   aux_slab <- slab_sd_from_tau(tau,cfg)
-#   aux_spike <- spike_sd_from_tau(tau)
-#   theta   <- rnorm(cfg$K, 0,
-#                    ifelse(is_slab,
-#                           aux_slab,
-#                           aux_spike))
-#   
-#   list(theta = theta,
-#        tau2  = tau2,
-#        pi    = pi,        # << store π
-#        w     = 1/cfg$M,
-#        last_accept = FALSE,
-#        aux_slab = aux_slab,
-#        aux_spike = aux_spike,
-#        is_slab = is_slab
-#        )
-# }
-
-## core_functions.R  ──────────────────────────────────────────────────
-##  Family codes: 0 = independence, 1 = Gaussian  (extend later)
-
-## ---------------------------------------------------------------
-##  Prior over models:   P(γ)  ∝  exp(-λ Σ γ)
-##  For equal “no-preference” switching probs we still need γ
-## ---------------------------------------------------------------
-# new_particle <- function(cfg) {
-#   ##  Draw γ_i independently with P(γ_i = 1) =  exp(-λ)/(1+exp(-λ))
-#   p_gauss <- exp(-cfg$lambda) / (1 + exp(-cfg$lambda))
-#   gamma <- rbinom(cfg$K, 1, p_gauss)
-#   
-#   theta <- numeric(cfg$K)
-#   if (any(gamma == 1L))
-#     theta[gamma == 1L] <- runif(sum(gamma), -0.99, 0.99)
-#   
-#   list(theta = theta,    # these ARE the correlations ρ
-#        gamma = gamma,
-#        w     = 1 / cfg$M,
-#        last_accept = FALSE)
-# }
-
 new_particle <- function(cfg) {
   
-  fam_tbl <- active_fams(cfg)
-  codes   <- fam_tbl$code
-  npar    <- fam_tbl$npar
+  K        <- cfg$K
+  fam      <- integer(K)
+  th1      <- numeric(K)
+  th2      <- numeric(K)
   
-  ## complexity weight  exp(-λ d_e)
-  weights <- exp(-cfg$lambda * npar)
-  prob    <- weights / sum(weights)
-  
-  fam <- sample(codes, cfg$K, replace = TRUE, prob = prob)
-  
-  th1 <- numeric(cfg$K); th2 <- numeric(cfg$K)
-  
-  for (k in seq_len(cfg$K)) {
-    if (fam[k] == 1L) {                     # Gaussian
+  for (k in seq_len(K)) {
+    
+    tr_k <- cfg$edge_tree[k]                 # 1, 2, …
+    
+    allowed_names <- if (tr_k == 1)
+      cfg$families_first else cfg$families_deep
+    
+    fam_tbl <- FAM_INFO[FAM_INFO$name %in% allowed_names, ]
+    weights <- exp(-cfg$lambda * fam_tbl$npar)
+    code_k  <- sample(fam_tbl$code, 1, prob = weights)
+    fam[k]  <- code_k
+    
+    if (code_k == FAM_GAUSS) {
       th1[k] <- runif(1, -0.99, 0.99)
-    } else if (fam[k] == 2L) {              # BB1
+      
+    } else if (code_k == FAM_BB1) {
       lamU <- rbeta(1, 2, 2); lamL <- rbeta(1, 2, 2)
       tp   <- bb1_tail2par(lamL, lamU)
       th1[k] <- tp[1]; th2[k] <- tp[2]
     }
   }
   
-  list(fam = fam, th1 = th1, th2 = th2, w = 1 / cfg$M, last_accept = FALSE)
+  list(fam = fam, th1 = th1, th2 = th2,
+       w = 1 / cfg$M, last_accept = FALSE)
 }
 
 
@@ -207,71 +136,6 @@ bb1_log_jacobian <- function(lambdaL, lambdaU) {
 }
 
 
-# fast_vine_from_particle <- function(p, skel) {
-#   
-#   rho <- tanh(p$theta)
-#   pcs <- rlang::duplicate(skel$pair_copulas, shallow = TRUE)  # or FALSE in parallel
-#   
-#   idx <- 1L
-#   for (tr in seq_along(pcs)){
-#     for (ed in seq_along(pcs[[tr]])) {
-#       pcs[[tr]][[ed]]$parameters <- matrix(rho[idx], 1, 1)    # ← key change
-#       pcs[[tr]][[ed]]$npars      <- 1L                        # be explicit
-#       idx <- idx + 1L
-#     }}
-#   
-#   vinecop_dist(pcs, skel$structure)
-# }
-
-# fast_vine_from_particle <- function(p, skel) {
-#   
-#   pcs <- rlang::duplicate(skel$pair_copulas, shallow = TRUE)  # << fast
-#   idx <- 1L
-#   for (tr in seq_along(pcs)) {
-#     for (ed in seq_along(pcs[[tr]])) {
-#       
-#       if (p$gamma[idx] == 0L) {
-#         pcs[[tr]][[ed]] <- bicop_dist("indep")
-#       } else {
-#         pcs[[tr]][[ed]]$family     <- "gaussian"
-#         pcs[[tr]][[ed]]$parameters <- matrix(p$theta[idx], 1, 1)
-#         pcs[[tr]][[ed]]$npars      <- 1L
-#       }
-#       idx <- idx + 1L
-#     }
-#   }
-#   vinecop_dist(pcs, skel$structure)
-# }
-# indep <- bicop_dist("indep")
-# 
-# fast_vine_from_particle <- function(p, skel) {
-#   
-#   pcs <- rlang::duplicate(skel$pair_copulas, shallow = TRUE)
-#   idx <- 1L
-#   for (tr in seq_along(pcs)) {
-#     for (ed in seq_along(pcs[[tr]])) {
-#       
-#       f <- p$fam[idx]
-#       if (f == FAM_INDEP) {
-#         pcs[[tr]][[ed]] <- indep
-#         
-#       } else if (f == FAM_GAUSS) {
-#         pcs[[tr]][[ed]]$family     <- "gaussian"
-#         pcs[[tr]][[ed]]$parameters <- matrix(p$th1[idx], 1, 1)
-#         pcs[[tr]][[ed]]$npars      <- 1L
-#         
-#       } else {  # BB1
-#         pcs[[tr]][[ed]]$family     <- "bb1"
-#         pcs[[tr]][[ed]]$parameters <- matrix(c(p$th1[idx], p$th2[idx]), 1, 2)
-#         pcs[[tr]][[ed]]$npars      <- 2L
-#         #pcs[[tr]][[ed]] <-  bicop_dist("bb1", 0, c(p$th1[idx], p$th2[idx]))
-#       }
-#       idx <- idx + 1L
-#     }
-#   }
-#   
-#   vinecop_dist(pcs, skel$structure)
-# }
 
 sanitize_bb1 <- function(theta, delta,
                          eps   = 1e-6,   # lower-bound cushion
@@ -373,84 +237,11 @@ mh_step_in_tree <- function(p, tr, data_up_to_t, temp_skel, cfg) {
 }
 
 
-# mh_step <- function(p, data_up_to_t, skeleton, cfg) {
-#   prop <- p
-#   prop$theta <- p$theta + rnorm(cfg$K, 0, cfg$step_sd)
-#   
-#   vine_prop <- fast_vine_from_particle(prop, skeleton)
-#   vine_curr <- fast_vine_from_particle(p,    skeleton)
-#   
-#   ll_prop <- sum(log(pmax(dvinecop(data_up_to_t, vine_prop),
-#                           .Machine$double.eps)))
-#   ll_curr <- sum(log(pmax(dvinecop(data_up_to_t, vine_curr),
-#                           .Machine$double.eps)))
-#   
-#   # log_acc <- (ll_prop + log_prior(prop$theta, cfg)) -
-#   #   (ll_curr + log_prior(p$theta, cfg))
-#   log_acc <- (ll_prop + log_prior(prop, cfg)) -      # ← pass WHOLE prop
-#     (ll_curr + log_prior(p,    cfg))       # ← pass WHOLE p
-#   
-#   if (log(runif(1)) < log_acc) {
-#     p$theta <- prop$theta
-#     p$last_accept <- TRUE
-#   } else p$last_accept <- FALSE
-#   
-#   ## NEW ---------------------------------------------------------------
-#   p <- update_tau2(p, cfg)
-#   p <- update_pi(p,cfg)        # << NEW
-#   p
-# }
 rtnorm_vec <- function(mu_vec, sd, a = -0.99, b = 0.99) {
   x <- mu_vec + sd * rnorm(length(mu_vec))
   pmin(pmax(x, a), b)                     # hard clip (reflection is slower)
 }
 
-# mh_step <- function(p, data_up_to_t, skeleton, cfg) {
-#   
-#   ## ---------- 1. PROPOSAL (vectorised) ------------------------------
-#   prop <- p
-#   
-#   ## (a)  γ-flips:  Bernoulli(q_flip)  for every edge
-#   flip_mask          <- runif(cfg$K) < cfg$q_flip
-#   prop$gamma[flip_mask] <- 1L - prop$gamma[flip_mask]
-#   
-#   ## (b)  handle BIRTHS & DEATHS
-#   births <- (prop$gamma == 1L & p$gamma == 0L)
-#   deaths <- (prop$gamma == 0L & p$gamma == 1L)
-#   if (any(births))
-#     prop$theta[births] <- runif(sum(births), -0.99, 0.99)
-#   if (any(deaths))
-#     prop$theta[deaths] <- 0
-#   
-#   ## (c)  Random-walk on all active θ  (after birth/death)
-#   active <- which(prop$gamma == 1L)
-#   if (length(active))
-#     prop$theta[active] <- rtnorm_vec(prop$theta[active], cfg$step_sd)
-#   
-#   ## ---------- 2. MH ACCEPTANCE --------------------------------------
-#   vine_prop <- fast_vine_from_particle(prop, skeleton)
-#   vine_curr <- fast_vine_from_particle(p,    skeleton)
-#   
-#   ll_prop <- sum(log(pmax(dvinecop(data_up_to_t, vine_prop),
-#                           .Machine$double.eps)))
-#   ll_curr <- sum(log(pmax(dvinecop(data_up_to_t, vine_curr),
-#                           .Machine$double.eps)))
-#   
-#   ## Symmetric proposal:  q(m→m′) = q(m′→m)
-#   ##   – γ-flips independent Bernoulli(q_flip) in both directions
-#   ##   – RW step is symmetric around current θ
-#   ##   – births draw ρ from Uniform identical to its prior
-#   log_acc <- (ll_prop + log_prior(prop, cfg)) -
-#     (ll_curr + log_prior(p,    cfg))
-#   
-#   if (log(runif(1)) < log_acc) {
-#     prop$last_accept <- TRUE
-#     return(prop)
-#   } else {
-#     p$last_accept <- FALSE
-#     return(p)
-#   }
-# }
 
 mh_step <- function(p, data_up_to_t, skeleton, cfg) {
   
@@ -468,8 +259,16 @@ mh_step <- function(p, data_up_to_t, skeleton, cfg) {
     for (idx in idxs) {
       old_code <- prop$fam[idx]
       
-      ## choose a *different* family uniformly among the active set
-      new_code <- sample(codes[codes != old_code], 1L)
+      tr_idx <- cfg$edge_tree[idx]
+      
+      allowed_names <- if (tr_idx == 1)
+        cfg$families_first else cfg$families_deep
+      
+      allowed_codes <- FAM_INFO$code[FAM_INFO$name %in% allowed_names]
+      
+      ## choose a different family *within* the allowed set
+      new_code <- sample(allowed_codes[allowed_codes != old_code], 1L)
+      
       prop$fam[idx] <- new_code
       
       ## draw parameters from that family's PRIOR
@@ -533,19 +332,6 @@ mh_step <- function(p, data_up_to_t, skeleton, cfg) {
 }
 
 
-
-
-# # Adaptive Proposal SD
-# adaptive_proc_sd <- function(theta_mat, w_new, scale = 0.3, floor_val = 1e-3) {
-#   # Posterior SD per component of theta
-#   post_sd <- apply(theta_mat, 2, function(col)
-#     sqrt(w_var(col, w_new)))
-#   
-#   # Adaptively scaled proposal SD
-#   proc_sd <- scale * pmax(post_sd, floor_val)
-#   
-#   return(proc_sd)
-# }
 
 compute_adapt_step_sd <- function(cfg, acc_pct, lambda = 0.25, target_acc = 0.30, sd_min = 0.01, sd_max=0.05){
   log_sd_new <- log(cfg$step_sd) + lambda * (acc_pct/100 - target_acc)
@@ -687,271 +473,6 @@ w_quantile <- function(x, w, probs = c(0.025, 0.975)) {
 }
 
 
-
-
-
-## ───────────── diagnostic & plotting ────────────────────────────
-# diagnostic_report <- function(t, tr, U, particles, w_new,
-#                               cfg, q_probs  = c(0.025, 0.975)) {
-#   
-#   k_step <- cfg$k_step
-#   M <- cfg$M
-#   
-#   if (t %% k_step != 0L && t != nrow(U)) return(invisible())
-#   ## 1. unpack particle state -------------------------------------------------
-#   #gamma_mat <- do.call(rbind, lapply(particles, `[[`, "gamma"))
-#   theta_mat <- do.call(rbind, lapply(particles, `[[`, "theta"))
-#   rho_mat   <- tanh(theta_mat)
-#   
-#   #slab_w <- responsibility(theta_mat, cfg)   # M × K
-#   tau_vec <- sqrt(vapply(particles, function(p) p$tau2, numeric(1)))
-#   pi_vec  <- vapply(particles, function(p) p$pi, numeric(1))
-#   slab_w  <- responsibility(theta_mat, tau_vec, pi_vec, cfg)
-#   
-#   ## 2. normalise weights (essential) -----------------------------------------
-#   w_new <- w_new / sum(w_new)
-#   ess_t <- 1 / sum(w_new^2)
-#   
-#   tau_vec <- sqrt(vapply(particles, `[[`, numeric(1), "tau2"))
-#   mu_tau  <- w_mean(tau_vec, w_new)
-#   sd_tau  <- sqrt( w_var(tau_vec, w_new, mu_tau) )
-#   
-#   # print
-#   pi_mean <- w_mean(pi_vec, w_new)
-#   pi_sd   <- sqrt(w_var(pi_vec, w_new, pi_mean))
-#   cat(sprintf(" | π = %.3f ± %.3f", pi_mean, pi_sd))
-#   
-#   
-#   cat(sprintf(" | τ = %.4f ± %.4f\n", mu_tau, sd_tau))
-#   
-#   ## 3. global diagnostics ----------------------------------------------------
-#   edge_ct    <- rowSums(slab_w)
-#   mean_edges <- w_mean(edge_ct, w_new)
-#   se_edges   <- mc_se(edge_ct, w_new, ess_t)
-#   
-#   key_vec   <- apply(cbind(theta_mat), 1L,
-#                      \(row) paste(row, collapse = ","))
-#   n_unique  <- length(unique(key_vec))
-#   
-#   dists     <- as.matrix(dist(theta_mat))
-#   avg_dist  <- mean(dists[lower.tri(dists)])
-#   
-#   cat(sprintf(
-#     "t = %4d | tr = %4d | ESS/M = %.3f | mean #edges = %.3f ± %.3f | unique = %d\n | Euclidean dist = %.4f\n",
-#     t, tr, ess_t / M, mean_edges, se_edges, n_unique, avg_dist))
-#   
-#   ## 4. per-edge summaries ----------------------------------------------------
-#   inc_prob <- colSums(slab_w  * w_new)
-#   
-#   edge_summ <- lapply(seq_along(inc_prob), function(e) {
-#     
-#     ## MC-SE of inclusion probability
-#     se_inc <- sqrt(inc_prob[e] * (1 - inc_prob[e]) / ess_t)
-#     
-#     ## conditional posterior of rho if edge present at all
-#     gamma_e <- slab_w[, e]
-#     rho_e   <- rho_mat[,  e]
-#     w_cond  <- w_new * gamma_e
-#     if (sum(w_cond) < 1e-4) {
-#       cat(sprintf("  Edge %2d : P(dep)=%.3f ± %.3f | never present\n",
-#                   e, inc_prob[e], se_inc))
-#       return(list(edge = e, p_dep = inc_prob[e], se_inc = se_inc,
-#                   mu_rho = NA, sd_rho = NA,
-#                   q025 = NA, q975 = NA, se_rho = NA))
-#     }
-#     
-#     w_cond <- w_cond / sum(w_cond)
-#     mu_rho <- sum(w_cond * rho_e)
-#     sd_rho <- sqrt( sum(w_cond * (rho_e - mu_rho)^2) )
-#     qs     <- w_quantile(rho_e, w_cond, q_probs)
-#     
-#     ## MC-SE of the mean (zero-padded variance / ESS)
-#     var_rho_zpad <- w_var(rho_e * slab_w[, e], w_new,
-#                           mu_rho * inc_prob[e])          # PATCH
-#     se_rho       <- sqrt(var_rho_zpad / ess_t)
-#     
-#     cat(sprintf(
-#       "  Edge %2d : P(dep)=%.3f ± %.3f | ρ = %.3f (SD %.3f, MC-SE %.3f) | 95%% CI = [%.3f, %.3f]\n",
-#       e, inc_prob[e], se_inc, mu_rho, sd_rho, se_rho, qs[1], qs[2]))
-#     
-#     list(edge = e, p_dep = inc_prob[e], se_inc = se_inc,
-#          mu_rho = mu_rho, sd_rho = sd_rho,
-#          q025 = qs[1], q975 = qs[2], se_rho = se_rho)
-#   })
-#   
-#   edge_df <- do.call(rbind.data.frame, edge_summ)
-#   
-#   
-#   
-#   invisible(list(ESS  = ess_t,
-#                  unique = n_unique,
-#                  euc = avg_dist,
-#                  tau_mean = mu_tau,      # pass back
-#                  tau_sd   = sd_tau,
-#                  edges = edge_df,
-#                  pi_mean = pi_mean,
-#                  pi_sd = pi_sd))
-# }
-
-
-# diagnostic_report <- function(t, tr, U, particles, w_new,
-#                               cfg, q_probs = c(0.025, 0.975)) {
-#   k_step     <- cfg$k_step
-#   M          <- cfg$M
-#   print_flag <- (t %% k_step == 0L) || (t == nrow(U))
-#   
-#   ## 1. unpack particle state -------------------------------------------------
-#   theta_mat <- do.call(rbind, lapply(particles, `[[`, "theta"))
-#   rho_mat   <- (theta_mat)
-#   
-#   ## 2. normalise weights (essential) ----------------------------------------
-#   w_new <- w_new / sum(w_new)
-#   ess_t <- 1 / sum(w_new^2)
-#   
-#   
-#   ## 3. global diagnostics ----------------------------------------------------
-#   edge_ct    <- rowSums(slab_w)
-#   mean_edges <- w_mean(edge_ct, w_new)
-#   se_edges   <- mc_se(edge_ct, w_new, ess_t)
-#   
-#   key_vec   <- apply(theta_mat, 1L, \(row) paste(row, collapse = ","))
-#   n_unique  <- length(unique(key_vec))
-#   
-#   dists     <- as.matrix(stats::dist(theta_mat))
-#   avg_dist  <- mean(dists[lower.tri(dists)])
-#   
-#   if (print_flag) {
-#     cat(sprintf(
-#       "t = %4d | tr = %4d | ESS/M = %.3f | mean #edges = %.3f ± %.3f | unique = %d\n | Euclidean dist = %.4f\n",
-#       t, tr, ess_t / M, mean_edges, se_edges, n_unique, avg_dist))
-#   }
-#   
-#   ## 4. per-edge summaries ----------------------------------------------------
-#   inc_prob <- colSums(slab_w * w_new)
-#   
-#   edge_summ <- lapply(seq_along(inc_prob), function(e) {
-#     se_inc  <- sqrt(inc_prob[e] * (1 - inc_prob[e]) / ess_t)
-#     
-#     gamma_e <- slab_w[, e]
-#     rho_e   <- rho_mat[,  e]
-#     w_cond  <- w_new * gamma_e
-#     
-#     if (sum(w_cond) < 1e-4) {
-#       if (print_flag)
-#         cat(sprintf("  Edge %2d : P(dep)=%.3f ± %.3f | never present\n",
-#                     e, inc_prob[e], se_inc))
-#       return(list(edge = e, p_dep = inc_prob[e], se_inc = se_inc,
-#                   mu_rho = NA, sd_rho = NA,
-#                   q025 = NA, q975 = NA, se_rho = NA))
-#     }
-#     
-#     w_cond <- w_cond / sum(w_cond)
-#     mu_rho <- sum(w_cond * rho_e)
-#     sd_rho <- sqrt(sum(w_cond * (rho_e - mu_rho)^2))
-#     qs     <- w_quantile(rho_e, w_cond, q_probs)
-#     
-#     var_rho_zpad <- w_var(rho_e * slab_w[, e], w_new,
-#                           mu_rho * inc_prob[e])
-#     se_rho <- sqrt(var_rho_zpad / ess_t)
-#     
-#     if (print_flag) {
-#       cat(sprintf(
-#         "  Edge %2d : P(dep)=%.3f ± %.3f | ρ = %.3f (SD %.3f, MC-SE %.3f) | 95%% CI = [%.3f, %.3f]\n",
-#         e, inc_prob[e], se_inc, mu_rho, sd_rho, se_rho, qs[1], qs[2]))
-#     }
-#     
-#     list(edge = e, p_dep = inc_prob[e], se_inc = se_inc,
-#          mu_rho = mu_rho, sd_rho = sd_rho,
-#          q025 = qs[1], q975 = qs[2], se_rho = se_rho)
-#   })
-#   
-#   edge_df <- do.call(rbind.data.frame, edge_summ)
-#   
-#   ## 5. invisibly return everything ------------------------------------------
-#   invisible(list(ESS       = ess_t,
-#                  unique    = n_unique,
-#                  euc       = avg_dist,
-#                  edges     = edge_df))
-# }
-
-# diagnostic_report <- function(t, tr, U, particles, w_new,
-#                               cfg, q_probs = c(0.025, 0.975)) {
-#   
-#   k_step     <- cfg$k_step
-#   M          <- cfg$M
-#   print_flag <- (t %% k_step == 0L) || (t == nrow(U))
-#   
-#   ## ---------- 1. unpack particle state -------------------------------
-#   theta_mat <- do.call(rbind, lapply(particles, `[[`, "theta"))
-#   rho_mat   <- theta_mat                       # correlations
-#   gamma_mat <- do.call(rbind, lapply(particles, `[[`, "gamma"))
-#   
-#   ## ---------- 2. normalise weights -----------------------------------
-#   w_new <- w_new / sum(w_new)
-#   ess_t <- 1 / sum(w_new^2)
-#   
-#   ## ---------- 3. global diagnostics ----------------------------------
-#   edge_ct    <- rowSums(gamma_mat)                 # #Gaussian edges / particle
-#   mean_edges <- w_mean(edge_ct, w_new)
-#   se_edges   <- mc_se(edge_ct, w_new, ess_t)
-#   sparsity   <- 1 - mean_edges / cfg$K            # 1 = fully sparse
-#   
-#   key_vec   <- apply(theta_mat, 1, \(row) paste(row, collapse = ","))
-#   n_unique  <- length(unique(key_vec))
-#   
-#   dists     <- as.matrix(stats::dist(theta_mat))
-#   avg_dist  <- mean(dists[lower.tri(dists)])
-#   
-#   if (print_flag) {
-#     cat(sprintf(
-#       "t=%4d | tr=%2d | ESS/M=%.3f | dep.edges=%.2f ± %.2f | sparsity=%.3f | unique=%d | L2=%.4f\n",
-#       t, tr, ess_t / M, mean_edges, se_edges, sparsity, n_unique, avg_dist))
-#   }
-#   
-#   ## ---------- 4. per-edge summaries ----------------------------------
-#   inc_prob <- colSums(gamma_mat * w_new)          # P(γ_e = 1)
-#   
-#   edge_summ <- lapply(seq_along(inc_prob), function(e) {
-#     
-#     se_inc <- sqrt(inc_prob[e] * (1 - inc_prob[e]) / ess_t)
-#     
-#     active  <- gamma_mat[, e] == 1L
-#     if (!any(active)) {
-#       if (print_flag)
-#         cat(sprintf("  Edge %2d : P(dep)=%.3f ± %.3f | never active\n",
-#                     e, inc_prob[e], se_inc))
-#       return(list(edge = e, p_dep = inc_prob[e], se_inc = se_inc,
-#                   mu_rho = NA, sd_rho = NA,
-#                   q025 = NA, q975 = NA))
-#     }
-#     
-#     rho_e <- rho_mat[active, e]
-#     w_e   <- w_new[active] / sum(w_new[active])
-#     
-#     mu_rho <- sum(w_e * rho_e)
-#     sd_rho <- sqrt(sum(w_e * (rho_e - mu_rho)^2))
-#     qs     <- w_quantile(rho_e, w_e, q_probs)
-#     
-#     if (print_flag)
-#       cat(sprintf(
-#         "  Edge %2d : P(dep)=%.3f ± %.3f | ρ = %.3f (SD %.3f) | 95%% CI = [%.3f, %.3f]\n",
-#         e, inc_prob[e], se_inc, mu_rho, sd_rho, qs[1], qs[2]))
-#     
-#     list(edge = e, p_dep = inc_prob[e], se_inc = se_inc,
-#          mu_rho = mu_rho, sd_rho = sd_rho,
-#          q025 = qs[1], q975 = qs[2])
-#   })
-#   
-#   edge_df <- do.call(rbind.data.frame, edge_summ)
-#   
-#   invisible(list(
-#     ESS      = ess_t,
-#     unique   = n_unique,
-#     euc      = avg_dist,
-#     sparsity = sparsity,
-#     edges    = edge_df
-#   ))
-# }
 
 
 diagnostic_report <- function(t, tr, U, particles, w_new,
@@ -1118,51 +639,6 @@ stratified_resample <- function(w) {
 }
 
 
-
-# ================================================================
-#  EFFICIENT Predictive Function 
-# ================================================================
-
-# compute_predictive_metrics <- function(u_obs, particles, skel, w_prev_for_prediction, cfg) {
-#   M <- length(particles)
-#   d <- ncol(u_obs)
-#   
-#   # --- 1. Compute Log Predictive Density (using original weighted particles) ---
-#   likelihoods <- sapply(particles, function(p) {
-#     vine_p <- fast_vine_from_particle(p, skel)
-#     dvinecop(u_obs, vine_p)
-#   })
-#   weighted_likelihood <- sum(w_prev_for_prediction * likelihoods)
-#   log_pred_density <- log(weighted_likelihood + 1e-30)
-#   
-#   
-#   ## -- 2. posterior mean + s.e. of θ -----------------------------------
-#   theta_mat <- do.call(rbind, lapply(particles, `[[`, "theta"))
-#   rho_mat <- (theta_mat)
-#   #gamma_mat <- do.call(rbind, lapply(particles, `[[`, "gamma"))
-# 
-#   gamma_mean_now <- colSums(slab_w * w_prev_for_prediction)
-#   gamma_sd_now   <- sqrt(gamma_mean_now * (1 - gamma_mean_now))
-#   ## mean
-#   theta_mean_now <- colSums(rho_mat * w_prev_for_prediction)
-#   
-#   ## weighted var  = Σ w (θ-μ)²
-#   theta_var <- colSums(w_prev_for_prediction * (rho_mat - rep(theta_mean_now, each = nrow(rho_mat)))^2)
-#   #gamma_mean_now <- colSums(gamma_mat * w_prev_for_prediction)
-#   
-#   ## ESS for each step (scalar)  -> s.e. = √(var / ESS)
-#   ess <- 1 / sum(w_prev_for_prediction^2)
-#   theta_sd_now <- sqrt(theta_var)
-#   #gamma_sd_now  <- sqrt(gamma_mean_now * (1 - gamma_mean_now))
-#   # --- 4. Return all metrics in a single list ---
-#   return(list(
-#     log_pred_density = log_pred_density,
-#     theta_mean       = theta_mean_now,
-#     theta_se         = theta_sd_now,
-#     gamma_mean       = gamma_mean_now,
-#     gamma_se      = gamma_sd_now
-#   ))
-# }
 
 
 compute_predictive_metrics <- function(u_obs, particles, skel,

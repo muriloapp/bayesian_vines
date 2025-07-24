@@ -33,7 +33,7 @@ run_standard_smc <- function(data,
   U <- data$U
   
   type <- match.arg(type)
-  skeleton  <- vinecop(U, family_set = "gaussian", structure = data$RVM$Matrix[nrow(data$RVM$Matrix):1, ]) # make sure used only for the structure
+  skeleton  <- vinecop(U, family_set = "gaussian", structure = data$RVM$structure) # make sure used only for the structure
 
   # ── dimensions ───────────────────────────────────────────────────
   N <- nrow(U); K <- cfg$K; M <- cfg$M
