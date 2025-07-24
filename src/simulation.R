@@ -267,3 +267,132 @@ sim_static_cop_6 <- function(N      = 200,
 # out$theta             # 6 × 6 correlation matrix (zeros on skipped edges)
 # head(out$U)           # your data
 
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  sim_static_cop.R      generic static C-vine generator          2025-07-24
+# ─────────────────────────────────────────────────────────────────────────────
+#  First-tree edges ∈ { indep(0), gaussian(1), bb1(2) }
+#  Deeper-tree edges ∈ { indep(0), gaussian(1) }
+#
+#  Arguments
+#    d          : dimension (≥ 3)
+#    N          : sample size
+#    p_zero     : P(edge = independence) for *all* trees
+#    p_bb1      : extra probability mass for BB1 in the first tree
+#    beta_U/L   : Beta(α,β) hyper-pars for λU, λL  (upper / lower tail)
+#    rho_lo/hi  : uniform range for Gaussian ρ
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  sim_static_cop()             rvinecopulib version                2025-07-24
+# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+#  sim_static_cop()              rvinecopulib-only                    2025-07-24
+# ─────────────────────────────────────────────────────────────────────────────
+library(rvinecopulib)
+
+bb1_tail2par <- function(lambdaL, lambdaU) {
+  theta <- log(2 - lambdaU) / (-log(lambdaL))
+  delta <- log(2) / log(2 - lambdaU)
+  c(theta, delta)
+}
+
+sim_static_cop <- function(d       = 6,
+                           N       = 200,
+                           p_zero  = 0.50,
+                           p_bb1   = 0.50,              # only in first tree
+                           beta_U  = c(2, 2),
+                           beta_L  = c(2, 2),
+                           rho_lo  = -0.99,
+                           rho_hi  =  0.99) {
+  
+  stopifnot(d >= 3, p_zero >= 0, p_bb1 >= 0,
+            p_zero + p_bb1 <= 1)
+  
+  ## 1️⃣  build a VALID C-vine structure matrix -------------------------------
+  #   Row i (1-based) has (d-i+1) identical entries   d-i+1,
+  #   followed by zeros ─ exactly the pattern rvinecopulib expects.
+  struct <- matrix(0L, d, d)
+  for (i in 1:d) {
+    val <- d - i + 1
+    struct[i, 1:val] <- val
+  }
+  # example d = 6 →
+  # 6 6 6 6 6 6
+  # 5 5 5 5 5 0
+  # 4 4 4 4 0 0
+  # 3 3 3 0 0 0
+  # 2 2 0 0 0 0
+  # 1 0 0 0 0 0
+  
+  ## 2️⃣  allocate family & parameter holders ---------------------------------
+  fam     <- matrix(0L, d, d)          # 0 indep, 1 Gauss, 7 BB1
+  theta1  <- theta2 <- matrix(0, d, d) # ρ  or  θ   |  δ for BB1
+  
+  ## 3️⃣  choose family / parameters for each lower-triangular position -------
+  for (j in 1:(d - 1)) {               # column = tree (j = 1 ⇒ first tree)
+    first_tree <- (j == 1)
+    
+    for (i in (j + 1):d) {
+      if (runif(1) < p_zero)
+        next                                 # keep independence (fam = 0)
+      
+      if (first_tree) {
+        code <- sample(c(1L, 7L), 1, prob = c(1 - p_bb1, p_bb1))
+      } else {
+        code <- 1L                           # Gaussian only deeper down
+      }
+      fam[i, j] <- code
+      
+      if (code == 1L) {                      # Gaussian
+        theta1[i, j] <- runif(1, rho_lo, rho_hi)
+        
+      } else {                               # BB1
+        lambdaU <- rbeta(1, beta_U[1], beta_U[2])
+        lambdaL <- rbeta(1, beta_L[1], beta_L[2])
+        tp      <- bb1_tail2par(lambdaL, lambdaU)
+        theta1[i, j] <- tp[1]                # θ
+        theta2[i, j] <- tp[2]                # δ
+      }
+    }
+  }
+  
+  ## 4️⃣  convert to rvinecopulib objects -------------------------------------
+  pcs <- vector("list", d - 1)
+  for (tr in 1:(d - 1)) {
+    pcs[[tr]] <- vector("list", d - tr)
+    for (ed in 1:(d - tr)) {
+      
+      i <- tr + ed     # row index in (fam, theta) matrices
+      j <- tr          # column / tree level
+      
+      f <- fam[i, j]
+      pcs[[tr]][[ed]] <-
+        if (f == 0L) {
+          bicop_dist("indep")
+        } else if (f == 1L) {
+          bicop_dist("gaussian", parameters = theta1[i, j])
+        } else {        # BB1  (code 7)
+          bicop_dist("bb1", parameters = c(theta1[i, j], theta2[i, j]))
+        }
+    }
+  }
+  
+  vc <- vinecop_dist(pcs, structure = struct)
+  
+  ## 5️⃣  simulate data --------------------------------------------------------
+  U <- rvinecop(N, vc)
+  colnames(U) <- paste0("U", 1:d)
+  
+  ## 6️⃣  return --------------------------------------------------------------
+  list(U      = U,
+       RVM    = vc,          # vinecop_dist object
+       family = fam,
+       theta  = theta1,
+       theta2 = theta2)
+}
+
+
