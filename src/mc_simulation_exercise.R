@@ -33,13 +33,13 @@ save_fit <- function(res, label, alg, sim_tag, d) {
 for (sim in seq_len(n_sim)) {
   for (d in dims) {
     
-    set.seed(seed_base + 100 * d + sim)          # unique per (d, sim)
+    set.seed(seed_base + d + sim)          # unique per (d, sim)
     sim_tag <- sprintf("sim%03d", sim)
     
     ## 1️⃣  simulate data once per replication
     data <- sim_static_cop(d = d, N = N_obs)
     data_dir <- file.path(out_root, sprintf("d%d", d), "_data")
-    dir.create(data_dir, showWarnings = FALSE)
+    dir.create(data_dir,  recursive = TRUE, showWarnings = FALSE)
     saveRDS(data, file.path(data_dir,
                             sprintf("data_%s.rds", sim_tag)))
     
