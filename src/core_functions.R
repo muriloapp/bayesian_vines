@@ -481,6 +481,7 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
   k_step     <- cfg$k_step
   M          <- cfg$M
   print_flag <- (t %% k_step == 0L) || (t == nrow(U))
+  print_flag <- FALSE
   
   ## ---------- 1. unpack particle state ----------------------------
   fam_mat <- do.call(rbind, lapply(particles, `[[`, "fam"))
