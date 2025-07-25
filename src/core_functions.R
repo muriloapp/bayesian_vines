@@ -481,7 +481,7 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
   k_step     <- cfg$k_step
   M          <- cfg$M
   print_flag <- (t %% k_step == 0L) || (t == nrow(U))
-  print_flag <- FALSE
+  #print_flag <- FALSE
   
   ## ---------- 1. unpack particle state ----------------------------
   fam_mat <- do.call(rbind, lapply(particles, `[[`, "fam"))
@@ -657,32 +657,193 @@ compute_predictive_metrics <- function(u_obs, particles, skel,
   )
   log_pred_density <- log(sum(w_prev_for_prediction * lik) + 1e-30)
   
-  ## ---------- 2. posterior summaries ---------------------------------
-  theta_mat <- do.call(rbind, lapply(particles, `[[`, "theta"))
-  rho_mat   <- theta_mat                          # already ρ in (-0.99,0.99)
-  
-  gamma_mat <- do.call(rbind, lapply(particles, `[[`, "gamma"))
-  
-  ## inclusion probs
-  gamma_mean_now <- colSums(gamma_mat * w_prev_for_prediction)
-  gamma_sd_now   <- sqrt(gamma_mean_now * (1 - gamma_mean_now))
-  
-  ## θ means & MC-SE
-  theta_mean_now <- colSums(rho_mat * w_prev_for_prediction)
-  theta_var_now  <- colSums(
-    w_prev_for_prediction *
-      (rho_mat - rep(theta_mean_now, each = nrow(rho_mat)))^2
-  )
-  theta_sd_now <- sqrt(theta_var_now)
-  
   list(
-    log_pred_density = log_pred_density,
-    theta_mean = theta_mean_now,
-    theta_se   = theta_sd_now,
-    gamma_mean = gamma_mean_now,
-    gamma_se   = gamma_sd_now
+    log_pred_density = log_pred_density
   )
 }
+
+
+
+# -------------------------------------------------------------------------
+#  smc_predictive_sample()
+#  Draw L iid observations from the posterior predictive C-vine mixture
+# -------------------------------------------------------------------------
+smc_predictive_sample <- function(particles,          # list of M particles
+                                  skel,               # fixed structure
+                                  w,                  # numeric(M) normalised
+                                  L       = 10000,    # # draws wanted
+                                  cache   = FALSE,    # reuse vine objects?
+                                  cl      = NULL) {   # existing cluster
+  
+  stopifnot(abs(sum(w) - 1) < 1e-8)
+  M  <- length(particles)
+  d  <- ncol(skel$structure)
+  
+  ## 0️⃣  optional caching -------------------------------------------------
+  vines <- if (isTRUE(cache)) {
+    lapply(particles, fast_vine_from_particle, skel = skel)
+  }
+  
+  ## 1️⃣  which particle generates each row? ------------------------------
+  id <- sample.int(M, L, replace = TRUE, prob = w)
+  
+  ## 2️⃣  simulation helper (one row) --------------------------------------
+  sim_row <- function(j) {               # j = row index (1…L)
+    p_idx <- id[j]                       # which particle?
+    vine  <- #if (isTRUE(cache)) vines[[p_idx]]
+    #else          
+      fast_vine_from_particle(particles[[p_idx]], skel)
+    rvinecop(1, vine)                    # 1 × d numeric
+  }
+  
+  ## 3️⃣  run in parallel or serial ----------------------------------------
+  if (!is.null(cl)) {
+    parallel::clusterExport(
+      cl,
+      c("id", "particles", "vines", "skel", "sim_row"),
+      envir = environment())
+    
+    ## split the indices 1:L as evenly as possible across the workers
+    idx_split <- parallel::splitIndices(L, length(cl))
+    
+    sims <- parallel::parLapply(cl, idx_split, function(chunk) {
+      do.call(rbind, lapply(chunk, sim_row))
+    })
+    out <- do.call(rbind, sims)          # L × d  (rows already in order)
+    
+  } else {                               # serial fallback
+    out <- do.call(rbind, lapply(seq_len(L), sim_row))
+  }
+  
+  dimnames(out) <- NULL
+  out                              # matrix(L , d)
+}
+
+
+
+
+
+# ------------------------------------------------------------------
+#  update_risk_log()   –– append one row of risk metrics
+# ------------------------------------------------------------------
+#
+#  Arguments
+#  ----------
+#  risk_log   data.table | initially empty (0 rows) and kept by caller
+#  U_pred     L × d matrix of uniform draws from smc_predictive_sample()
+#  mu_fc      numeric-vector length d   –– conditional means  (AR part)
+#  sig_fc     numeric-vector length d   –– conditional stdevs (GARCH part)
+#  t_idx      scalar, time index (stored in the log)
+#  alphas     tail probabilities for VaR / ES   (default 95 % & 97.5 %)
+#
+#  Returns
+#  -------
+#  Same data.table, one extra row per call
+# ------------------------------------------------------------------
+update_risk_log <- function(risk_log,
+                            U_pred,
+                            mu_f,
+                            sig_f,
+                            t_idx,
+                            alphas = c(0.95, 0.975))
+{
+  stopifnot(is.matrix(U_pred),
+            length(mu_f)  == ncol(U_pred),
+            length(sig_f) == ncol(U_pred))
+  
+  
+  sig_f = as.numeric(sig_f)
+  mu_f = as.numeric(mu_f)
+  
+  ## 1. quantile transform & rescale -------------------------------
+  Z      <- qnorm(U_pred)                           # L × d
+  R_pred <- sweep(Z,  2, sig_f, `*`)
+  R_pred <- sweep(R_pred, 2, mu_f,  `+`)
+  
+  L <- nrow(R_pred);  d <- ncol(R_pred)
+  series_names <- paste0("S", seq_len(d))           # generic column labels
+  dimnames(R_pred) <- list(NULL, series_names)
+  
+  ## 2. point moments ----------------------------------------------
+  mu_hat  <- colMeans(R_pred)
+  var_hat <- colMeans((R_pred - rep(mu_hat, each = L))^2)
+  
+  ## 3. tail risk ---------------------------------------------------
+  losses <- -R_pred                          # L × d matrix
+  
+  VaR <- vapply(alphas,                          # (K × d)
+                function(a)
+                  apply(losses, 2, quantile, probs = a),
+                numeric(d))
+  
+  ES  <- vapply(seq_along(alphas),   # k = 1 … K
+                function(k) {
+                  thr <- VaR[ , k]   # one threshold per series
+                  vapply(seq_len(d), function(j) {
+                    lj <- losses[ , j]
+                    exc <- lj[lj >= thr[j]]
+                    if (length(exc)) mean(exc) else NA_real_
+                  }, numeric(1))
+                },
+                numeric(d))
+  dimnames(VaR) <- dimnames(ES) <- list(colnames(losses), paste0("a", alphas))
+  
+  ## 4. 95 % predictive interval -----------------------------------
+  CI_lower <- apply(R_pred, 2, quantile, probs = 0.025)
+  CI_upper <- apply(R_pred, 2, quantile, probs = 0.975)
+  
+  ## 5. gather as one long row (wide format) ------------------------
+  row <- data.table::data.table(t_idx = t_idx)
+  
+  ## names of the d series, e.g.  c("S1","S2", …)
+  series_names <- colnames(R_pred)
+  
+  ## row is the single-row data.table that accumulates the statistics
+  ## ----------------------------------------------------------------
+  add_vec <- function(x, prefix) {
+    cols <- paste0(prefix, "_", series_names)   # e.g.  mean_S1, mean_S2 …
+    stopifnot(length(x) == length(cols))        # sanity check
+    row[, (cols) := as.list(unname(x))]         # <- list = one entry / col
+  }
+  
+  ## point estimates ------------------------------------------------
+  add_vec(mu_hat,  "mean")
+  add_vec(var_hat, "var")
+  add_vec(CI_lower,"ci_lo")
+  add_vec(CI_upper,"ci_hi")
+  
+  ## tail–risk measures ---------------------------------------------
+  for (k in seq_along(alphas)) {
+    add_vec(VaR[ , k], sprintf("VaR%g", alphas[k] * 100))
+    add_vec(ES [ , k], sprintf("ES%g",  alphas[k] * 100))
+  }
+  
+  ## 6. append & return --------------------------------------------
+  data.table::rbindlist(list(risk_log, row), use.names = TRUE, fill = TRUE)
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
