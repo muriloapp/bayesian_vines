@@ -94,7 +94,7 @@ run_standard_smc <- function(data,
       "log_prior", "bb1_tail2par", "bb1_par2tail", "bb1_log_jacobian",
       "rtnorm_vec", "log_prior_edge",
       ## -------------- likelihood helpers --------------------
-      "bicop_dist", "vinecop_dist", "dvinecop", "fast_vine_from_particle",
+      "bicop_dist", "vinecop_dist", "dvinecop", "fast_vine_from_particle", "rvinecop",
       ## -------------- shared data objects ------------------
       "skeleton", "cfg",
       ## -------------- diagnostics & prediction --------------
@@ -123,10 +123,6 @@ run_standard_smc <- function(data,
                                        skeleton, w_prev, cfg)
       
       out$log_pred[t_idx]   <- pm$log_pred_density
-      out$par1_mean[t_idx,] <- pm$par1_mean
-      out$par1_se  [t_idx,] <- pm$par1_se
-      out$par2_mean[t_idx,] <- pm$par2_mean
-      out$par2_se  [t_idx,] <- pm$par2_se
     }
     
     # 1. weight update ──────────────────────────────────────────────────────
