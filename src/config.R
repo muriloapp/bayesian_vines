@@ -17,14 +17,6 @@ load_packages <- function() {
   lapply(pkgs, require, character.only = TRUE)
 }
 
-
-source(here("src", "core_functions.R"))
-source(here("src", "simulation.R"))
-source(here("src", "smc_stand_vine.R"))
-source(here("src", "smc_block_vine.R"))
-source(here("src", "results_helpers.R"))
-
-
 ## build_cfg()  ─────────────────────────────────────────────────────────
 build_cfg <- function(d,
                       lambda        = 1,
@@ -63,6 +55,12 @@ build_cfg <- function(d,
   )
 }
 
+source(here("src", "core_functions.R"))
+source(here("src", "simulation.R"))
+source(here("src", "smc_stand_vine.R"))
+source(here("src", "smc_block_vine.R"))
+source(here("src", "results_helpers.R"))
+source(here("src", "main_empirical.R"))
 
 
 quiet_assert()                       
