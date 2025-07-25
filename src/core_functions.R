@@ -90,7 +90,8 @@ new_particle <- function(cfg) {
     } else if (code_k == FAM_BB1) {
       lamU <- rbeta(1, 2, 2); lamL <- rbeta(1, 2, 2)
       tp   <- bb1_tail2par(lamL, lamU)
-      th1[k] <- tp[1]; th2[k] <- tp[2]
+      pars <- sanitize_bb1(tp[1], tp[2])
+      th1[k] <- pars[1]; th2[k] <- pars[2]
     }
   }
   
