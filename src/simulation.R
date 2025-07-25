@@ -354,8 +354,9 @@ sim_static_cop <- function(d       = 6,
         lambdaU <- rbeta(1, beta_U[1], beta_U[2])
         lambdaL <- rbeta(1, beta_L[1], beta_L[2])
         tp      <- bb1_tail2par(lambdaL, lambdaU)
-        theta1[i, j] <- tp[1]                # θ
-        theta2[i, j] <- tp[2]                # δ
+        pars <- sanitize_bb1(tp[1], tp[2])
+        theta1[i, j] <- pars[1]                # θ
+        theta2[i, j] <- pars[2]                # δ
       }
     }
   }

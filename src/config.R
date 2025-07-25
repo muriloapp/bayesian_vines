@@ -11,18 +11,11 @@ quiet_assert <- function() {
 load_packages <- function() {
   pkgs <- c(
     "rvinecopulib", "VineCopula", "data.table", "tictoc", #"Rcpp",
-    "here", "parallel", "profvis", "ggplot2", "reshape2"#, "RcppThread"
+    "here", "parallel", "profvis", "ggplot2", "reshape2", #, "RcppThread"
+    "data.table", "parallel"
   )
   lapply(pkgs, require, character.only = TRUE)
 }
-
-
-source(here("src", "core_functions.R"))
-source(here("src", "simulation.R"))
-source(here("src", "smc_stand_vine.R"))
-source(here("src", "smc_block_vine.R"))
-source(here("src", "results_helpers.R"))
-
 
 ## build_cfg()  ─────────────────────────────────────────────────────────
 build_cfg <- function(d,
@@ -55,10 +48,19 @@ build_cfg <- function(d,
     families_deep  = families_deep,
     adapt_step_sd = adapt_step_sd,
     seed    = 42, G = 2L,
-    edge_tree  = edge_tree_map(d)
+    edge_tree  = edge_tree_map(d),
+    nc       = max(parallel::detectCores()-1, 1),
+    type     = "standard",
+    alphas     = c(.05, .025)
   )
 }
 
+source(here("src", "core_functions.R"))
+source(here("src", "simulation.R"))
+source(here("src", "smc_stand_vine.R"))
+source(here("src", "smc_block_vine.R"))
+source(here("src", "results_helpers.R"))
+source(here("src", "main_empirical.R"))
 
 
 quiet_assert()                       
