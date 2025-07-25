@@ -11,7 +11,8 @@ quiet_assert <- function() {
 load_packages <- function() {
   pkgs <- c(
     "rvinecopulib", "VineCopula", "data.table", "tictoc", #"Rcpp",
-    "here", "parallel", "profvis", "ggplot2", "reshape2"#, "RcppThread"
+    "here", "parallel", "profvis", "ggplot2", "reshape2", #, "RcppThread"
+    "data.table", "parallel"
   )
   lapply(pkgs, require, character.only = TRUE)
 }
@@ -55,7 +56,10 @@ build_cfg <- function(d,
     families_deep  = families_deep,
     adapt_step_sd = adapt_step_sd,
     seed    = 42, G = 2L,
-    edge_tree  = edge_tree_map(d)
+    edge_tree  = edge_tree_map(d),
+    nc       = max(parallel::detectCores()-1, 1),
+    type     = "standard",
+    alphas     = c(.05, .025)
   )
 }
 
