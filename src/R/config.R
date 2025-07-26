@@ -55,12 +55,13 @@ build_cfg <- function(d,
   )
 }
 
-source(here("src", "core_functions.R"))
-source(here("src", "simulation.R"))
-source(here("src", "smc_stand_vine.R"))
-source(here("src", "smc_block_vine.R"))
-source(here("src", "results_helpers.R"))
-source(here("src", "main_empirical.R"))
+source(here("src/R", "core_functions.R"))
+source(here("src/simulation", "simulation.R"))
+source(here("src/models", "smc_stand_vine.R"))
+#source(here("src/models", "smc_block_vine.R"))
+source(here("src/R", "results_helpers.R"))
+source(here("src/models", "main_empirical.R"))
+source(here("src/R", "utils.R"))
 
 
 quiet_assert()                       

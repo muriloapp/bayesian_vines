@@ -1,5 +1,5 @@
 library(here)
-source(here("src", "config.R"))          # build_cfg(), constants …
+source(here("src/R", "config.R"))         
 
 
 
@@ -11,17 +11,16 @@ run_empirical <- function() {
     sig_fc = readRDS("data/returns_vol_forecast.rds")[,-1]
   )
   
-  cfg_variants <- list(list(label = "test"))          # add as you like
+  cfg_variants <- list(list(label = "test"))          
   for (v in cfg_variants) {
     cfg <- modifyList(build_cfg(ncol(dat$U)), v[ setdiff(names(v),"label") ])
     cfg$label <- v$label %||% "cfg"
     res <- smc_full(dat, cfg)
     res$alg <- "standard"
-    save_result(res)
+    save_result(res, here("empirical_results"))
   }
 }
 
-# ── fire -------------------------------------------------------------------
 run_empirical()
 
 
