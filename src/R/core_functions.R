@@ -245,7 +245,86 @@ compute_adapt_step_sd <- function(cfg, acc_pct, lambda = 0.25, target_acc = 0.30
 
 ## Resample move
 
-resample_move <- function(particles, newAncestors, data_up_to_t, cl, type, cfg, skeleton=NULL, tr=NULL, temp_skel=NULL) {
+mh_worker_standard <- function(idx, n_mh, slice, data_up_to_t, skeleton, cfg)
+{
+  p         <- slice[[idx]]
+  acc_local <- 0L
+  
+  for (k in seq_len(n_mh)) {
+    p <- mh_step(p, data_up_to_t, skeleton, cfg)
+    if (isTRUE(p$last_accept)) acc_local <- acc_local + 1L
+  }
+  
+  list(p = p, acc = acc_local)
+}
+
+mh_worker_block <- function(idx, n_mh, slice, data_up_to_t, temp_skel, tr, cfg)
+{
+  p         <- slice[[idx]]
+  acc_local <- 0L
+  
+  for (k in seq_len(n_mh)) {
+    p <- mh_step_in_tree(p, tr, data_up_to_t, temp_skel, cfg)
+    if (isTRUE(p$last_accept)) acc_local <- acc_local + 1L
+  }
+  
+  list(p = p, acc = acc_local)
+}
+
+
+resample_move <- function(particles, newAncestors, data_up_to_t,
+                          cl, type = "standard",
+                          cfg, skeleton = NULL, tr = NULL, temp_skel = NULL)
+{
+  ## --- 1a.  Resample ------------------------------------------------
+  particles <- particles[newAncestors]        # simple copy
+  for (p in particles) p$w <- 1 / cfg$M       # reset weights
+  
+  ## --- 1b.  Ship particles ONCE to each worker ----------------------
+  clusterExport(cl, "particles")
+  
+  ## --- 1c.  Parallel MH moves --------------------------------------
+  tic("MH move")
+  mh_results <- switch(type,
+                       standard = parLapply(
+                         cl, seq_along(particles),
+                         mh_worker_standard,
+                         n_mh         = cfg$n_mh,
+                         slice        = particles,
+                         data_up_to_t = data_up_to_t,
+                         skeleton     = skeleton,
+                         cfg          = cfg
+                       ),
+                       block = parLapply(
+                         cl, seq_along(particles),
+                         mh_worker_block,
+                         n_mh         = cfg$n_mh,
+                         slice        = particles,
+                         data_up_to_t = data_up_to_t,
+                         temp_skel    = temp_skel,
+                         tr           = tr,
+                         cfg          = cfg
+                       )
+  )
+  toc()
+  
+  ## --- 1d.  Collect outputs ----------------------------------------
+  particles   <- lapply(mh_results, `[[`, "p")
+  acc_vec     <- vapply(mh_results, `[[`, integer(1), "acc")
+  mh_n_prop   <- cfg$M * cfg$n_mh
+  mh_n_acc    <- sum(acc_vec)
+  acc_pct     <- 100 * mh_n_acc / mh_n_prop
+  
+  cat(sprintf(
+    "MH acceptance = %4d / %4d = %.2f%%\n\n",
+    mh_n_acc, mh_n_prop, acc_pct
+  ))
+  
+  list(particles = particles, acc_pct = acc_pct)
+}
+
+
+resample_move_old <- function(particles, newAncestors, data_up_to_t, cl, type, cfg, skeleton=NULL, tr=NULL, temp_skel=NULL) {
   
   #idx       <- sample.int(M, M, TRUE, prob = w_new)
   particles <- particles[newAncestors]                  # cópia simples
@@ -255,10 +334,11 @@ resample_move <- function(particles, newAncestors, data_up_to_t, cl, type, cfg, 
   
   mh_n_prop <- cfg$M * cfg$n_mh 
   mh_n_acc  <- 0
-  clusterSetRNGStream(cl, 42) 
+  clusterSetRNGStream(cl, 43) 
   
   tic("mh time")
   if (type=='standard'){
+    system.time(
     mh_results <- parLapply(cl, seq_along(particles), function(i, particles_local, data_up_to_t, skeleton, cfg) {
       p <- particles_local[[i]]
       local_acc <- 0L
@@ -271,6 +351,7 @@ resample_move <- function(particles, newAncestors, data_up_to_t, cl, type, cfg, 
       list(p = p, acc = local_acc)
     },
     particles, data_up_to_t, skeleton, cfg)
+    )
   } else if (type == "block") {
     mh_results <- parLapply(cl, seq_along(particles), function(i, particles_local, data_up_to_t, temp_skel, tr, cfg) {
       p <- particles_local[[i]]
@@ -284,6 +365,7 @@ resample_move <- function(particles, newAncestors, data_up_to_t, cl, type, cfg, 
       list(p = p, acc = local_acc)
     },
     particles, data_up_to_t, temp_skel, tr, cfg)
+    
   } else {
     stop(sprintf("Unknown type: '%s'. Use 'standard' or 'block'.", type))
   }

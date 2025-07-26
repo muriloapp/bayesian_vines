@@ -39,11 +39,11 @@ build_cfg <- function(d,
     W       = 1000L,
     k_step  = 1L,
     n_mh    = 3L,
-    W_predict    = 2000L,
+    W_predict    = 756,                              # Training period     
     q_flip=q_flip,
     step_sd = step_sd,
     lambda  = lambda,
-    families = families,          # ← store user choice
+    families = families,                             # Store user choice
     families_first = families_first,
     families_deep  = families_deep,
     adapt_step_sd = adapt_step_sd,
