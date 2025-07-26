@@ -19,27 +19,8 @@ T_INDEP  <- bicop_dist("indep")
 T_GAUSS  <- bicop_dist("gaussian", parameters = 0)
 T_BB1    <- bicop_dist("bb1",      parameters = c(1, 2))  # dummy θ,δ
 
-active_fams <- function(cfg) FAM_INFO[FAM_INFO$name %in% cfg$families, ]
 
-edge_tree_map <- function(d) {
-  K   <- d * (d - 1) / 2
-  map <- integer(K)
-  idx <- 1L
-  for (tr in 1:(d - 1)) {          # tree index
-    n_edges <- d - tr              # edges in that tree
-    map[idx:(idx + n_edges - 1)] <- tr
-    idx <- idx + n_edges
-  }
-  map
-}
-
-rtnorm1 <- function(mu, sd, a = -0.99, b = 0.99) {
-  repeat {
-    x <- rnorm(1, mu, sd)
-    if (x > a && x < b) return(x)
-  }
-}
-
+## Priors
 
 log_prior_edge <- function(fam, th1, th2, cfg) {
   
@@ -64,6 +45,7 @@ log_prior <- function(p, cfg) {
              MoreArgs = list(cfg = cfg)))
 }
 
+## Intialize particles
 
 new_particle <- function(cfg) {
   
@@ -99,53 +81,7 @@ new_particle <- function(cfg) {
        w = 1 / cfg$M, last_accept = FALSE)
 }
 
-
-
-vine_from_particle <- function(p, skel) {
-    pcs <- lapply(skel$pair_copulas, function(lvl) lapply(lvl, identity))
-    idx <- 1L
-    for (tr in seq_along(pcs)) {
-      for (ed in seq_along(pcs[[tr]])) {
-        pcs[[tr]][[ed]] <- bicop_dist("gaussian", parameters = tanh(p$theta[idx]))
-        idx <- idx + 1L
-      }
-    }
-    vinecop_dist(pcs, structure = skel$structure)
-}
-
-## ----- BB1  (λ  ↔  θ,δ) ----------------------------------------------
-bb1_tail2par <- function(lambdaL, lambdaU) {
-  theta <- log(2-lambdaU)/(-log(lambdaL))          # θ > 0
-  delta <- log(2) / log(2-lambdaU)             # δ > 1
-  c(theta, delta)
-}
-
-bb1_par2tail <- function(theta, delta) {
-  lambdaL <- 2^(-1 / (delta*theta))
-  lambdaU <- 2 - 2^(1 / delta)
-  c(lambdaL, lambdaU)
-}
-
-# bb1_log_jacobian <- function(lambdaL, lambdaU) {
-#   -log( (2 - lambdaU) * lambdaL * (log(2))^2 )
-# }
-
-bb1_log_jacobian <- function(lambdaL, lambdaU) {
-  log2 <- log(2)
-  denom <- (log(1 / lambdaL))^2 * lambdaL * log(2 - lambdaU) * (2 - lambdaU)
-  log(log2) - log(denom)
-}
-
-
-
-sanitize_bb1 <- function(theta, delta,
-                         eps   = 1e-6,   # lower-bound cushion
-                         upper = 7 - 1e-6) {
-  
-  theta <- pmin(pmax(theta, eps),   upper)   # (0 , 7]
-  delta <- pmin(pmax(delta, 1+eps), upper)   # (1 , 7]
-  c(theta, delta)
-}
+## Vine for each particle
 
 fast_vine_from_particle <- function(p, skel) {
   
@@ -181,76 +117,40 @@ fast_vine_from_particle <- function(p, skel) {
   vinecop_dist(pcs, skel$structure)
 }
 
-
-ESS <- function(w) 1 / sum(w^2)
-
-mh_step_in_tree <- function(p, tr, data_up_to_t, temp_skel, cfg) {
+compute_log_incr <- function(particles, u_row, skeleton, cfg) {
+  log_incr <- numeric(cfg$M)
   
-  ## ──────────────────────────────
-  ## 1.  Identify the edges in tree tr
-  ## ──────────────────────────────
-  if (tr == 1) {
-    edges_in_previous_trees <- 0L
-  } else {
-    edges_in_previous_trees <- cfg$d * (tr - 1) - (tr - 1) * tr / 2
+  for (j in seq_along(particles)) {
+    p <- particles[[j]]
+    vine_j     <- fast_vine_from_particle(p, skeleton)
+    dens_val     <- dvinecop(u_row, vine_j)
+    li           <- ifelse(dens_val <= 0, -1e100, log(dens_val))
+    log_incr[j]  <- li
   }
-  first_edge <- edges_in_previous_trees + 1L
-  last_edge  <- edges_in_previous_trees + (cfg$d - tr)
-  if (tr == cfg$G) {
-    last_edge <- cfg$K
-  }
-  idx_tree   <- first_edge:last_edge        # vector of edge indices
   
-  ## ──────────────────────────────
-  ## 2.  Propose γ / θ on those edges
-  ## ──────────────────────────────
-  prop <- p
-  
-  ## 2b.  Random-walk on active θ
-
-  prop$theta <- p$theta + rnorm(cfg$K, 0, cfg$step_sd)
-  
-  ## ──────────────────────────────
-  ## 3.  Log-likelihood + prior
-  ## ──────────────────────────────
-  vine_prop <- fast_vine_from_particle(prop, temp_skel)
-  prop_ll   <- sum(log(pmax(dvinecop(data_up_to_t, vine_prop),
-                            .Machine$double.eps)))
-  
-  vine_curr <- fast_vine_from_particle(p, temp_skel)
-  curr_ll   <- sum(log(pmax(dvinecop(data_up_to_t, vine_curr),
-                            .Machine$double.eps)))
-  
-  ## ──────────────────────────────
-  ## 5.  MH acceptance
-  ## ──────────────────────────────
-  log_acc <- (prop_ll + log_prior(prop, cfg)) -
-    (curr_ll + log_prior(p, cfg))  
-  
-  if (log(runif(1)) < log_acc) {
-    p$theta       <- prop$theta
-    p$last_accept <- TRUE
-  } else {
-    p$last_accept <- FALSE
-  }
-
-  return(p)
+  log_incr
 }
 
 
-rtnorm_vec <- function(mu_vec, sd, a = -0.99, b = 0.99) {
-  x <- mu_vec + sd * rnorm(length(mu_vec))
-  pmin(pmax(x, a), b)                     # hard clip (reflection is slower)
+update_weights <- function(particles, log_lik) {
+  
+  w_prev <- vapply(particles, `[[`, numeric(1), 'w')
+  log_w  <- log(w_prev) + log_lik
+  log_w  <- log_w - max(log_w)
+  w_new  <- exp(log_w); w_new <- w_new / sum(w_new)
+  for (j in seq_along(particles))
+    particles[[j]]$w <- w_new[j]
+  
+  particles
 }
 
+## MH step
 
 mh_step <- function(p, data_up_to_t, skeleton, cfg) {
   
   K <- cfg$K
   fam_tbl <- active_fams(cfg)            # data.frame(name, code, npar)
   codes   <- fam_tbl$code
-  
-  ## ---------- 1. PROPOSAL (vectorised) ------------------------------
   prop <- p
   
   ## (a) family flips with probability q_flip per edge
@@ -310,7 +210,6 @@ mh_step <- function(p, data_up_to_t, skeleton, cfg) {
     prop$th2[bb_idx] <- par[,2]    # δ
   }
   
-  ## ---------- 2. MH ACCEPTANCE --------------------------------------
   vine_prop <- fast_vine_from_particle(prop, skeleton)
   vine_curr <- fast_vine_from_particle(p,    skeleton)
   
@@ -332,7 +231,7 @@ mh_step <- function(p, data_up_to_t, skeleton, cfg) {
   }
 }
 
-
+## Adaptive RW step
 
 compute_adapt_step_sd <- function(cfg, acc_pct, lambda = 0.25, target_acc = 0.30, sd_min = 0.01, sd_max=0.05){
   log_sd_new <- log(cfg$step_sd) + lambda * (acc_pct/100 - target_acc)
@@ -344,63 +243,7 @@ compute_adapt_step_sd <- function(cfg, acc_pct, lambda = 0.25, target_acc = 0.30
   return(step_sd)
 }
 
-
-calculate_log_lik_tree_tr <- function(particle, skel_tr, u_row, t, tr, tr_prev, skeletons_by_tr, cfg) {
-  # If it's the first tree, calculate its log-density
-  if (tr == 1) {
-    vine_j <- fast_vine_from_particle(particle, skel_tr)
-    dens_val <- dvinecop(u_row, vine_j)
-    return(log(dens_val + 1e-100))
-  }
-
-  # For subsequent trees, we need the density of the current and previous model
-  # The pre-computation of skeletons_by_tr makes this much faster.
-  skel_tr_minus_1 <- skeletons_by_tr[[tr_prev]]
-
-  vine_j_tr <- fast_vine_from_particle(particle, skel_tr)
-  dens_val_tr <- dvinecop(u_row, vine_j_tr)
-
-  vine_j_prev <- fast_vine_from_particle(particle, skel_tr_minus_1)
-  dens_val_prev <- dvinecop(u_row, vine_j_prev)
-
-  # Return the log-difference
-  return(log(dens_val_tr + 1e-100) - log(dens_val_prev + 1e-100))
-}
-
-
-
-compute_log_incr <- function(particles, u_row, skeleton, cfg) {
-  log_incr <- numeric(cfg$M)
-  
-  for (j in seq_along(particles)) {
-      p <- particles[[j]]
-      #vine_from_particle(p, skeleton)
-      vine_j     <- fast_vine_from_particle(p, skeleton)
-      dens_val     <- dvinecop(u_row, vine_j)
-      li           <- ifelse(dens_val <= 0, -1e100, log(dens_val))
-      log_incr[j]  <- li
-    }
- 
-  log_incr
-}
-
-
-update_weights <- function(particles, log_lik) {
-  
-  w_prev <- vapply(particles, `[[`, numeric(1), 'w')
-  log_w  <- log(w_prev) + log_lik
-  log_w  <- log_w - max(log_w)
-  w_new  <- exp(log_w); w_new <- w_new / sum(w_new)
-  
-  for (j in seq_along(particles))
-    particles[[j]]$w <- w_new[j]
-  
-  particles
-}
-
-need_resample <- function(w, cfg, t, T) {
-  ess(w) < cfg$ess_thr * cfg$M && t < T
-}
+## Resample move
 
 resample_move <- function(particles, newAncestors, data_up_to_t, cl, type, cfg, skeleton=NULL, tr=NULL, temp_skel=NULL) {
   
@@ -446,8 +289,7 @@ resample_move <- function(particles, newAncestors, data_up_to_t, cl, type, cfg, 
   }
   
   toc()
-  #stopCluster(cl)
-  
+
   mh_n_acc <- sum(vapply(mh_results, `[[`, integer(1), "acc"))
   particles <- lapply(mh_results, `[[`, "p")
   
@@ -460,21 +302,7 @@ resample_move <- function(particles, newAncestors, data_up_to_t, cl, type, cfg, 
   return(list(particles = particles, acc_pct = acc_pct))
 }
 
-## ───────────── Monte-Carlo utilities ────────────────────────────
-w_mean <- function(x, w)  sum(w * x)
-w_var  <- function(x, w, mu = w_mean(x, w))  sum(w * (x - mu)^2)
-mc_se  <- function(x, w, ess = 1 / sum(w^2))
-  sqrt(w_var(x, w) / ess)
-
-w_quantile <- function(x, w, probs = c(0.025, 0.975)) {
-  o <- order(x)
-  x <- x[o]; w <- w[o] / sum(w)
-  cw <- cumsum(w)
-  vapply(probs, function(p) x[which.max(cw >= p)], numeric(1))
-}
-
-
-
+## Diagnostics
 
 diagnostic_report <- function(t, tr, U, particles, w_new,
                               cfg, q_probs = c(0.025, 0.975)) {
@@ -484,18 +312,15 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
   print_flag <- (t %% k_step == 0L) || (t == nrow(U))
   #print_flag <- FALSE
   
-  ## ---------- 1. unpack particle state ----------------------------
   fam_mat <- do.call(rbind, lapply(particles, `[[`, "fam"))
   th1_mat <- do.call(rbind, lapply(particles, `[[`, "th1"))
   th2_mat <- do.call(rbind, lapply(particles, `[[`, "th2"))
   
   IND <- 0L; GAU <- 1L; BB1 <- 2L
   
-  ## ---------- 2. weights & ESS ------------------------------------
   w_new <- w_new / sum(w_new)
   ess_t <- 1 / sum(w_new^2)
   
-  ## ---------- 3. sparsity / uniqueness ----------------------------
   dep_mask   <- fam_mat != IND
   edge_ct    <- rowSums(dep_mask)
   mean_edges <- w_mean(edge_ct, w_new)
@@ -508,14 +333,13 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
   dists    <- as.matrix(stats::dist(th1_mat))
   avg_dist <- mean(dists[lower.tri(dists)])
   
-  ## ---------- 4. console header -----------------------------------
   if (print_flag) {
     cat(sprintf(
       "t=%4d | tr=%2d | ESS/M=%.3f | dep.edges=%.2f ± %.2f | sparsity=%.3f | unique=%d | L2=%.4f\n",
       t, tr, ess_t / M, mean_edges, se_edges, sparsity, n_unique, avg_dist))
   }
   
-  ## ---------- 5. family proportions -------------------------------
+  # family proportions 
   fam_codes <- sapply(cfg$families,
                       switch, indep = IND, gaussian = GAU, bb1 = BB1)
   prop_line <- vapply(seq_along(fam_codes), function(j) {
@@ -526,7 +350,7 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
   if (print_flag)
     cat("   Family proportions | ", paste(prop_line, collapse = " | "), "\n")
   
-  ## ---------- 6. per-edge summaries -------------------------------
+  # per-edge summaries 
   edge_summ <- vector("list", cfg$K)
   
   for (e in seq_len(cfg$K)) {
@@ -543,7 +367,7 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
     if (print_flag)
       cat(sprintf("     Edge %2d  Indep   : P=%.3f\n", e, p_indep))
     
-    ## ---- Gaussian stats ------------------------------------------
+    # Gaussian stats 
     if (p_gauss > 0) {
       mask  <- fam_mat[, e] == GAU
       rho_e <- th1_mat[mask, e]
@@ -561,7 +385,7 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
           p_gauss, mu_rho, sd_rho, qs[1], qs[2]))
     }
     
-    ## ---- BB1 stats -----------------------------------------------
+    # BB1 stats 
     if (p_bb1 > 0) {
       mask  <- fam_mat[, e] == BB1
       th1_e <- th1_mat[mask, e]; th2_e <- th2_mat[mask, e]
@@ -611,37 +435,7 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
   ))
 }
 
-
-
-
-
-## Average L1 (absolute) distance between parameter vectors
-avg_L1 <- function(theta_mat, w) {
-  K  <- ncol(theta_mat)
-  d  <- as.matrix(dist(theta_mat, method = "manhattan")) / K   # normalise
-  ## Rao–Blackwellised average:  E_w  E_{w’≠w}  |θ−θ’|
-  sum(w * colSums(d) / (1 - w))
-}
-
-systematic_resample <- function(w) {
-  M <- length(w)
-  u0 <- runif(1)/M
-  cumw <- cumsum(w)
-  (u0 + 0:(M-1)/M) |> 
-    (\(u) findInterval(u, cumw)+1L)()
-}
-
-
-# Stratified resampling (O(M))
-stratified_resample <- function(w) {
-  M <- length(w)
-  cumw <- cumsum(w)                     # cumulative weights
-  u    <- ((seq_len(M) - 1) + runif(M)) / M   # one uniform draw per stratum
-  findInterval(u, cumw) + 1L            # ancestor indices (1-based)
-}
-
-
-
+## Predictive
 
 compute_predictive_metrics <- function(u_obs, particles, skel,
                                        w_prev_for_prediction, cfg,
@@ -664,11 +458,6 @@ compute_predictive_metrics <- function(u_obs, particles, skel,
 }
 
 
-
-# -------------------------------------------------------------------------
-#  smc_predictive_sample()
-#  Draw L iid observations from the posterior predictive C-vine mixture
-# -------------------------------------------------------------------------
 smc_predictive_sample <- function(particles,          # list of M particles
                                   skel,               # fixed structure
                                   w,                  # numeric(M) normalised
@@ -721,26 +510,8 @@ smc_predictive_sample <- function(particles,          # list of M particles
 }
 
 
+# Risk metrics
 
-
-
-# ------------------------------------------------------------------
-#  update_risk_log()   –– append one row of risk metrics
-# ------------------------------------------------------------------
-#
-#  Arguments
-#  ----------
-#  risk_log   data.table | initially empty (0 rows) and kept by caller
-#  U_pred     L × d matrix of uniform draws from smc_predictive_sample()
-#  mu_fc      numeric-vector length d   –– conditional means  (AR part)
-#  sig_fc     numeric-vector length d   –– conditional stdevs (GARCH part)
-#  t_idx      scalar, time index (stored in the log)
-#  alphas     tail probabilities for VaR / ES   (default 95 % & 97.5 %)
-#
-#  Returns
-#  -------
-#  Same data.table, one extra row per call
-# ------------------------------------------------------------------
 update_risk_log <- function(risk_log,
                             U_pred,
                             mu_f,
@@ -748,6 +519,21 @@ update_risk_log <- function(risk_log,
                             t_idx,
                             alphas = c(0.95, 0.975))
 {
+  # ------------------------------------------------------------------
+  #
+  #  Arguments
+  #  ----------
+  #  risk_log   data.table | initially empty (0 rows) and kept by caller
+  #  U_pred     L × d matrix of uniform draws from smc_predictive_sample()
+  #  mu_fc      numeric-vector length d   –– conditional means  (AR part)
+  #  sig_fc     numeric-vector length d   –– conditional stdevs (GARCH part)
+  #  t_idx      scalar, time index (stored in the log)
+  #  alphas     tail probabilities for VaR / ES   (default 95 % & 97.5 %)
+  #
+  #  Returns
+  #  -------
+  #  Same data.table, one extra row per call
+  # ------------------------------------------------------------------
   stopifnot(is.matrix(U_pred),
             length(mu_f)  == ncol(U_pred),
             length(sig_f) == ncol(U_pred))
@@ -756,7 +542,7 @@ update_risk_log <- function(risk_log,
   sig_f = as.numeric(sig_f)
   mu_f = as.numeric(mu_f)
   
-  ## 1. quantile transform & rescale -------------------------------
+  # quantile transform & rescale 
   Z      <- qnorm(U_pred)                           # L × d
   R_pred <- sweep(Z,  2, sig_f, `*`)
   R_pred <- sweep(R_pred, 2, mu_f,  `+`)
@@ -765,11 +551,11 @@ update_risk_log <- function(risk_log,
   series_names <- paste0("S", seq_len(d))           # generic column labels
   dimnames(R_pred) <- list(NULL, series_names)
   
-  ## 2. point moments ----------------------------------------------
+  # point moments 
   mu_hat  <- colMeans(R_pred)
   var_hat <- colMeans((R_pred - rep(mu_hat, each = L))^2)
   
-  ## 3. tail risk ---------------------------------------------------
+  # tail risk 
   losses <- -R_pred                          # L × d matrix
   
   VaR <- vapply(alphas,                          # (K × d)
@@ -789,50 +575,98 @@ update_risk_log <- function(risk_log,
                 numeric(d))
   dimnames(VaR) <- dimnames(ES) <- list(colnames(losses), paste0("a", alphas))
   
-  ## 4. 95 % predictive interval -----------------------------------
+  # 95 % predictive interval 
   CI_lower <- apply(R_pred, 2, quantile, probs = 0.025)
   CI_upper <- apply(R_pred, 2, quantile, probs = 0.975)
   
-  ## 5. gather as one long row (wide format) ------------------------
+  # gather as one long row (wide format) 
   row <- data.table::data.table(t_idx = t_idx)
   
-  ## names of the d series, e.g.  c("S1","S2", …)
+  # names of the d series, e.g.  c("S1","S2", …)
   series_names <- colnames(R_pred)
   
-  ## row is the single-row data.table that accumulates the statistics
-  ## ----------------------------------------------------------------
+  # row is the single-row data.table that accumulates the statistics
   add_vec <- function(x, prefix) {
     cols <- paste0(prefix, "_", series_names)   # e.g.  mean_S1, mean_S2 …
     stopifnot(length(x) == length(cols))        # sanity check
     row[, (cols) := as.list(unname(x))]         # <- list = one entry / col
   }
   
-  ## point estimates ------------------------------------------------
+  # point estimates 
   add_vec(mu_hat,  "mean")
   add_vec(var_hat, "var")
   add_vec(CI_lower,"ci_lo")
   add_vec(CI_upper,"ci_hi")
   
-  ## tail–risk measures ---------------------------------------------
+  # tail–risk measures 
   for (k in seq_along(alphas)) {
     add_vec(VaR[ , k], sprintf("VaR%g", alphas[k] * 100))
     add_vec(ES [ , k], sprintf("ES%g",  alphas[k] * 100))
   }
   
-  ## 6. append & return --------------------------------------------
+  # append & return 
   data.table::rbindlist(list(risk_log, row), use.names = TRUE, fill = TRUE)
 }
 
+## Tree by tree functions
 
+mh_step_in_tree <- function(p, tr, data_up_to_t, temp_skel, cfg) {
+  
+  if (tr == 1) {
+    edges_in_previous_trees <- 0L
+  } else {
+    edges_in_previous_trees <- cfg$d * (tr - 1) - (tr - 1) * tr / 2
+  }
+  first_edge <- edges_in_previous_trees + 1L
+  last_edge  <- edges_in_previous_trees + (cfg$d - tr)
+  if (tr == cfg$G) {
+    last_edge <- cfg$K
+  }
+  idx_tree   <- first_edge:last_edge        # vector of edge indices
+  
+  prop <- p
+  prop$theta <- p$theta + rnorm(cfg$K, 0, cfg$step_sd)
+  
+  vine_prop <- fast_vine_from_particle(prop, temp_skel)
+  prop_ll   <- sum(log(pmax(dvinecop(data_up_to_t, vine_prop),
+                            .Machine$double.eps)))
+  
+  vine_curr <- fast_vine_from_particle(p, temp_skel)
+  curr_ll   <- sum(log(pmax(dvinecop(data_up_to_t, vine_curr),
+                            .Machine$double.eps)))
+  
+  log_acc <- (prop_ll + log_prior(prop, cfg)) -
+    (curr_ll + log_prior(p, cfg))  
+  
+  if (log(runif(1)) < log_acc) {
+    p$theta       <- prop$theta
+    p$last_accept <- TRUE
+  } else {
+    p$last_accept <- FALSE
+  }
+  
+  return(p)
+}
 
-
-
-
-
-
-
-
-
+calculate_log_lik_tree_tr <- function(particle, skel_tr, u_row, t, tr, tr_prev, skeletons_by_tr, cfg) {
+  if (tr == 1) {
+    vine_j <- fast_vine_from_particle(particle, skel_tr)
+    dens_val <- dvinecop(u_row, vine_j)
+    return(log(dens_val + 1e-100))
+  }
+  
+  # For subsequent trees, we need the density of the current and previous model
+  # The pre-computation of skeletons_by_tr makes this much faster.
+  skel_tr_minus_1 <- skeletons_by_tr[[tr_prev]]
+  
+  vine_j_tr <- fast_vine_from_particle(particle, skel_tr)
+  dens_val_tr <- dvinecop(u_row, vine_j_tr)
+  
+  vine_j_prev <- fast_vine_from_particle(particle, skel_tr_minus_1)
+  dens_val_prev <- dvinecop(u_row, vine_j_prev)
+  
+  return(log(dens_val_tr + 1e-100) - log(dens_val_prev + 1e-100))
+}
 
 
 

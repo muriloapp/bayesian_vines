@@ -1,76 +1,5 @@
-# ===========================================================================
-#   empirical_run.R        tidy “full-history” SMC + risk metrics
-# ===========================================================================
-
-save_result <- function(res, dir_out = here("empirical_results")) {
-  dir.create(dir_out, showWarnings = FALSE, recursive = TRUE)
-  fn <- file.path(dir_out,
-                  sprintf("%s_%s.rds", res$alg, res$cfg$label))
-  saveRDS(res, fn)
-  message("✓ saved → ", fn)
-}
 
 
-make_skeleton <- function(U_train) {
-  # any structure selection you like – here: Gaussian C-vine
-  CVM <- RVineStructureSelect(U_train, familyset = c(1), type=1, indeptest = TRUE, level = 0.1)
-  old_M  <- CVM$Matrix          # the VineCopula matrix you showed
-  order  <- old_M[, 1]
-  skeleton <- vinecop(U_train, family_set = "gaussian", structure = cvine_structure(order))
-  skeleton
-}
-
-make_cluster <- function(n_cores, seed, exports) {
-  cl <- makeCluster(n_cores)
-  clusterSetRNGStream(cl, seed)
-  clusterExport(cl, exports , envir = parent.frame())
-  cl
-}
-# ───────────────────────────────────────────────────────────────────────────
-#  0. helper: risk metrics for one forecast date
-# ───────────────────────────────────────────────────────────────────────────
-risk_stats <- function(R_pred,   # L × d matrix  (future PIT-draws ⇒ returns)
-                       mu_fc,    # length-d mean forecast
-                       sig_fc,   # length-d scale forecast
-                       alphas = c(.05, .025)) {
-  
-  ## 1.   back-transform to returns
-  R_t <- sweep(R_pred, 2, sig_fc, `*`) + rep(mu_fc, each = nrow(R_pred))
-  
-  mu_hat  <- colMeans(R_t)
-  var_hat <- apply(R_t, 2, var)
-  CI_lo   <- apply(R_t, 2, quantile, 0.025)
-  CI_hi   <- apply(R_t, 2, quantile, 0.975)
-  
-  ## 2.   VaR & ES
-  losses <- -R_t                               # ≤ 0 is a gain
-  VaR <- sapply(alphas, function(a)
-    apply(losses, 2, quantile, probs = a))
-  ES  <- sapply(seq_along(alphas), function(k) {
-    thr <- VaR[k, ]
-    vapply(seq_len(ncol(losses)), \(j)
-           mean(losses[losses[,j] >= thr[j], j]),
-           numeric(1))
-  })
-  
-  ## 3.   flatten to a single named vector  (for rbindlist)
-  as.vector(c(mu_hat, var_hat, CI_lo, CI_hi,
-              as.vector(VaR), as.vector(ES)))
-}
-
-risk_col_names <- function(d, alphas) {
-  sn <- paste0("S", seq_len(d))
-  c(paste0("mean_", sn),
-    paste0("var_",  sn),
-    paste0("ci_lo_", sn),
-    paste0("ci_hi_", sn),
-    unlist(lapply(alphas, \(a) sprintf("VaR%g_%s", a*100, sn))),
-    unlist(lapply(alphas, \(a) sprintf("ES%g_%s",  a*100, sn))))
-}
-
-# ───────────────────────────────────────────────────────────────────────────
-#  1.   run SMC  (keeps *all* history arrays)
-# ───────────────────────────────────────────────────────────────────────────
 smc_full <- function(data, cfg) {
   
   U      <- data$U
@@ -201,7 +130,44 @@ smc_full <- function(data, cfg) {
 }
 
 
+risk_stats <- function(R_pred,   # L × d matrix  (future PIT-draws ⇒ returns)
+                       mu_fc,    # length-d mean forecast
+                       sig_fc,   # length-d scale forecast
+                       alphas = c(.05, .025)) {
+  
+  ## 1.   back-transform to returns
+  R_t <- sweep(R_pred, 2, sig_fc, `*`) + rep(mu_fc, each = nrow(R_pred))
+  
+  mu_hat  <- colMeans(R_t)
+  var_hat <- apply(R_t, 2, var)
+  CI_lo   <- apply(R_t, 2, quantile, 0.025)
+  CI_hi   <- apply(R_t, 2, quantile, 0.975)
+  
+  ## 2.   VaR & ES
+  losses <- -R_t                               # ≤ 0 is a gain
+  VaR <- sapply(alphas, function(a)
+    apply(losses, 2, quantile, probs = a))
+  ES  <- sapply(seq_along(alphas), function(k) {
+    thr <- VaR[k, ]
+    vapply(seq_len(ncol(losses)), \(j)
+           mean(losses[losses[,j] >= thr[j], j]),
+           numeric(1))
+  })
+  
+  ## 3.   flatten to a single named vector  (for rbindlist)
+  as.vector(c(mu_hat, var_hat, CI_lo, CI_hi,
+              as.vector(VaR), as.vector(ES)))
+}
 
+risk_col_names <- function(d, alphas) {
+  sn <- paste0("S", seq_len(d))
+  c(paste0("mean_", sn),
+    paste0("var_",  sn),
+    paste0("ci_lo_", sn),
+    paste0("ci_hi_", sn),
+    unlist(lapply(alphas, \(a) sprintf("VaR%g_%s", a*100, sn))),
+    unlist(lapply(alphas, \(a) sprintf("ES%g_%s",  a*100, sn))))
+}
 
 
 
