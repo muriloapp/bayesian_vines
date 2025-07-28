@@ -1,9 +1,34 @@
+t_inv <- function(U_dt, df_row_dt) {
+  U  <- as.matrix(U_dt)            # L × d numeric matrix
+  ν  <- as.numeric(df_row_dt)      # length-d numeric vector
+  sweep(U, 2, ν, function(u, df) stats::qt(u, df))
+}
+
+###############################################################################
+## 0. helper – portfolio risk from a vector of simulated returns -------------
+###############################################################################
+port_stats <- function(r_vec, alphas = c(.05, .025)) {
+  mu  <- mean(r_vec)
+
+  # downside risk
+  losses <- r_vec                  # “loss = −return”
+  VaR <- vapply(alphas, function(a)  quantile(losses, a), numeric(1))
+  ES  <- vapply(seq_along(alphas), function(k) {
+    thr <- VaR[k]
+    mean(losses[losses <= thr])
+  }, numeric(1))
+  
+  list(mu = mu, VaR = VaR, ES = ES)
+}
+
+
 
 smc_full <- function(data, cfg) {
   
   U      <- data$U
   mu_fc  <- data$mu_fc
   sig_fc <- data$sig_fc
+  df_fc     <- data$df_fc 
   
   t_train <- cfg$W_predict
   skeleton <- make_skeleton_CVM(U[1:t_train, ])
@@ -36,7 +61,7 @@ smc_full <- function(data, cfg) {
   # pre-allocation 
   M <- cfg$M; K <- cfg$K; N <- nrow(U); d <- cfg$d; n_oos <- N - cfg$W_predict
   tickers    <- colnames(U); A <- length(cfg$alphas)
-  risk_cols <- risk_col_names(tickers, cfg$alphas)
+  #risk_cols <- risk_col_names(tickers, cfg$alphas)
 
   out <- list(
     log_pred    = numeric(N),
@@ -59,7 +84,15 @@ smc_full <- function(data, cfg) {
                                     dimnames = list(NULL, tickers, paste0("a", cfg$alphas))),
                       ES    = array(NA_real_, dim = c(n_oos, d, A),
                                     dimnames = list(NULL, tickers, paste0("a", cfg$alphas)))
-                    )                     # will rbind() rows
+                    ),                  # will rbind() rows
+    port = list(
+                    dates  = integer(n_oos),
+                    mean   = numeric(n_oos),
+                    VaR    = matrix(NA_real_, n_oos, A,
+                                    dimnames = list(NULL, paste0("a", cfg$alphas))),
+                    ES     = matrix(NA_real_, n_oos, A,
+                                    dimnames = list(NULL, paste0("a", cfg$alphas)))
+                  ) 
   )
   
   # init particles
@@ -68,6 +101,7 @@ smc_full <- function(data, cfg) {
   
 
   for (t in seq_len(N)) {
+    
     u_t <- U[t,,drop=FALSE]
     
     # weight-update
@@ -81,8 +115,9 @@ smc_full <- function(data, cfg) {
       idx <- t - cfg$W_predict
       out$log_pred[t] <- compute_predictive_metrics(u_t, particles, skeleton, w/sum(w), cfg)$log_pred_density
       draws <- smc_predictive_sample(particles, skeleton, w/sum(w), L = 10000, cl = cl)
+      Z_pred <- t_inv(draws, df_fc[t, ])  
       rs <- risk_stats_full(            # same helper as before
-        draws,
+        Z_pred,
         mu_fc[t, , drop = TRUE],
         sig_fc[t, , drop = TRUE],
         cfg$alphas)
@@ -94,6 +129,16 @@ smc_full <- function(data, cfg) {
       out$risk$ci_hi[idx, ] <- rs$ci["hi", ]
       out$risk$VaR [idx, , ] <- rs$VaR          # dim = d × A
       out$risk$ES  [idx, , ] <- rs$ES
+      
+      # ---------- EW-portfolio metrics -------------------
+      R_t  <- sweep(Z_pred, 2, as.numeric(sig_fc[t, ], `*`)) + as.numeric(mu_fc[t, ])          # L × d
+      r_p  <- rowMeans(R_t)                                            # ← NEW (L)
+      ps   <- port_stats(r_p, cfg$alphas)                              # ← NEW
+      out$port$dates[idx]   <- t                                       # ← NEW
+      out$port$mean [idx]   <- ps$mu
+      out$port$VaR [idx, ]  <- ps$VaR
+      out$port$ES  [idx, ]  <- ps$ES  
+      
     }
     
     # diagnostics
@@ -118,7 +163,7 @@ smc_full <- function(data, cfg) {
         out$step_sd_hist[t] <- cfg$step_sd
       }
     } else {
-      step_prev <- t_idx - 1L
+      step_prev <- t - 1L
       newAnc    <- if (step_prev < 1L) seq_len(M) else out$ancestorIndices[, step_prev]
     }
     out$ancestorIndices[, t] <- newAnc
@@ -190,7 +235,7 @@ risk_stats_full <- function(R_pred,           # L × d matrix  (future PIT‑dra
   ES  <- sapply(seq_along(alphas), function(k) {       # loop over α’s
     vapply(seq_len(ncol(losses)), function(j) {  # loop over assets
       thr <- VaR[j, k]                           # ← correct index
-      mean(losses[losses[, j] >= thr, j])        # tail average
+      mean(losses[losses[, j] <= thr, j])        # tail average
     }, numeric(1))
   })
   
@@ -209,11 +254,52 @@ risk_stats_full <- function(R_pred,           # L × d matrix  (future PIT‑dra
 
 
 
-
-
-
-
-
-
+# 
+# 
+# 
+# ## Pre-allocate the output container
+# serial_test <- vector("list", length(particles))
+# 
+# ## Outer loop over particles
+# for (i in seq_along(particles)) {
+# 
+#   p <- particles[[i]]           # current particle
+#   local_acc <- 0L               # acceptance counter (optional)
+# 
+#   ## Optional: announce which particle we’re on
+#   # cat(sprintf("\n---- Particle %d ----\n", i))
+# 
+#   ## Inner loop: Metropolis-Hastings steps
+#   for (k in seq_len(cfg$n_mh)) {
+# 
+#     ## Insert a browser() here if you want to step through interactively
+#     # if (i == 1 && k == 1) browser()
+# 
+#     p <- mh_step(p, data_up_to_t, skeleton, cfg)
+# 
+#     ## Count acceptances (defensive against NA)
+#     if (!is.null(p$last_accept) && isTRUE(p$last_accept)) {
+#       local_acc <- local_acc + 1L
+#     }
+# 
+#     ## Optional: verbose progress every, say, 10 iterations
+#     # if (k %% 10 == 0)
+#     #   cat(sprintf("particle %d | iter %4d | last_accept = %s | acc = %d\n",
+#     #               i, k, p$last_accept, local_acc))
+#   }
+# 
+#   ## Store the final particle (and maybe the acc counter)
+#   serial_test[[i]] <- p
+#   # attr(serial_test[[i]], "n_accept") <- local_acc   # if you’d like the counter
+# 
+#   ## Optional: quick summary per particle
+#   # cat(sprintf("particle %d finished: %d / %d MH accepts\n",
+#   #             i, local_acc, cfg$n_mh))
+# }
+# 
+# ## serial_test now mirrors what the parallel run would have returned.
+# 
+# 
+# 
 
 
