@@ -2,7 +2,7 @@
 #  C-vine SMC with spike-and-slab prior
 #  2025-06-16
 # ──────────────────────────────────────────────────────────────────────────────
-set.seed(126)
+#set.seed(126)
 quiet_assert <- function() {
   assignInNamespace("assert_that", function(...) invisible(TRUE), ns = "assertthat")
   assignInNamespace("see_if",      function(...) invisible(TRUE), ns = "assertthat")
@@ -16,6 +16,8 @@ load_packages <- function() {
   )
   lapply(pkgs, require, character.only = TRUE)
 }
+
+
 
 ## build_cfg()  ─────────────────────────────────────────────────────────
 build_cfg <- function(d,
@@ -39,7 +41,7 @@ build_cfg <- function(d,
     W       = 1000L,
     k_step  = 1L,
     n_mh    = 3L,
-    W_predict    = 756,                              # Training period     
+    W_predict    = 756L,                              # Training period     
     q_flip=q_flip,
     step_sd = step_sd,
     lambda  = lambda,
@@ -55,13 +57,14 @@ build_cfg <- function(d,
   )
 }
 
+source(here("src/R", "utils.R"))
 source(here("src/R", "core_functions.R"))
 source(here("src/simulation", "simulation.R"))
 source(here("src/models", "smc_stand_vine.R"))
 #source(here("src/models", "smc_block_vine.R"))
 source(here("src/R", "results_helpers.R"))
 source(here("src/models", "main_empirical.R"))
-source(here("src/R", "utils.R"))
+
 
 
 quiet_assert()                       

@@ -218,11 +218,18 @@ mh_step <- function(p, data_up_to_t, skeleton, cfg) {
   ll_curr <- sum(log(pmax(dvinecop(data_up_to_t, vine_curr),
                           .Machine$double.eps)))
   
+  
+  # cat("Function called with ll_prop =", ll_prop, "\n")
+  # cat("Function called with log_prior =", log_prior(prop, cfg), "\n")
+  # cat("Function called with ll_curr =", ll_curr, "\n")
+  # cat("Function called with log_curr =", log_prior(p,    cfg), "\n")
   ## proposal symmetric by construction
   log_acc <- (ll_prop + log_prior(prop, cfg)) -
     (ll_curr + log_prior(p,    cfg))
   
-  if (log(runif(1)) < log_acc) {
+  aux <- log(runif(1))
+  # cat("Function called with aux =", aux, "\n")
+  if (aux < log_acc) {
     prop$last_accept <- TRUE
     return(prop)
   } else {
@@ -334,11 +341,10 @@ resample_move_old <- function(particles, newAncestors, data_up_to_t, cl, type, c
   
   mh_n_prop <- cfg$M * cfg$n_mh 
   mh_n_acc  <- 0
-  clusterSetRNGStream(cl, 43) 
+  #clusterSetRNGStream(cl, 43) 
   
   tic("mh time")
   if (type=='standard'){
-    system.time(
     mh_results <- parLapply(cl, seq_along(particles), function(i, particles_local, data_up_to_t, skeleton, cfg) {
       p <- particles_local[[i]]
       local_acc <- 0L
@@ -351,7 +357,6 @@ resample_move_old <- function(particles, newAncestors, data_up_to_t, cl, type, c
       list(p = p, acc = local_acc)
     },
     particles, data_up_to_t, skeleton, cfg)
-    )
   } else if (type == "block") {
     mh_results <- parLapply(cl, seq_along(particles), function(i, particles_local, data_up_to_t, temp_skel, tr, cfg) {
       p <- particles_local[[i]]
