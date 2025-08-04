@@ -1,26 +1,3 @@
-t_inv <- function(U_dt, df_row_dt) {
-  U  <- as.matrix(U_dt)            # L × d numeric matrix
-  ν  <- as.numeric(df_row_dt)      # length-d numeric vector
-  sweep(U, 2, ν, function(u, df) stats::qt(u, df))
-}
-
-###############################################################################
-## 0. helper – portfolio risk from a vector of simulated returns -------------
-###############################################################################
-port_stats <- function(r_vec, alphas = c(.05, .025)) {
-  mu  <- mean(r_vec)
-
-  # downside risk
-  losses <- r_vec                  # “loss = −return”
-  VaR <- vapply(alphas, function(a)  quantile(losses, a), numeric(1))
-  ES  <- vapply(seq_along(alphas), function(k) {
-    thr <- VaR[k]
-    mean(losses[losses <= thr])
-  }, numeric(1))
-  
-  list(mu = mu, VaR = VaR, ES = ES)
-}
-
 
 
 smc_full <- function(data, cfg) {
@@ -64,7 +41,7 @@ smc_full <- function(data, cfg) {
   #risk_cols <- risk_col_names(tickers, cfg$alphas)
 
   out <- list(
-    log_pred    = numeric(N),
+    log_pred    = numeric(n_oos),
     diag_log    = data.table(t = integer(N), ESS = numeric(N),
                              unique = integer(N), euc = numeric(N),
                              sparsity = numeric(N)),
@@ -113,13 +90,14 @@ smc_full <- function(data, cfg) {
     if (t > cfg$W_predict) {
       # log predictive density, predictive draws, risk metrics
       idx <- t - cfg$W_predict
-      out$log_pred[t] <- compute_predictive_metrics(u_t, particles, skeleton, w/sum(w), cfg)$log_pred_density
-      draws <- smc_predictive_sample(particles, skeleton, w/sum(w), L = 10000, cl = cl)
+      out$log_pred[idx] <- compute_predictive_metrics(u_t, particles, skeleton, w/sum(w), cfg)$log_pred_density
+      
+      draws <- smc_predictive_sample(particles, skeleton, w/sum(w), L = 5000, cl = cl)
       Z_pred <- t_inv(draws, df_fc[t, ])  
+      R_t  <- sweep(Z_pred, 2, as.numeric(sig_fc[t, ]), `*`) + as.numeric(mu_fc[t, ])          # L × d
+      
       rs <- risk_stats_full(            # same helper as before
-        Z_pred,
-        mu_fc[t, , drop = TRUE],
-        sig_fc[t, , drop = TRUE],
+        R_t,
         cfg$alphas)
 
       out$risk$dates[idx]   <- t
@@ -130,11 +108,11 @@ smc_full <- function(data, cfg) {
       out$risk$VaR [idx, , ] <- rs$VaR          # dim = d × A
       out$risk$ES  [idx, , ] <- rs$ES
       
-      # ---------- EW-portfolio metrics -------------------
-      R_t  <- sweep(Z_pred, 2, as.numeric(sig_fc[t, ], `*`)) + as.numeric(mu_fc[t, ])          # L × d
-      r_p  <- rowMeans(R_t)                                            # ← NEW (L)
-      ps   <- port_stats(r_p, cfg$alphas)                              # ← NEW
-      out$port$dates[idx]   <- t                                       # ← NEW
+      # ---------- EW-portfolio metrics ------------------
+      r_p  <- rowMeans(R_t)                                           
+      ps   <- port_stats(r_p, cfg$alphas)    
+      
+      out$port$dates[idx]   <- t                                       
       out$port$mean [idx]   <- ps$mu
       out$port$VaR [idx, ]  <- ps$VaR
       out$port$ES  [idx, ]  <- ps$ES  
@@ -153,7 +131,7 @@ smc_full <- function(data, cfg) {
     if (ESS(w) < cfg$ess_thr * M && t < N) {
       newAnc <- stratified_resample(w)
       data_up_to_t <- U[max(1, t - cfg$W + 1):t, , drop = FALSE]
-      move_out <- resample_move(particles, newAnc, data_up_to_t,
+      move_out <- resample_move_old(particles, newAnc, data_up_to_t,
                                  cl, cfg$type, cfg, skeleton = skeleton)
       
       particles <- move_out$particles
@@ -180,74 +158,39 @@ smc_full <- function(data, cfg) {
 }
 
 
-risk_stats <- function(R_pred,   # L × d matrix  (future PIT-draws ⇒ returns)
-                       mu_fc,    # length-d mean forecast
-                       sig_fc,   # length-d scale forecast
-                       alphas = c(.05, .025)) {
-  
-  mu_fc <- as.numeric(mu_fc)
-  sig_fc <- as.numeric(sig_fc)
-  
-  # 1.   back-transform to returns
-  R_t <- sweep(R_pred, 2, sig_fc, `*`) + rep(mu_fc, each = nrow(R_pred))
-  
-  mu_hat  <- colMeans(R_t)
-  var_hat <- apply(R_t, 2, var)
-  CI_lo   <- apply(R_t, 2, quantile, 0.025)
-  CI_hi   <- apply(R_t, 2, quantile, 0.975)
-  
-  # 2.   VaR & ES
-  losses <- -R_t                               # ≤ 0 is a gain
-  VaR <- sapply(alphas, function(a)
-    apply(losses, 2, quantile, probs = a))
-  ES  <- sapply(seq_along(alphas), function(k) {
-    thr <- VaR[k, ]
-    vapply(seq_len(ncol(losses)), \(j)
-           mean(losses[losses[,j] >= thr[j], j]),
-           numeric(1))
-  })
-  
-  # 3.   flatten to a single named vector  (for rbindlist)
-  as.vector(c(mu_hat, var_hat, CI_lo, CI_hi,
-              as.vector(VaR), as.vector(ES)))
-}
+# risk_stats <- function(R_pred,   # L × d matrix  (future PIT-draws ⇒ returns)
+#                        mu_fc,    # length-d mean forecast
+#                        sig_fc,   # length-d scale forecast
+#                        alphas = c(.05, .025)) {
+#   
+#   mu_fc <- as.numeric(mu_fc)
+#   sig_fc <- as.numeric(sig_fc)
+#   
+#   # 1.   back-transform to returns
+#   R_t <- sweep(R_pred, 2, sig_fc, `*`) + rep(mu_fc, each = nrow(R_pred))
+#   
+#   mu_hat  <- colMeans(R_t)
+#   var_hat <- apply(R_t, 2, var)
+#   CI_lo   <- apply(R_t, 2, quantile, 0.025)
+#   CI_hi   <- apply(R_t, 2, quantile, 0.975)
+#   
+#   # 2.   VaR & ES
+#   losses <- -R_t                               # ≤ 0 is a gain
+#   VaR <- sapply(alphas, function(a)
+#     apply(losses, 2, quantile, probs = a))
+#   ES  <- sapply(seq_along(alphas), function(k) {
+#     thr <- VaR[k, ]
+#     vapply(seq_len(ncol(losses)), \(j)
+#            mean(losses[losses[,j] >= thr[j], j]),
+#            numeric(1))
+#   })
+#   
+#   # 3.   flatten to a single named vector  (for rbindlist)
+#   as.vector(c(mu_hat, var_hat, CI_lo, CI_hi,
+#               as.vector(VaR), as.vector(ES)))
+# }
 
-risk_stats_full <- function(R_pred,           # L × d matrix  (future PIT‑draws ⇒ returns)
-                            mu_fc,            # length‑d numeric
-                            sig_fc,           # length‑d numeric
-                            alphas = c(.05, .025))
-{
-  mu_fc  <- as.numeric(mu_fc)
-  sig_fc <- as.numeric(sig_fc)
-  
-  ## 1. back‑transform to returns  ---------------------------------------------
-  R_t <- sweep(R_pred, 2, sig_fc, `*`) + rep(mu_fc, each = nrow(R_pred))
-  
-  mu_hat  <- colMeans(R_t)
-  var_hat <- apply(R_t, 2, var)
-  CI_lo   <- apply(R_t, 2, quantile, 0.025)
-  CI_hi   <- apply(R_t, 2, quantile, 0.975)
-  
-  ## 2.  VaR & ES  -------------------------------------------------------------
-  losses <- R_t
-  VaR <- sapply(alphas, function(a)
-    apply(losses, 2, quantile, probs = a))  
-  ES  <- sapply(seq_along(alphas), function(k) {       # loop over α’s
-    vapply(seq_len(ncol(losses)), function(j) {  # loop over assets
-      thr <- VaR[j, k]                           # ← correct index
-      mean(losses[losses[, j] <= thr, j])        # tail average
-    }, numeric(1))
-  })
-  
-  ## 3.  Return as a clean list  ----------------------------------------------
-  list(
-    mean = mu_hat,                       # length‑d
-    var  = var_hat,                      # length‑d
-    ci   = rbind(lo = CI_lo, hi = CI_hi),  # 2 × d
-    VaR  = VaR,                          # d × length(alphas)
-    ES   = ES                            # d × length(alphas)
-  )
-}
+
 
 
 
