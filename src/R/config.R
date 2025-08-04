@@ -23,7 +23,7 @@ load_packages <- function() {
 build_cfg <- function(d,
                       lambda        = 1,
                       step_sd       = 0.05,
-                      q_flip   = NULL,
+                      q_flip   = 0.66, # stay or 2 possible families to go 
                       K       = d * (d - 1) / 2,
                       families      = c("indep", "gaussian", "bb1"),  # NEW
                       families_first = c("indep", "gaussian", "bb1"),
@@ -64,6 +64,7 @@ source(here("src/models", "smc_stand_vine.R"))
 #source(here("src/models", "smc_block_vine.R"))
 source(here("src/R", "results_helpers.R"))
 source(here("src/models", "main_empirical.R"))
+source(here("src/R", "metrics.R"))
 
 
 

@@ -85,9 +85,17 @@ stratified_resample <- function(w) {
 ## Save
 
 save_result <- function(res, dir_out) {
+  
   dir.create(dir_out, showWarnings = FALSE, recursive = TRUE)
-  fn <- file.path(dir_out,
-                  sprintf("%s_%s.rds", res$alg, res$cfg$label))
+  
+  ## Safe fall-backs -----------------------------------------------------
+  alg   <- if (length(res$alg)      && nzchar(res$alg[1]))      res$alg[1]      else "unnamedAlg"
+  label <- if (!is.null(res$cfg$label) && nzchar(res$cfg$label[1]))
+    res$cfg$label[1]
+  else format(Sys.time(), "%Y%m%d_%H%M%S")
+  
+  fn <- file.path(dir_out, sprintf("%s_%s.rds", alg, label))
+  
   saveRDS(res, fn)
   message("✓ saved → ", fn)
 }
@@ -122,3 +130,64 @@ edge_tree_map <- function(d) {
   map
 }
 
+
+# st_inv <- function(U_dt, shape, df_row_dt) {
+#   U  <- as.matrix(U_dt)            # L × d numeric matrix
+#   ν  <- as.numeric(df_row_dt)      # length-d numeric vector
+#   shape  <- as.numeric(shape)
+#   sweep(U, 2, shape, ν,  function(u, shape,  df) sn::qst(u, shape, df))
+# }
+
+# st_inv <- function(U_dt, shape, df_row_dt) {
+#   U      <- as.matrix(U_dt)            # L × d
+#   ν      <- as.numeric(df_row_dt)      # length-d
+#   shape  <- as.numeric(shape)          # length-d
+#   
+#   stopifnot(ncol(U) == length(shape), ncol(U) == length(ν))
+#   
+#   # Apply sn::qst(u, shape, df) to each column
+#   Z <- mapply(function(u, s, df) sn::qst(u, xi = 0, omega = 1, alpha = s, nu = df),
+#               as.data.frame(U), shape, ν, SIMPLIFY = TRUE)
+#   return(Z)
+# }
+
+st_inv <- function(U_dt, shape, df_row_dt) {
+  U     <- as.matrix(U_dt)
+  shape <- as.numeric(shape)
+  nu    <- as.numeric(df_row_dt)
+  
+  out <- matrix(NA_real_, nrow = nrow(U), ncol = ncol(U))
+  for (j in seq_along(shape)) {
+    out[, j] <- sn::qst(U[, j], shape = shape[j], df = nu[j])
+  }
+  colnames(out) <- colnames(U_dt)
+  out
+}
+
+st_inv_fast <- function(U_dt, shape, df_row_dt) {
+  U          <- as.matrix(U_dt)
+  n_obs      <- nrow(U)
+  n_dim      <- ncol(U)
+  
+  # vectorise everything ----------------------------------------------------
+  p_long     <- as.vector(U)                       # length = n_obs * n_dim
+  shape_long <- rep(as.numeric(shape   ), each = n_obs)
+  df_long    <- rep(as.numeric(df_row_dt), each = n_obs)
+  
+  # single call to qst ------------------------------------------------------
+  out <- sn::qst(p_long, shape = shape_long, df = df_long)
+  
+  # reshape back to L × d ---------------------------------------------------
+  dim(out) <- c(n_obs, n_dim)
+  dimnames(out) <- list(NULL, colnames(U_dt))
+  out
+}
+
+
+
+
+t_inv <- function(U_dt, df_row_dt) {
+  U  <- as.matrix(U_dt)            # L × d numeric matrix
+  ν  <- as.numeric(df_row_dt)      # length-d numeric vector
+  sweep(U, 2, ν, function(u, df) stats::qt(u, df))
+}
