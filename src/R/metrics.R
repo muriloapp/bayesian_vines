@@ -1,6 +1,6 @@
 
 
-port_stats <- function(r_vec, alphas = c(.05, .025)) {
+port_stats <- function(r_vec, alphas) {
   mu  <- mean(r_vec)
   
   # downside risk
@@ -18,7 +18,7 @@ port_stats <- function(r_vec, alphas = c(.05, .025)) {
 risk_stats_full <- function(R_t,           # L × d matrix  (future PIT‑draws ⇒ returns)
                             #mu_fc,            # length‑d numeric
                             #sig_fc,           # length‑d numeric
-                            alphas = c(.05, .025))
+                            alphas)
 {
   #mu_fc  <- as.numeric(mu_fc)
   #sig_fc <- as.numeric(sig_fc)

@@ -1,8 +1,4 @@
-# ──────────────────────────────────────────────────────────────────────────────
-#  C-vine SMC with spike-and-slab prior
-#  2025-06-16
-# ──────────────────────────────────────────────────────────────────────────────
-#set.seed(126)
+
 quiet_assert <- function() {
   assignInNamespace("assert_that", function(...) invisible(TRUE), ns = "assertthat")
   assignInNamespace("see_if",      function(...) invisible(TRUE), ns = "assertthat")
@@ -18,17 +14,15 @@ load_packages <- function() {
 }
 
 
-
-## build_cfg()  ─────────────────────────────────────────────────────────
 build_cfg <- function(d,
-                      lambda        = 1,
-                      step_sd       = 0.05,
-                      q_flip   = 0.66, # stay or 2 possible families to go 
-                      K       = d * (d - 1) / 2,
-                      families      = c("indep", "gaussian", "bb1"),  # NEW
+                      lambda         = 1,
+                      step_sd        = 0.05,
+                      q_flip         = NULL, #0.66, # stay or 2 possible families to go 
+                      K              = d * (d - 1) / 2,
+                      families       = c("indep", "gaussian", "bb1"),  # NEW
                       families_first = c("indep", "gaussian", "bb1"),
                       families_deep  = c("indep", "gaussian"),
-                      adapt_step_sd = TRUE) {
+                      adapt_step_sd  = TRUE) {
   
   if (is.null(q_flip))        # default that mimics “stay vs leave equal”
     q_flip <- 1 / (K + 1)
@@ -36,16 +30,16 @@ build_cfg <- function(d,
   list(
     d       = d,
     K       = K,
-    M       = 1000,
-    ess_thr = 0.50,
-    W       = 1000L,
-    k_step  = 1L,
-    n_mh    = 3L,
-    W_predict    = 756L,                              # Training period     
+    M       = 1000,                                   # number of particles
+    ess_thr = 0.50,                                   # threshold for resample move
+    W       = 1000L,                                  # rolling-window
+    k_step  = 1L,                                     # print diagnostic every k_step  
+    n_mh    = 3L,                                     # number mh moves
+    W_predict = 1500L,                                 # training period     
     q_flip=q_flip,
     step_sd = step_sd,
     lambda  = lambda,
-    families = families,                             # Store user choice
+    families = families,                              # store user choice
     families_first = families_first,
     families_deep  = families_deep,
     adapt_step_sd = adapt_step_sd,
@@ -53,7 +47,7 @@ build_cfg <- function(d,
     edge_tree  = edge_tree_map(d),
     nc       = max(parallel::detectCores()-1, 1),
     type     = "standard",
-    alphas     = c(.05, .025)
+    alphas     = c(0.1, .05, .025, 0.01)
   )
 }
 

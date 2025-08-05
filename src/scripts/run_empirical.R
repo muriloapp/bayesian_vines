@@ -6,10 +6,11 @@ source(here("src/R", "config.R"))
 run_empirical <- function() {
   
   dat <- list(
-    U      = readRDS("data/PIT.rds")[1500:2500,1:3],
-    mu_fc  = readRDS("data/returns_mean_forecast.rds")[1500:2500,2:4],# [,-1],  # drop date col
-    sig_fc = readRDS("data/returns_vol_forecast.rds")[1500:2500,2:4],  #[,-1],
-    df_fc = readRDS("data/df_fc.rds")[1500:2500,2:4]#[,-1]
+    U      = readRDS("data/PIT.rds")[,1:3],
+    mu_fc  = readRDS("data/returns_mean_forecast.rds")[,2:4],# [,-1],  # drop date col
+    sig_fc = readRDS("data/returns_vol_forecast.rds")[,2:4],  #[,-1],
+    df_fc = readRDS("data/df_fc.rds")[,2:4],#[,-1]
+    shape_fc = readRDS("data/shape_fc.rds")[,2:4]
   )
   
   cfg_variants <- list(list(label = "test"))   

@@ -6,10 +6,12 @@ smc_full <- function(data, cfg) {
   mu_fc  <- data$mu_fc
   sig_fc <- data$sig_fc
   df_fc     <- data$df_fc 
+  shape_fc     <- data$shape_fc 
   
   t_train <- cfg$W_predict
   skeleton <- make_skeleton_CVM(U[1:t_train, ])
-  
+  cfg <- add_first_tree_map(cfg, skeleton)
+
   exports <- c(
     # constants & templates 
     "FAM_INFO", "FAM_INDEP", "FAM_GAUSS", "FAM_BB1",
@@ -24,21 +26,19 @@ smc_full <- function(data, cfg) {
     "rtnorm_vec", "log_prior_edge",
     # likelihood helpers 
     "bicop_dist", "vinecop_dist", "dvinecop", "fast_vine_from_particle",
-    "rvinecop",
+    "rvinecop","bicop",
     # shared data objects 
     "skeleton", "cfg",
     # diagnostics & prediction 
     "diagnostic_report", "compute_predictive_metrics",
     "compute_log_incr",
     # small utilities 
-    "w_mean", "w_var", "mc_se", "w_quantile"
+    "w_mean", "w_var", "mc_se", "w_quantile", "fillna_neg"
   )
   cl <- make_cluster(cfg$nc, cfg$seed, exports)
   
-  # pre-allocation 
   M <- cfg$M; K <- cfg$K; N <- nrow(U); d <- cfg$d; n_oos <- N - cfg$W_predict
   tickers    <- colnames(U); A <- length(cfg$alphas)
-  #risk_cols <- risk_col_names(tickers, cfg$alphas)
 
   out <- list(
     log_pred    = numeric(n_oos),
@@ -52,7 +52,7 @@ smc_full <- function(data, cfg) {
     par2_hist = array(NA_real_,    dim = c(M,N,K)),
     ancestorIndices = matrix(0L, M, N),
     risk    =  list(
-                      dates = integer(n_oos),                                        # 1‑D
+                      dates = integer(n_oos),                                        
                       mean  = matrix(NA_real_, n_oos, d, dimnames = list(NULL, tickers)),
                       var   = matrix(NA_real_, n_oos, d, dimnames = list(NULL, tickers)),
                       ci_lo = matrix(NA_real_, n_oos, d, dimnames = list(NULL, tickers)),
@@ -61,7 +61,7 @@ smc_full <- function(data, cfg) {
                                     dimnames = list(NULL, tickers, paste0("a", cfg$alphas))),
                       ES    = array(NA_real_, dim = c(n_oos, d, A),
                                     dimnames = list(NULL, tickers, paste0("a", cfg$alphas)))
-                    ),                  # will rbind() rows
+                    ),                  
     port = list(
                     dates  = integer(n_oos),
                     mean   = numeric(n_oos),
@@ -78,7 +78,7 @@ smc_full <- function(data, cfg) {
   
 
   for (t in seq_len(N)) {
-    
+    #if (t==10){break}
     u_t <- U[t,,drop=FALSE]
     
     # weight-update
@@ -86,17 +86,17 @@ smc_full <- function(data, cfg) {
     particles <- update_weights(particles, log_inc)
     w <- vapply(particles, `[[`, numeric(1), "w")
     
-    # prediction block
+    # prediction 
     if (t > cfg$W_predict) {
       # log predictive density, predictive draws, risk metrics
       idx <- t - cfg$W_predict
       out$log_pred[idx] <- compute_predictive_metrics(u_t, particles, skeleton, w/sum(w), cfg)$log_pred_density
       
       draws <- smc_predictive_sample(particles, skeleton, w/sum(w), L = 5000, cl = cl)
-      Z_pred <- t_inv(draws, df_fc[t, ])  
+      Z_pred <- st_inv_fast(draws, shape_fc[t, ], df_fc[t, ])  
       R_t  <- sweep(Z_pred, 2, as.numeric(sig_fc[t, ]), `*`) + as.numeric(mu_fc[t, ])          # L × d
       
-      rs <- risk_stats_full(            # same helper as before
+      rs <- risk_stats_full(            
         R_t,
         cfg$alphas)
 
@@ -105,10 +105,10 @@ smc_full <- function(data, cfg) {
       out$risk$var  [idx, ] <- rs$var
       out$risk$ci_lo[idx, ] <- rs$ci["lo", ]
       out$risk$ci_hi[idx, ] <- rs$ci["hi", ]
-      out$risk$VaR [idx, , ] <- rs$VaR          # dim = d × A
+      out$risk$VaR [idx, , ] <- rs$VaR          # d × A
       out$risk$ES  [idx, , ] <- rs$ES
       
-      # ---------- EW-portfolio metrics ------------------
+      # EW-portfolio metrics 
       r_p  <- rowMeans(R_t)                                           
       ps   <- port_stats(r_p, cfg$alphas)    
       
@@ -131,8 +131,8 @@ smc_full <- function(data, cfg) {
     if (ESS(w) < cfg$ess_thr * M && t < N) {
       newAnc <- stratified_resample(w)
       data_up_to_t <- U[max(1, t - cfg$W + 1):t, , drop = FALSE]
-      move_out <- resample_move_old(particles, newAnc, data_up_to_t,
-                                 cl, cfg$type, cfg, skeleton = skeleton)
+        move_out <- resample_move_old(particles, newAnc, data_up_to_t, cl,
+                                  cfg$type, cfg, skeleton = skeleton)
       
       particles <- move_out$particles
       out$mh_acc_pct[t] <- move_out$acc_pct
@@ -158,91 +158,7 @@ smc_full <- function(data, cfg) {
 }
 
 
-# risk_stats <- function(R_pred,   # L × d matrix  (future PIT-draws ⇒ returns)
-#                        mu_fc,    # length-d mean forecast
-#                        sig_fc,   # length-d scale forecast
-#                        alphas = c(.05, .025)) {
-#   
-#   mu_fc <- as.numeric(mu_fc)
-#   sig_fc <- as.numeric(sig_fc)
-#   
-#   # 1.   back-transform to returns
-#   R_t <- sweep(R_pred, 2, sig_fc, `*`) + rep(mu_fc, each = nrow(R_pred))
-#   
-#   mu_hat  <- colMeans(R_t)
-#   var_hat <- apply(R_t, 2, var)
-#   CI_lo   <- apply(R_t, 2, quantile, 0.025)
-#   CI_hi   <- apply(R_t, 2, quantile, 0.975)
-#   
-#   # 2.   VaR & ES
-#   losses <- -R_t                               # ≤ 0 is a gain
-#   VaR <- sapply(alphas, function(a)
-#     apply(losses, 2, quantile, probs = a))
-#   ES  <- sapply(seq_along(alphas), function(k) {
-#     thr <- VaR[k, ]
-#     vapply(seq_len(ncol(losses)), \(j)
-#            mean(losses[losses[,j] >= thr[j], j]),
-#            numeric(1))
-#   })
-#   
-#   # 3.   flatten to a single named vector  (for rbindlist)
-#   as.vector(c(mu_hat, var_hat, CI_lo, CI_hi,
-#               as.vector(VaR), as.vector(ES)))
-# }
 
 
-
-
-
-
-
-
-# 
-# 
-# 
-# ## Pre-allocate the output container
-# serial_test <- vector("list", length(particles))
-# 
-# ## Outer loop over particles
-# for (i in seq_along(particles)) {
-# 
-#   p <- particles[[i]]           # current particle
-#   local_acc <- 0L               # acceptance counter (optional)
-# 
-#   ## Optional: announce which particle we’re on
-#   # cat(sprintf("\n---- Particle %d ----\n", i))
-# 
-#   ## Inner loop: Metropolis-Hastings steps
-#   for (k in seq_len(cfg$n_mh)) {
-# 
-#     ## Insert a browser() here if you want to step through interactively
-#     # if (i == 1 && k == 1) browser()
-# 
-#     p <- mh_step(p, data_up_to_t, skeleton, cfg)
-# 
-#     ## Count acceptances (defensive against NA)
-#     if (!is.null(p$last_accept) && isTRUE(p$last_accept)) {
-#       local_acc <- local_acc + 1L
-#     }
-# 
-#     ## Optional: verbose progress every, say, 10 iterations
-#     # if (k %% 10 == 0)
-#     #   cat(sprintf("particle %d | iter %4d | last_accept = %s | acc = %d\n",
-#     #               i, k, p$last_accept, local_acc))
-#   }
-# 
-#   ## Store the final particle (and maybe the acc counter)
-#   serial_test[[i]] <- p
-#   # attr(serial_test[[i]], "n_accept") <- local_acc   # if you’d like the counter
-# 
-#   ## Optional: quick summary per particle
-#   # cat(sprintf("particle %d finished: %d / %d MH accepts\n",
-#   #             i, local_acc, cfg$n_mh))
-# }
-# 
-# ## serial_test now mirrors what the parallel run would have returned.
-# 
-# 
-# 
 
 
