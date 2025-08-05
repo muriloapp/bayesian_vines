@@ -35,7 +35,7 @@ log_prior_edge <- function(fam, th1, th2, cfg) {
     lp_tail <- dbeta(lam[1], 2, 2, log=TRUE) +
       dbeta(lam[2], 2, 2, log=TRUE)
     lp <- lp_tail + bb1_log_jacobian(lam[1], lam[2]) - 2*cfg$lambda
-    return(lp)
+    return(fillna_neg(lp))
   }
 }
 
@@ -147,39 +147,59 @@ update_weights <- function(particles, log_lik) {
 ## MH step
 
 mh_step <- function(p, data_up_to_t, skeleton, cfg) {
-  
+
   K <- cfg$K
   fam_tbl <- active_fams(cfg)            # data.frame(name, code, npar)
   codes   <- fam_tbl$code
   prop <- p
   
-  ## (a) family flips with probability q_flip per edge
+  #skeleton$structure
+
+  # family flips with probability q_flip per edge
   flip_mask <- runif(K) < cfg$q_flip
   if (any(flip_mask)) {
     idxs <- which(flip_mask)
     for (idx in idxs) {
       old_code <- prop$fam[idx]
-      
-      tr_idx <- cfg$edge_tree[idx]
-      
-      allowed_names <- if (tr_idx == 1)
+      tr_idx <- cfg$edge_tree[idx] # map edge tree position
+
+      allowed_names <- if (tr_idx == 1) # check allowed families in each tree
         cfg$families_first else cfg$families_deep
-      
+
       allowed_codes <- FAM_INFO$code[FAM_INFO$name %in% allowed_names]
-      
-      ## choose a different family *within* the allowed set
+
+      # choose a different family within the allowed set
       new_code <- sample(allowed_codes[allowed_codes != old_code], 1L)
-      
       prop$fam[idx] <- new_code
       
+      if (tr_idx == 1) {         # Tree 1 → use MLE instead of wide prior
+        local_idx <- sum(cfg$edge_tree[seq_len(idx)] == 1)  # 1-based
+        pair <- cfg$edge_pair[local_idx, ]     # local_idx as before
+        uv   <- data_up_to_t[, pair] 
+       
+        
+        if (new_code == FAM_INDEP) {
+          prop$th1[idx] <- 0;  prop$th2[idx] <- 0
+        } else {
+          fam_name <- FAM_INFO$name[FAM_INFO$code == new_code]
+          fit      <- bicop(data = uv,
+                            family_set = fam_name,
+                            keep_data  = FALSE)  # MLE by default
+          pars <- fit$parameters
+          prop$th1[idx] <- pars[1]
+          prop$th2[idx] <- if (length(pars) > 1) pars[2] else 0
+        }
+        
+      } else {              
+
       ## draw parameters from that family's PRIOR
       if (new_code == FAM_INDEP) {
         prop$th1[idx] <- 0; prop$th2[idx] <- 0
-        
+
       } else if (new_code == FAM_GAUSS) {
         prop$th1[idx] <- runif(1, -0.99, 0.99)
         prop$th2[idx] <- 0
-        
+
       } else if (new_code == FAM_BB1) {
         lambdaU <- rbeta(1, 2, 2)
         lambdaL <- rbeta(1, 2, 2)
@@ -187,16 +207,17 @@ mh_step <- function(p, data_up_to_t, skeleton, cfg) {
         prop$th1[idx] <- tp[1]      # θ
         prop$th2[idx] <- tp[2]      # δ
       }
+      }
     }
   }
-  
+
   ## (b) Random-walk on parameters of *current* families
   ## Gaussian  — truncated normal on ρ
   ga_idx <- which(prop$fam == FAM_GAUSS)
   if (length(ga_idx))
     prop$th1[ga_idx] <- rtnorm_vec(prop$th1[ga_idx], cfg$step_sd,
                                    -0.99, 0.99)
-  
+
   ## BB1 — RW on (λL, λU) then map back
   bb_idx <- which(prop$fam == FAM_BB1)
   if (length(bb_idx)) {
@@ -209,20 +230,28 @@ mh_step <- function(p, data_up_to_t, skeleton, cfg) {
     prop$th1[bb_idx] <- par[,1]    # θ
     prop$th2[bb_idx] <- par[,2]    # δ
   }
-  
+
   vine_prop <- fast_vine_from_particle(prop, skeleton)
   vine_curr <- fast_vine_from_particle(p,    skeleton)
+
+  ll_prop <- sum(fillna_neg(log(pmax(dvinecop(data_up_to_t, vine_prop),
+                          .Machine$double.eps))))
+  ll_curr <- sum(fillna_neg(log(pmax(dvinecop(data_up_to_t, vine_curr),
+                          .Machine$double.eps))))
   
-  ll_prop <- sum(log(pmax(dvinecop(data_up_to_t, vine_prop),
-                          .Machine$double.eps)))
-  ll_curr <- sum(log(pmax(dvinecop(data_up_to_t, vine_curr),
-                          .Machine$double.eps)))
-  
-  
+  ### Add conditional such that if any entri is nan do not accept
+
+
   ## proposal symmetric by construction
   log_acc <- (ll_prop + log_prior(prop, cfg)) -
     (ll_curr + log_prior(p,    cfg))
   
+  print(log_acc)
+  print(ll_prop)
+  print(log_prior(prop, cfg))
+  print(log_acc)
+  print(log_acc)
+
   aux <- log(runif(1))
   if (aux < log_acc) {
     prop$last_accept <- TRUE
@@ -232,6 +261,7 @@ mh_step <- function(p, data_up_to_t, skeleton, cfg) {
     return(p)
   }
 }
+
 
 ## Adaptive RW step
 
@@ -327,24 +357,24 @@ resample_move <- function(particles, newAncestors, data_up_to_t,
 
 
 resample_move_old <- function(particles, newAncestors, data_up_to_t, cl, type, cfg, skeleton=NULL, tr=NULL, temp_skel=NULL) {
-  
+
   #idx       <- sample.int(M, M, TRUE, prob = w_new)
   particles <- particles[newAncestors]                  # cópia simples
   for (p in particles) {                       # reinicia pesos
     p$w <- 1 / cfg$M
   }
-  
-  mh_n_prop <- cfg$M * cfg$n_mh 
+
+  mh_n_prop <- cfg$M * cfg$n_mh
   mh_n_acc  <- 0
-  #clusterSetRNGStream(cl, 43) 
-  
+  #clusterSetRNGStream(cl, 43)
+
   tic("mh time")
   if (type=='standard'){
     mh_results <- parLapply(cl, seq_along(particles), function(i, particles_local, data_up_to_t, skeleton, cfg) {
       p <- particles_local[[i]]
       local_acc <- 0L
       for (k in seq_len(cfg$n_mh)) {
-        p <- mh_step(p, data_up_to_t, skeleton, cfg) 
+        p <- mh_step(p, data_up_to_t, skeleton, cfg)
         if (isTRUE(p$last_accept)) {
           local_acc <- local_acc + 1L
         }
@@ -352,6 +382,8 @@ resample_move_old <- function(particles, newAncestors, data_up_to_t, cl, type, c
       list(p = p, acc = local_acc)
     },
     particles, data_up_to_t, skeleton, cfg)
+
+
   } else if (type == "block") {
     mh_results <- parLapply(cl, seq_along(particles), function(i, particles_local, data_up_to_t, temp_skel, tr, cfg) {
       p <- particles_local[[i]]
@@ -365,24 +397,68 @@ resample_move_old <- function(particles, newAncestors, data_up_to_t, cl, type, c
       list(p = p, acc = local_acc)
     },
     particles, data_up_to_t, temp_skel, tr, cfg)
-    
+
   } else {
     stop(sprintf("Unknown type: '%s'. Use 'standard' or 'block'.", type))
   }
-  
+
   toc()
 
   mh_n_acc <- sum(vapply(mh_results, `[[`, integer(1), "acc"))
   particles <- lapply(mh_results, `[[`, "p")
-  
+
   acc_pct <- 100 * mh_n_acc / mh_n_prop
   cat(sprintf(
     "MH acceptance = %4d / %4d  =  %.2f%%\n\n",
     mh_n_acc, mh_n_prop, acc_pct
   ))
-  
+
   return(list(particles = particles, acc_pct = acc_pct))
 }
+
+resample_move_serialized <- function(particles,
+                              newAncestors,
+                              data_up_to_t,
+                              type,           
+                              cfg,
+                              skeleton = NULL,
+                              tr = NULL,
+                              temp_skel = NULL) {
+  
+  particles <- particles[newAncestors]
+  for (p in particles) p$w <- 1 / cfg$M
+  
+  mh_n_prop <- cfg$M * cfg$n_mh
+  mh_results <- vector("list", length(particles))   
+  
+  for (i in seq_along(particles)) {
+    if (i==220){break}
+    p    <- particles[[i]]
+    acc  <- 0L
+    
+    for (k in seq_len(cfg$n_mh)) {
+      if (type == "standard") {
+        p <- mh_step(p, data_up_to_t, skeleton, cfg)
+      } else if (type == "block") {
+        p <- mh_step_in_tree(p, tr, data_up_to_t, temp_skel, cfg)
+      } else {
+        stop(sprintf("Unknown type '%s' (use 'standard' or 'block')", type))
+      }
+      if (isTRUE(p$last_accept)) acc <- acc + 1L
+    }
+        mh_results[[i]] <- list(p = p, acc = acc)
+  }
+  
+  mh_n_acc <- sum(vapply(mh_results, `[[`, integer(1), "acc"))
+  particles <- lapply(mh_results, `[[`, "p")
+  
+  acc_pct <- 100 * mh_n_acc / mh_n_prop
+  cat(sprintf("MH acceptance = %4d / %4d  =  %.2f%%\n\n",
+              mh_n_acc, mh_n_prop, acc_pct))
+  
+  list(particles = particles, acc_pct = acc_pct)
+}
+
 
 ## Diagnostics
 
@@ -594,101 +670,101 @@ smc_predictive_sample <- function(particles,          # list of M particles
 
 # Risk metrics
 
-update_risk_log <- function(risk_log,
-                            U_pred,
-                            mu_f,
-                            sig_f,
-                            t_idx,
-                            alphas = c(0.95, 0.975))
-{
-  # ------------------------------------------------------------------
-  #
-  #  Arguments
-  #  ----------
-  #  risk_log   data.table | initially empty (0 rows) and kept by caller
-  #  U_pred     L × d matrix of uniform draws from smc_predictive_sample()
-  #  mu_fc      numeric-vector length d   –– conditional means  (AR part)
-  #  sig_fc     numeric-vector length d   –– conditional stdevs (GARCH part)
-  #  t_idx      scalar, time index (stored in the log)
-  #  alphas     tail probabilities for VaR / ES   (default 95 % & 97.5 %)
-  #
-  #  Returns
-  #  -------
-  #  Same data.table, one extra row per call
-  # ------------------------------------------------------------------
-  stopifnot(is.matrix(U_pred),
-            length(mu_f)  == ncol(U_pred),
-            length(sig_f) == ncol(U_pred))
-  
-  
-  sig_f = as.numeric(sig_f)
-  mu_f = as.numeric(mu_f)
-  
-  # quantile transform & rescale 
-  Z      <- qnorm(U_pred)                           # L × d
-  R_pred <- sweep(Z,  2, sig_f, `*`)
-  R_pred <- sweep(R_pred, 2, mu_f,  `+`)
-  
-  L <- nrow(R_pred);  d <- ncol(R_pred)
-  series_names <- paste0("S", seq_len(d))           # generic column labels
-  dimnames(R_pred) <- list(NULL, series_names)
-  
-  # point moments 
-  mu_hat  <- colMeans(R_pred)
-  var_hat <- colMeans((R_pred - rep(mu_hat, each = L))^2)
-  
-  # tail risk 
-  losses <- -R_pred                          # L × d matrix
-  
-  VaR <- vapply(alphas,                          # (K × d)
-                function(a)
-                  apply(losses, 2, quantile, probs = a),
-                numeric(d))
-  
-  ES  <- vapply(seq_along(alphas),   # k = 1 … K
-                function(k) {
-                  thr <- VaR[ , k]   # one threshold per series
-                  vapply(seq_len(d), function(j) {
-                    lj <- losses[ , j]
-                    exc <- lj[lj >= thr[j]]
-                    if (length(exc)) mean(exc) else NA_real_
-                  }, numeric(1))
-                },
-                numeric(d))
-  dimnames(VaR) <- dimnames(ES) <- list(colnames(losses), paste0("a", alphas))
-  
-  # 95 % predictive interval 
-  CI_lower <- apply(R_pred, 2, quantile, probs = 0.025)
-  CI_upper <- apply(R_pred, 2, quantile, probs = 0.975)
-  
-  # gather as one long row (wide format) 
-  row <- data.table::data.table(t_idx = t_idx)
-  
-  # names of the d series, e.g.  c("S1","S2", …)
-  series_names <- colnames(R_pred)
-  
-  # row is the single-row data.table that accumulates the statistics
-  add_vec <- function(x, prefix) {
-    cols <- paste0(prefix, "_", series_names)   # e.g.  mean_S1, mean_S2 …
-    stopifnot(length(x) == length(cols))        # sanity check
-    row[, (cols) := as.list(unname(x))]         # <- list = one entry / col
-  }
-  
-  # point estimates 
-  add_vec(mu_hat,  "mean")
-  add_vec(var_hat, "var")
-  add_vec(CI_lower,"ci_lo")
-  add_vec(CI_upper,"ci_hi")
-  
-  # tail–risk measures 
-  for (k in seq_along(alphas)) {
-    add_vec(VaR[ , k], sprintf("VaR%g", alphas[k] * 100))
-    add_vec(ES [ , k], sprintf("ES%g",  alphas[k] * 100))
-  }
-  
-  # append & return 
-  data.table::rbindlist(list(risk_log, row), use.names = TRUE, fill = TRUE)
-}
+# update_risk_log <- function(risk_log,
+#                             U_pred,
+#                             mu_f,
+#                             sig_f,
+#                             t_idx,
+#                             alphas = c(0.95, 0.975))
+# {
+#   # ------------------------------------------------------------------
+#   #
+#   #  Arguments
+#   #  ----------
+#   #  risk_log   data.table | initially empty (0 rows) and kept by caller
+#   #  U_pred     L × d matrix of uniform draws from smc_predictive_sample()
+#   #  mu_fc      numeric-vector length d   –– conditional means  (AR part)
+#   #  sig_fc     numeric-vector length d   –– conditional stdevs (GARCH part)
+#   #  t_idx      scalar, time index (stored in the log)
+#   #  alphas     tail probabilities for VaR / ES   (default 95 % & 97.5 %)
+#   #
+#   #  Returns
+#   #  -------
+#   #  Same data.table, one extra row per call
+#   # ------------------------------------------------------------------
+#   stopifnot(is.matrix(U_pred),
+#             length(mu_f)  == ncol(U_pred),
+#             length(sig_f) == ncol(U_pred))
+#   
+#   
+#   sig_f = as.numeric(sig_f)
+#   mu_f = as.numeric(mu_f)
+#   
+#   # quantile transform & rescale 
+#   Z      <- qnorm(U_pred)                           # L × d
+#   R_pred <- sweep(Z,  2, sig_f, `*`)
+#   R_pred <- sweep(R_pred, 2, mu_f,  `+`)
+#   
+#   L <- nrow(R_pred);  d <- ncol(R_pred)
+#   series_names <- paste0("S", seq_len(d))           # generic column labels
+#   dimnames(R_pred) <- list(NULL, series_names)
+#   
+#   # point moments 
+#   mu_hat  <- colMeans(R_pred)
+#   var_hat <- colMeans((R_pred - rep(mu_hat, each = L))^2)
+#   
+#   # tail risk 
+#   losses <- -R_pred                          # L × d matrix
+#   
+#   VaR <- vapply(alphas,                          # (K × d)
+#                 function(a)
+#                   apply(losses, 2, quantile, probs = a),
+#                 numeric(d))
+#   
+#   ES  <- vapply(seq_along(alphas),   # k = 1 … K
+#                 function(k) {
+#                   thr <- VaR[ , k]   # one threshold per series
+#                   vapply(seq_len(d), function(j) {
+#                     lj <- losses[ , j]
+#                     exc <- lj[lj >= thr[j]]
+#                     if (length(exc)) mean(exc) else NA_real_
+#                   }, numeric(1))
+#                 },
+#                 numeric(d))
+#   dimnames(VaR) <- dimnames(ES) <- list(colnames(losses), paste0("a", alphas))
+#   
+#   # 95 % predictive interval 
+#   CI_lower <- apply(R_pred, 2, quantile, probs = 0.025)
+#   CI_upper <- apply(R_pred, 2, quantile, probs = 0.975)
+#   
+#   # gather as one long row (wide format) 
+#   row <- data.table::data.table(t_idx = t_idx)
+#   
+#   # names of the d series, e.g.  c("S1","S2", …)
+#   series_names <- colnames(R_pred)
+#   
+#   # row is the single-row data.table that accumulates the statistics
+#   add_vec <- function(x, prefix) {
+#     cols <- paste0(prefix, "_", series_names)   # e.g.  mean_S1, mean_S2 …
+#     stopifnot(length(x) == length(cols))        # sanity check
+#     row[, (cols) := as.list(unname(x))]         # <- list = one entry / col
+#   }
+#   
+#   # point estimates 
+#   add_vec(mu_hat,  "mean")
+#   add_vec(var_hat, "var")
+#   add_vec(CI_lower,"ci_lo")
+#   add_vec(CI_upper,"ci_hi")
+#   
+#   # tail–risk measures 
+#   for (k in seq_along(alphas)) {
+#     add_vec(VaR[ , k], sprintf("VaR%g", alphas[k] * 100))
+#     add_vec(ES [ , k], sprintf("ES%g",  alphas[k] * 100))
+#   }
+#   
+#   # append & return 
+#   data.table::rbindlist(list(risk_log, row), use.names = TRUE, fill = TRUE)
+# }
 
 ## Tree by tree functions
 

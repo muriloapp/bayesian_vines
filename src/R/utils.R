@@ -37,8 +37,8 @@ bb1_log_jacobian <- function(lambdaL, lambdaU) {
 }
 
 sanitize_bb1 <- function(theta, delta,
-                         eps   = 1e-6,   # lower-bound cushion
-                         upper = 7 - 1e-6) {
+                         eps   = 0.01,   # lower-bound cushion
+                         upper = 7 - 0.01) {
   
   theta <- pmin(pmax(theta, eps),   upper)   # (0 , 7]
   delta <- pmin(pmax(delta, 1+eps), upper)   # (1 , 7]
@@ -105,7 +105,7 @@ make_skeleton_CVM <- function(U_train) {
   CVM <- RVineStructureSelect(U_train, familyset = c(1), type=1, indeptest = TRUE, level = 0.1)
   old_M  <- CVM$Matrix          
   order  <- old_M[, 1]
-  skeleton <- vinecop(U_train, family_set = "gaussian", structure = cvine_structure(order))
+  skeleton <- vinecop(U_train, family_set = c("gaussian"), structure = cvine_structure(order))
   skeleton
 }
 
@@ -129,6 +129,24 @@ edge_tree_map <- function(d) {
   }
   map
 }
+
+
+add_first_tree_map <- function(cfg, skeleton) {
+  ord <- skeleton$structure$order      # e.g. c(1, 3, 2)
+  d   <- length(ord)
+  
+  root   <- ord[d]                     # last element = root
+  leaves <- ord[seq_len(d - 1)]        # everything before it
+  
+  # one row per edge, same order as pair_copulas[[1]]
+  cfg$edge_pair <- cbind(u = rep(root, d - 1),
+                         v = leaves)
+  
+  cfg
+}
+
+
+
 
 
 # st_inv <- function(U_dt, shape, df_row_dt) {
@@ -190,4 +208,24 @@ t_inv <- function(U_dt, df_row_dt) {
   U  <- as.matrix(U_dt)            # L × d numeric matrix
   ν  <- as.numeric(df_row_dt)      # length-d numeric vector
   sweep(U, 2, ν, function(u, df) stats::qt(u, df))
+}
+
+fillna_neg <- function(x, neg_val = -1e10) {
+  
+  # handle vectors
+  if (is.atomic(x) && is.numeric(x)) {
+    x[is.na(x) | is.nan(x)] <- neg_val
+    return(x)
+  }
+  
+  # handle matrices / data frames column-wise
+  if (is.matrix(x) || is.data.frame(x)) {
+    for (j in seq_len(ncol(x))) {
+      if (is.numeric(x[[j]]))
+        x[[j]][is.na(x[[j]]) | is.nan(x[[j]])] <- neg_val
+    }
+    return(x)
+  }
+  
+  stop("`x` must be numeric, a numeric matrix, or a data.frame with numeric columns.")
 }
