@@ -32,10 +32,10 @@ build_cfg <- function(d,
     K       = K,
     M       = 1000,                                   # number of particles
     ess_thr = 0.50,                                   # threshold for resample move
-    W       = 1000L,                                  # rolling-window
+    W       = 252L,                                  # rolling-window
     k_step  = 1L,                                     # print diagnostic every k_step  
     n_mh    = 3L,                                     # number mh moves
-    W_predict = 1500L,                                 # training period     
+    W_predict = 756L,                                 # training period     
     q_flip=q_flip,
     step_sd = step_sd,
     lambda  = lambda,
