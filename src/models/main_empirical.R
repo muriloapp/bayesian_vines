@@ -32,7 +32,7 @@ smc_full <- function(data, cfg) {
     # diagnostics & prediction 
     "diagnostic_report", "compute_predictive_metrics",
     "compute_log_incr",
-    # small utilities 
+    # small utilities    
     "w_mean", "w_var", "mc_se", "w_quantile", "fillna_neg"
   )
   cl <- make_cluster(cfg$nc, cfg$seed, exports)
@@ -93,8 +93,8 @@ smc_full <- function(data, cfg) {
       out$log_pred[idx] <- compute_predictive_metrics(u_t, particles, skeleton, w/sum(w), cfg)$log_pred_density
       
       draws <- smc_predictive_sample(particles, skeleton, w/sum(w), L = 5000, cl = cl)
-      Z_pred <- st_inv_fast(draws, shape_fc[t, ], df_fc[t, ])  
-      R_t  <- sweep(Z_pred, 2, as.numeric(sig_fc[t, ]), `*`) + as.numeric(mu_fc[t, ])          # L × d
+      Z_pred <- st_inv_fast(draws, shape_fc[idx, ], df_fc[idx, ])  
+      R_t  <- sweep(Z_pred, 2, as.numeric(sig_fc[idx, ]), `*`) + as.numeric(mu_fc[idx, ])          # L × d
       
       rs <- risk_stats_full(            
         R_t,
