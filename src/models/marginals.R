@@ -181,7 +181,7 @@ saveRDS(shape_fc,  file = file.path("data", "shape_fc.rds"))
 saveRDS(pit_full,  file = file.path("data", "PIT.rds"))
 
 
-
+saveRDS(index(ret_xts), file = file.path("data", "dates.rds"))
 
 
 
