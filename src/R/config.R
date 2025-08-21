@@ -17,7 +17,7 @@ load_packages <- function() {
 build_cfg <- function(d,
                       lambda         = 1,
                       step_sd        = 0.05,
-                      q_flip         = NULL, #0.66, # stay or 2 possible families to go 
+                      q_flip         = 0.2, #0.66, # stay or 2 possible families to go 
                       K              = d * (d - 1) / 2,
                       families       = c("gaussian", "bb1", "bb1r180"),  # NEW
                       families_first = c( "gaussian", "bb1", "bb1r180"),
@@ -35,7 +35,7 @@ build_cfg <- function(d,
     W       = 252L,                                  # rolling-window
     k_step  = 1L,                                     # print diagnostic every k_step  
     n_mh    = 3L,                                     # number mh moves
-    W_predict = 756L,                                 # training period     
+    W_predict = 15L,                                 # training period     
     q_flip=q_flip,
     step_sd = step_sd,
     lambda  = lambda,
