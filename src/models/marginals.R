@@ -35,6 +35,7 @@ tickers <- colnames(ret_xts)
 K       <- length(tickers)
 
 
+
 ###############################################################################
 ## 2.  Helpers: fit once, then forecast 1‑step w/out re‑estimation           ##
 ###############################################################################
@@ -94,11 +95,7 @@ date_oos    <- index(ret_xts)[(win_len + 1):(win_len + n_oos)]  # t+1 dates
 
 df_fc <- array(NA_real_, dim = c(n_oos, K), dimnames = list(NULL, tickers))
 shape_fc <- array(NA_real_, dim = c(n_oos, K), dimnames = list(NULL, tickers))
-
-mu_fc       <- sigma_fc <- actual_ret <- array(
-  NA_real_, dim = c(n_oos, K),
-  dimnames = list(NULL, tickers)
-)
+mu_fc <- sigma_fc <- actual_ret <- array(NA_real_, dim = c(n_oos, K), dimnames = list(NULL, tickers) )
 
 ## grow‑as‑we‑go PIT matrix: start with the 756 in‑sample rows
 pit_full    <- pit_mat
