@@ -278,224 +278,88 @@ update_weights <- function(particles, log_lik) {
   particles
 }
 
-## MH step
 
-# mh_step <- function(p, data_up_to_t, skeleton, cfg) {
-# 
-#   K <- cfg$K
-#   fam_tbl <- active_fams(cfg)            # data.frame(name, code, npar)
-#   codes   <- fam_tbl$code
-#   prop <- p
-#   
-#   #skeleton$structure
-# 
-#   # family flips with probability q_flip per edge
-#   flip_mask <- runif(K) < cfg$q_flip
-#   if (any(flip_mask)) {
-#     idxs <- which(flip_mask)
-#     for (idx in idxs) {
-#       old_code <- prop$fam[idx]
-#       tr_idx <- cfg$edge_tree[idx] # map edge tree position
-# 
-#       allowed_names <- if (tr_idx == 1) # check allowed families in each tree
-#         cfg$families_first else cfg$families_deep
-# 
-#       allowed_codes <- FAM_INFO$code[FAM_INFO$name %in% allowed_names]
-# 
-#       # choose a different family within the allowed set
-#       new_code <- sample(allowed_codes[allowed_codes != old_code], 1L)
-#       prop$fam[idx] <- new_code
-#       
-#       if (tr_idx == 1) {         # Tree 1 → use MLE instead of wide prior
-#         local_idx <- sum(cfg$edge_tree[seq_len(idx)] == 1)  # 1-based
-#         pair <- cfg$edge_pair[local_idx, ]     # local_idx as before
-#         uv   <- data_up_to_t[, pair] 
-#        
-#         
-#         if (new_code == FAM_INDEP) {
-#           prop$th1[idx] <- 0;  prop$th2[idx] <- 0
-#         } else {
-#           fam_name <- FAM_INFO$name[FAM_INFO$code == new_code]
-#           fit      <- bicop(data = uv,
-#                             family_set = fam_name,
-#                             keep_data  = FALSE)  # MLE by default
-#           pars <- fit$parameters
-#           prop$th1[idx] <- pars[1]
-#           prop$th2[idx] <- if (length(pars) > 1) pars[2] else 0
-#         }
-#         
-#       } else {              
-# 
-#       ## draw parameters from that family's PRIOR
-#       if (new_code == FAM_INDEP) {
-#         prop$th1[idx] <- 0; prop$th2[idx] <- 0
-# 
-#       } else if (new_code == FAM_GAUSS) {
-#         prop$th1[idx] <- runif(1, -0.99, 0.99)
-#         prop$th2[idx] <- 0
-# 
-#       } else if (new_code == FAM_BB1) {
-#         lambdaU <- rbeta(1, 2, 2)
-#         lambdaL <- rbeta(1, 2, 2)
-#         tp      <- bb1_tail2par(lambdaL, lambdaU)
-#         prop$th1[idx] <- tp[1]      # θ
-#         prop$th2[idx] <- tp[2]      # δ
-#       }
-#       }
-#     }
-#   }
-# 
-#   ## (b) Random-walk on parameters of *current* families
-#   ## Gaussian  — truncated normal on ρ
-#   ga_idx <- which(prop$fam == FAM_GAUSS)
-#   if (length(ga_idx))
-#     prop$th1[ga_idx] <- rtnorm_vec(prop$th1[ga_idx], cfg$step_sd,
-#                                    -0.99, 0.99)
-# 
-#   ## BB1 — RW on (λL, λU) then map back
-#   bb_idx <- which(prop$fam == FAM_BB1)
-#   if (length(bb_idx)) {
-#     lam <- t(mapply(bb1_par2tail,
-#                     prop$th1[bb_idx], prop$th2[bb_idx]))
-#     lam[,1] <- rtnorm_vec(lam[,1], cfg$step_sd, 1e-3, 0.99)   # λL
-#     lam[,2] <- rtnorm_vec(lam[,2], cfg$step_sd, 1e-3, 0.99)   # λU
-#     par <- t(apply(lam, 1, \(x) bb1_tail2par(x[1], x[2])))
-#     par <- t(apply(par, 1, \(x) sanitize_bb1(x[1], x[2])))
-#     prop$th1[bb_idx] <- par[,1]    # θ
-#     prop$th2[bb_idx] <- par[,2]    # δ
-#   }
-# 
-#   vine_prop <- fast_vine_from_particle(prop, skeleton)
-#   vine_curr <- fast_vine_from_particle(p,    skeleton)
-# 
-#   ll_prop <- sum(fillna_neg(log(pmax(dvinecop(data_up_to_t, vine_prop),
-#                           .Machine$double.eps))))
-#   ll_curr <- sum(fillna_neg(log(pmax(dvinecop(data_up_to_t, vine_curr),
-#                           .Machine$double.eps))))
-#   
-#   ### Add conditional such that if any entri is nan do not accept
-# 
-# 
-#   ## proposal symmetric by construction
-#   log_acc <- (ll_prop + log_prior(prop, cfg)) -
-#     (ll_curr + log_prior(p,    cfg))
-#   
-#   print(log_acc)
-#   print(ll_prop)
-#   print(log_prior(prop, cfg))
-#   print(log_acc)
-#   print(log_acc)
-# 
-#   aux <- log(runif(1))
-#   if (aux < log_acc) {
-#     prop$last_accept <- TRUE
-#     return(prop)
-#   } else {
-#     p$last_accept <- FALSE
-#     return(p)
-#   }
-# }
 
 mh_step <- function(p, data_up_to_t, skeleton, cfg) {
-  K <- cfg$K
-  fam_tbl <- active_fams(cfg)
+  K    <- cfg$K
   prop <- p
   
-  ## (a) family flips
-  if (dim(data_up_to_t)[1] > 10){
-    end_first_tr <- sum(cfg$edge_tree == 1)
-    flip_mask <- runif(end_first_tr) < 0.6 #cfg$q_flip # FIX-ME
+  ## (a) Family flips — prior-only init (no MLE, no data-length gating)
+  end_first_tr <- sum(cfg$edge_tree == 1L)  # #edges in Tree 1 (by your ordering)
+  if (end_first_tr > 0L) {
+    flip_mask <- runif(end_first_tr) < cfg$q_flip
     if (any(flip_mask)) {
       idxs <- which(flip_mask)
       for (idx in idxs) {
+        tr_idx <- cfg$edge_tree[idx]
+        if (tr_idx != 1L) next  # keep flips on Tree 1 only
+        
         old_code <- prop$fam[idx]
-        tr_idx   <- cfg$edge_tree[idx]
-        
-        
-        allowed_names <- if (tr_idx == 1) cfg$families_first else cfg$families_deep
+        allowed_names <- if (tr_idx == 1L) cfg$families_first else cfg$families_deep
         allowed_codes <- FAM_INFO$code[FAM_INFO$name %in% allowed_names]
+        allowed_codes <- setdiff(allowed_codes, old_code)  # avoid no-op flip
+        if (!length(allowed_codes)) next
         
-        new_code <- sample(allowed_codes[allowed_codes != old_code], 1L)
+        new_code <- sample(allowed_codes, 1L)
         prop$fam[idx] <- new_code
-        spec <- fam_spec(new_code)
         
-        if (tr_idx == 1) {
-          # MLE for the specific family+rotation on Tree 1
-          local_idx <- sum(cfg$edge_tree[seq_len(idx)] == 1)
-          pair <- cfg$edge_pair[local_idx, ]
-          uv   <- data_up_to_t[, pair]
+        ## Initialize from priors (no MLE)
+        if (new_code == FAM_INDEP) {
+          prop$th1[idx] <- 0;                       prop$th2[idx] <- 0
           
-          if (new_code == FAM_INDEP) {
-            prop$th1[idx] <- 0; prop$th2[idx] <- 0
-          } else if (new_code == FAM_GAUSS) {
-            fit <- bicop(data = uv, family_set = spec$rv_name, keep_data = FALSE)
-            prop$th1[idx] <- fit$parameters[1]; prop$th2[idx] <- 0
-          } else {
-            fit <- bicop(data = uv, family_set = spec$rv_name, keep_data = FALSE)
-            pars <- fit$parameters
-            prop$th1[idx] <- pars[1]; prop$th2[idx] <- if (length(pars) > 1) pars[2] else 0
-          }
+        } else if (new_code == FAM_GAUSS) {
+          prop$th1[idx] <- runif(1, -0.99, 0.99);   prop$th2[idx] <- 0
           
-        # } else {
-        #   # draw from prior / diffuse initializer
-        #   if (new_code == FAM_INDEP) {
-        #     prop$th1[idx] <- 0; prop$th2[idx] <- 0
-        #     
-        #   } else if (new_code == FAM_GAUSS) {
-        #     prop$th1[idx] <- runif(1, -0.99, 0.99); prop$th2[idx] <- 0
-        #     
-        #   } else if (new_code == FAM_BB1) {
-        #     lamL <- rbeta(1, 2, 2); lamU <- rbeta(1, 2, 2)
-        #     tp   <- bb1_tail2par(lamL, lamU)
-        #     tp   <- sanitize_bb1(tp[1], tp[2])
-        #     prop$th1[idx] <- tp[1]; prop$th2[idx] <- tp[2]
-        #     
-        #   } else if (new_code == FAM_BB1R180) {
-        #     lamLr <- rbeta(1, 2, 2); lamUr <- rbeta(1, 2, 2)
-        #     tp    <- bb1r180_tail2par(lamLr, lamUr)
-        #     tp    <- sanitize_bb1(tp[1], tp[2])
-        #     prop$th1[idx] <- tp[1]; prop$th2[idx] <- tp[2]
-        #     
-        #   } else if (new_code == FAM_BB8R180) {
-        #     # diffuse box; you can refine later with a tailored prior
-        #     prop$th1[idx] <- runif(1, 0.1, 3.0)
-        #     prop$th2[idx] <- runif(1, 1.1, 5.0)
-        #   }
-        # }
-      }
+        } else if (new_code == FAM_BB1) {
+          lamL <- rbeta(1, 2, 2); lamU <- rbeta(1, 2, 2)
+          tp   <- bb1_tail2par(lamL, lamU)
+          tp   <- sanitize_bb1(tp[1], tp[2])
+          prop$th1[idx] <- tp[1];                  prop$th2[idx] <- tp[2]
+          
+        } else if (new_code == FAM_BB1R180) {
+          lamLr <- rbeta(1, 2, 2); lamUr <- rbeta(1, 2, 2)
+          tp    <- bb1r180_tail2par(lamLr, lamUr)
+          tp    <- sanitize_bb1(tp[1], tp[2])
+          prop$th1[idx] <- tp[1];                  prop$th2[idx] <- tp[2]
+          
+        } else if (new_code == FAM_BB8R180) {
+          # diffuse box prior (adjust if you add a tailored prior later)
+          prop$th1[idx] <- runif(1, 0.1, 3.0)
+          prop$th2[idx] <- runif(1, 1.1, 5.0)
+        }
       }
     }
   }
   
-  ## (b) RW on parameters of current families
+  ## (b) Random-walk on parameters of current families
   # Gaussian — truncated normal on ρ
   ga_idx <- which(prop$fam == FAM_GAUSS)
   if (length(ga_idx))
     prop$th1[ga_idx] <- rtnorm_vec(prop$th1[ga_idx], cfg$step_sd, -0.99, 0.99)
   
-  # BB1 (0°) — RW in (λL, λU), map back
+  # BB1 (0°) — RW in (λL, λU), then map back and sanitize
   bb1_idx <- which(prop$fam == FAM_BB1)
   if (length(bb1_idx)) {
     lam <- t(mapply(bb1_par2tail, prop$th1[bb1_idx], prop$th2[bb1_idx]))
-    lam[,1] <- rtnorm_vec(lam[,1], cfg$step_sd, 1e-3, 0.99)
-    lam[,2] <- rtnorm_vec(lam[,2], cfg$step_sd, 1e-3, 0.99)
+    lam[, 1] <- rtnorm_vec(lam[, 1], cfg$step_sd, 1e-3, 0.99)
+    lam[, 2] <- rtnorm_vec(lam[, 2], cfg$step_sd, 1e-3, 0.99)
     par <- t(apply(lam, 1, \(x) bb1_tail2par(x[1], x[2])))
     par <- t(apply(par, 1, \(x) sanitize_bb1(x[1], x[2])))
-    prop$th1[bb1_idx] <- par[,1]; prop$th2[bb1_idx] <- par[,2]
+    prop$th1[bb1_idx] <- par[, 1]; prop$th2[bb1_idx] <- par[, 2]
   }
   
   # BB1^180 — RW in (λL_rot, λU_rot), map back with rotated converter
   bb1r_idx <- which(prop$fam == FAM_BB1R180)
   if (length(bb1r_idx)) {
     lamr <- t(mapply(bb1r180_par2tail, prop$th1[bb1r_idx], prop$th2[bb1r_idx]))
-    lamr[,1] <- rtnorm_vec(lamr[,1], cfg$step_sd, 1e-3, 0.99)
-    lamr[,2] <- rtnorm_vec(lamr[,2], cfg$step_sd, 1e-3, 0.99)
+    lamr[, 1] <- rtnorm_vec(lamr[, 1], cfg$step_sd, 1e-3, 0.99)
+    lamr[, 2] <- rtnorm_vec(lamr[, 2], cfg$step_sd, 1e-3, 0.99)
     par <- t(apply(lamr, 1, \(x) bb1r180_tail2par(x[1], x[2])))
     par <- t(apply(par, 1, \(x) sanitize_bb1(x[1], x[2])))
-    prop$th1[bb1r_idx] <- par[,1]; prop$th2[bb1r_idx] <- par[,2]
+    prop$th1[bb1r_idx] <- par[, 1]; prop$th2[bb1r_idx] <- par[, 2]
   }
   
-  # BB8^180 — simple box RW in parameter space (refine if you later add tail priors)
+  # BB8^180 — simple box RW in parameter space
   bb8r_idx <- which(prop$fam == FAM_BB8R180)
   if (length(bb8r_idx)) {
     prop$th1[bb8r_idx] <- pmin(pmax(prop$th1[bb8r_idx] + rnorm(length(bb8r_idx), 0, cfg$step_sd), 0.05), 6.0)
@@ -519,6 +383,7 @@ mh_step <- function(p, data_up_to_t, skeleton, cfg) {
     return(p)
   }
 }
+
 
 
 ## Adaptive RW step
