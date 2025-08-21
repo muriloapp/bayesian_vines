@@ -8,6 +8,9 @@ smc_full <- function(data, cfg) {
   df_fc     <- data$df_fc 
   shape_fc     <- data$shape_fc 
   
+  y_real <- data$y_real
+  
+  
   t_train <- cfg$W_predict
   skeleton <- make_skeleton_CVM(U[1:t_train, ])
   cfg <- add_first_tree_map(cfg, skeleton)
@@ -42,35 +45,36 @@ smc_full <- function(data, cfg) {
 
   out <- list(
     log_pred    = numeric(n_oos),
-    diag_log    = data.table(t = integer(N), ESS = numeric(N),
-                             unique = integer(N), euc = numeric(N),
-                             sparsity = numeric(N)),
+    diag_log    = data.table(t = integer(N), ESS = numeric(N), unique = integer(N), euc = numeric(N), sparsity = numeric(N)),
     mh_acc_pct  = rep(NA_real_, N),
     step_sd_hist= rep(NA_real_, N),
     fam_hist  = array(NA_integer_, dim = c(M,N,K)),
     par1_hist = array(NA_real_,    dim = c(M,N,K)),
     par2_hist = array(NA_real_,    dim = c(M,N,K)),
+    rotation_hist = array(NA_real_, dim = c(M,N,K)),
     ancestorIndices = matrix(0L, M, N),
     risk    =  list(
                       dates = integer(n_oos),                                        
-                      mean  = matrix(NA_real_, n_oos, d, dimnames = list(NULL, tickers)),
-                      var   = matrix(NA_real_, n_oos, d, dimnames = list(NULL, tickers)),
-                      ci_lo = matrix(NA_real_, n_oos, d, dimnames = list(NULL, tickers)),
-                      ci_hi = matrix(NA_real_, n_oos, d, dimnames = list(NULL, tickers)),
-                      VaR   = array(NA_real_, dim = c(n_oos, d, A),
-                                    dimnames = list(NULL, tickers, paste0("a", cfg$alphas))),
-                      ES    = array(NA_real_, dim = c(n_oos, d, A),
-                                    dimnames = list(NULL, tickers, paste0("a", cfg$alphas)))
-                    ),                  
+                      VaR   = array(NA_real_, dim = c(n_oos, d, A), dimnames = list(NULL, tickers, paste0("a", cfg$alphas))),
+                      ES    = array(NA_real_, dim = c(n_oos, d, A), dimnames = list(NULL, tickers, paste0("a", cfg$alphas)))
+                    ),      
+    
+    QL    = array(NA_real_, c(n_oos, d, A), dimnames = list(NULL, tickers, paste0("a", cfg$alphas))),
+    FZL   = array(NA_real_, c(n_oos, d, A), dimnames = list(NULL, tickers, paste0("a", cfg$alphas))),
+    wCRPS = matrix(NA_real_, n_oos, d, dimnames = list(NULL, tickers)),
+    
     port = list(
                     dates  = integer(n_oos),
-                    mean   = numeric(n_oos),
-                    VaR    = matrix(NA_real_, n_oos, A,
-                                    dimnames = list(NULL, paste0("a", cfg$alphas))),
-                    ES     = matrix(NA_real_, n_oos, A,
-                                    dimnames = list(NULL, paste0("a", cfg$alphas)))
-                  ) 
+                    VaR    = matrix(NA_real_, n_oos, A, dimnames = list(NULL, paste0("a", cfg$alphas))),
+                    ES     = matrix(NA_real_, n_oos, A, dimnames = list(NULL, paste0("a", cfg$alphas))),
+                    QL    = matrix(NA_real_, n_oos, A, dimnames = list(NULL, paste0("a", cfg$alphas))),
+                    FZL   = matrix(NA_real_, n_oos, A, dimnames = list(NULL, paste0("a", cfg$alphas))),
+                    wCRPS = numeric(n_oos)
+                  ),
+    
+    CoVaR_tail = array(NA_real_, c(n_oos, d, 2), dimnames = list(NULL, tickers, c("a0.05","a0.10")))
   )
+
   
   # init particles
   particles <- replicate(M, new_particle(cfg), simplify = FALSE)
@@ -81,6 +85,7 @@ smc_full <- function(data, cfg) {
     #if (t==10){break}
     u_t <- U[t,,drop=FALSE]
     
+    
     # weight-update
     log_inc <- compute_log_incr(particles, u_t, skeleton, cfg)
     particles <- update_weights(particles, log_inc)
@@ -90,21 +95,17 @@ smc_full <- function(data, cfg) {
     if (t > cfg$W_predict) {
       # log predictive density, predictive draws, risk metrics
       idx <- t - cfg$W_predict
+      
+      y_real_t <- y_real[idx,]
       out$log_pred[idx] <- compute_predictive_metrics(u_t, particles, skeleton, w/sum(w), cfg)$log_pred_density
       
-      draws <- smc_predictive_sample(particles, skeleton, w/sum(w), L = 5000, cl = cl)
+      draws <- smc_predictive_sample(particles, skeleton, w/sum(w), L = 10000, cl = cl)
       Z_pred <- st_inv_fast(draws, shape_fc[idx, ], df_fc[idx, ])  
       R_t  <- sweep(Z_pred, 2, as.numeric(sig_fc[idx, ]), `*`) + as.numeric(mu_fc[idx, ])          # L × d
       
-      rs <- risk_stats_full(            
-        R_t,
-        cfg$alphas)
+      rs <- risk_stats_full(R_t, cfg$alphas)
 
       out$risk$dates[idx]   <- t
-      out$risk$mean [idx, ] <- rs$mean
-      out$risk$var  [idx, ] <- rs$var
-      out$risk$ci_lo[idx, ] <- rs$ci["lo", ]
-      out$risk$ci_hi[idx, ] <- rs$ci["hi", ]
       out$risk$VaR [idx, , ] <- rs$VaR          # d × A
       out$risk$ES  [idx, , ] <- rs$ES
       
@@ -113,9 +114,31 @@ smc_full <- function(data, cfg) {
       ps   <- port_stats(r_p, cfg$alphas)    
       
       out$port$dates[idx]   <- t                                       
-      out$port$mean [idx]   <- ps$mu
       out$port$VaR [idx, ]  <- ps$VaR
-      out$port$ES  [idx, ]  <- ps$ES  
+      out$port$ES  [idx, ]  <- ps$ES 
+      
+      r_p_real <- mean(as.numeric(y_real_t))
+      out$port$QL[idx, ]   <- vapply(seq_along(cfg$alphas), function(k) pinball_loss(r_p_real, ps$VaR[k], cfg$alphas[k]), numeric(1))
+      out$port$FZL[idx, ]  <- vapply(seq_along(cfg$alphas), function(k) fzl_pzc_scalar(r_p_real, ps$VaR[k], ps$ES[k], cfg$alphas[k]), numeric(1))
+      out$port$wCRPS[idx]  <- wcrps_gr_scalar(r_p, r_p_real)
+      
+      out$QL[idx, , ]  <- pinball_matrix(as.matrix(y_real_t[1, ]), rs$VaR, cfg$alphas) # Quantile loss per asset & alpha using the VaR you already computed
+      out$FZL[idx, , ] <- fzl_pzc_matrix(as.matrix(y_real_t[1, ]), rs$VaR, rs$ES, cfg$alphas) # FZL joint loss for (VaR, ES)
+      out$wCRPS[idx, ] <- wcrps_gr_matrix(R_t, as.matrix(y_real_t[1, ])) # Weighted CRPS from predictive draws 'R_t' and realization
+      
+      
+      # CoVaR
+      k5  <- which.min(abs(cfg$alphas - 0.05))
+      k10 <- which.min(abs(cfg$alphas - 0.10))
+      
+      VaRj_5  <- rs$VaR[, k5]   # d-vector
+      VaRj_10 <- rs$VaR[, k10]
+      covar5  <- covar_tail_vec(R_t, r_p, VaRj_5,  port_alpha = 0.05, minN = 50)
+      covar10 <- covar_tail_vec(R_t, r_p, VaRj_10, port_alpha = 0.10, minN = 50)
+      
+      out$CoVaR_tail[idx, , "a0.05"] <- covar5
+      out$CoVaR_tail[idx, , "a0.10"] <- covar10
+      
       
     }
     

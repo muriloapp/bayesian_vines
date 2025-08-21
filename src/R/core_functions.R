@@ -6,18 +6,20 @@ library(matrixStats)
 
 
 FAM_INFO <- data.frame(
-  name = c("indep", "gaussian", "bb1"),
-  code = c(0L, 1L, 2L),
-  npar = c(0L, 1L, 2L)
+  name = c("indep", "gaussian", "bb1", "bb8"),
+  code = c(0L, 1L, 3L, 6L),
+  npar = c(0L, 1L, 3L, 6L)
 )
 
 FAM_INDEP   <- 0L
 FAM_GAUSS   <- 1L
-FAM_BB1     <- 2L
+FAM_BB1     <- 3L
+FAM_BB8     <- 6L
 
 T_INDEP  <- bicop_dist("indep")
 T_GAUSS  <- bicop_dist("gaussian", parameters = 0)
 T_BB1    <- bicop_dist("bb1",      parameters = c(1, 2))  # dummy θ,δ
+T_BB8    <- bicop_dist("bb8",      parameters = c(1, 2))  # dummy θ,δ
 
 
 ## Priors
