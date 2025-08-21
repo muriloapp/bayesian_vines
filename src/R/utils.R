@@ -45,6 +45,29 @@ sanitize_bb1 <- function(theta, delta,
   c(theta, delta)
 }
 
+bb1r180_tail2par <- function(lambdaL_rot, lambdaU_rot) {
+  # survival: (λL_rot, λU_rot) correspond to (λU_orig, λL_orig)
+  bb1_tail2par(lambdaL = lambdaU_rot, lambdaU = lambdaL_rot)
+}
+
+bb1r180_par2tail <- function(theta, delta) {
+  lam_orig <- bb1_par2tail(theta, delta)
+  # swap for rotated copula’s own tails
+  c(lambdaL = lam_orig[2], lambdaU = lam_orig[1])
+}
+
+bb1r180_log_jacobian <- function(lambdaL_rot, lambdaU_rot) {
+  # J_rot = J_orig evaluated at swapped lambdas
+  bb1_log_jacobian(lambdaL = lambdaU_rot, lambdaU = lambdaL_rot)
+}
+
+
+fam_spec <- function(code) {
+  row <- FAM_INFO[FAM_INFO$code == code, ]
+  list(name = row$name, rv_name = row$rv_name, rotation = row$rotation, npar = row$npar)
+}
+
+
 # Monte-Carlo 
 
 w_mean <- function(x, w)  sum(w * x)

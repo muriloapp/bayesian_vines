@@ -17,10 +17,11 @@ smc_full <- function(data, cfg) {
 
   exports <- c(
     # constants & templates 
-    "FAM_INFO", "FAM_INDEP", "FAM_GAUSS", "FAM_BB1",
-    "T_INDEP",  "T_GAUSS",   "T_BB1",
+    "FAM_INFO", "FAM_INDEP", "FAM_GAUSS", "FAM_BB1", "FAM_BB1R180",
+    "T_INDEP",  "T_GAUSS",   "T_BB1", "T_BB1R180", "FAM_BB8R180",
     # helper functions 
     "active_fams", "sanitize_bb1", "mh_worker_standard", "mh_worker_block",
+    "bb1r180_tail2par", "bb1r180_par2tail", "bb1r180_log_jacobian",
     # core SMC kernels 
     "mh_step", "mh_step_in_tree",
     "update_weights", "ESS", "systematic_resample", "resample_move",
@@ -36,7 +37,7 @@ smc_full <- function(data, cfg) {
     "diagnostic_report", "compute_predictive_metrics",
     "compute_log_incr",
     # small utilities    
-    "w_mean", "w_var", "mc_se", "w_quantile", "fillna_neg"
+    "w_mean", "w_var", "mc_se", "w_quantile", "fillna_neg", "fam_spec"
   )
   cl <- make_cluster(cfg$nc, cfg$seed, exports)
   
@@ -82,6 +83,7 @@ smc_full <- function(data, cfg) {
   
 
   for (t in seq_len(N)) {
+    
     #if (t==10){break}
     u_t <- U[t,,drop=FALSE]
     
@@ -154,7 +156,7 @@ smc_full <- function(data, cfg) {
     if (ESS(w) < cfg$ess_thr * M && t < N) {
       newAnc <- stratified_resample(w)
       data_up_to_t <- U[max(1, t - cfg$W + 1):t, , drop = FALSE]
-        move_out <- resample_move_old(particles, newAnc, data_up_to_t, cl,
+      move_out <- resample_move_old(particles, newAnc, data_up_to_t, cl,
                                   cfg$type, cfg, skeleton = skeleton)
       
       particles <- move_out$particles

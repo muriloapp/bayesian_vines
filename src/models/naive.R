@@ -135,7 +135,7 @@ for (t in seq_len(n_oos)) {
   
   if (t == 1)  skel <- make_skeleton_CVM(u_train)
   fit_t1 <- vinecop(u_train,
-                   family_set = c("indep", "gaussian", "bb1", "bb8"),
+                   family_set = c("indep", "gaussian", "bb1"),
                    structure   = skel$structure,
                    allow_rotations = TRUE,
                    trunc_lvl       = 1)
@@ -210,7 +210,7 @@ for (t in seq_len(n_oos)) {
 }
   
   
-saveRDS(out, file = file.path("empirical_results", "out_naive_6.rds"))
+saveRDS(out, file = file.path("empirical_results", "out_naive_7.rds"))
 
 
 
@@ -374,6 +374,7 @@ print(eval_covar)        # data.frame per conditioning asset per alpha
 
 
 
+apply(out$port$FZL, 2, sum)
 
 
 
@@ -438,7 +439,7 @@ legend("topright", legend = c("Actual", "VaR"),
 
 
 
-out2 <- readRDS("C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/empirical_results/out_naive_3.rds")
+out <- readRDS("C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/empirical_results/out_naive_7.rds")
 
 
 order(out$log_pred)

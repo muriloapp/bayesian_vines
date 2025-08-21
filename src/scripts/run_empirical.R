@@ -2,7 +2,7 @@ library(here)
 source(here("src/R", "config.R"))         
 
 
-n_assets <- 1:5
+n_assets <- 1:7
 n_days <- 1:3000
 
 run_empirical <- function() {
