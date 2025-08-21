@@ -19,9 +19,9 @@ build_cfg <- function(d,
                       step_sd        = 0.05,
                       q_flip         = NULL, #0.66, # stay or 2 possible families to go 
                       K              = d * (d - 1) / 2,
-                      families       = c("indep", "gaussian", "bb1"),  # NEW
-                      families_first = c("indep", "gaussian", "bb1"),
-                      families_deep  = c("indep", "gaussian"),
+                      families       = c("gaussian", "bb1", "bb1r180"),  # NEW
+                      families_first = c( "gaussian", "bb1", "bb1r180"),
+                      families_deep  = c("gaussian"),
                       adapt_step_sd  = TRUE) {
   
   if (is.null(q_flip))        # default that mimics “stay vs leave equal”
