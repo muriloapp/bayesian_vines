@@ -35,7 +35,7 @@ build_cfg <- function(d,
     W       = 252L,                                  # rolling-window
     k_step  = 1L,                                     # print diagnostic every k_step  
     n_mh    = 3L,                                     # number mh moves
-    W_predict = 15L,                                 # training period     
+    W_predict = 756L,                                 # training period     
     q_flip=q_flip,
     step_sd = step_sd,
     lambda  = lambda,

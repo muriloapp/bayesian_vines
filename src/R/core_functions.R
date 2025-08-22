@@ -967,11 +967,6 @@ smc_predictive_sample <- function(particles,          # list of M particles
   M  <- length(particles)
   d  <- ncol(skel$structure)
   
-  ## 0️⃣  optional caching -------------------------------------------------
-  vines <- if (isTRUE(cache)) {
-    lapply(particles, fast_vine_from_particle, skel = skel)
-  }
-  
   ## 1️⃣  which particle generates each row? ------------------------------
   id <- sample.int(M, L, replace = TRUE, prob = w)
   
@@ -988,7 +983,7 @@ smc_predictive_sample <- function(particles,          # list of M particles
   if (!is.null(cl)) {
     parallel::clusterExport(
       cl,
-      c("id", "particles", "vines", "skel", "sim_row"),
+      c("id", "particles", "skel", "sim_row"),
       envir = environment())
     
     ## split the indices 1:L as evenly as possible across the workers
@@ -1006,6 +1001,102 @@ smc_predictive_sample <- function(particles,          # list of M particles
   dimnames(out) <- NULL
   out                              # matrix(L , d)
 }
+
+
+smc_predictive_sample_fast <- function(particles,  # list of M particles
+                                       skel,       # fixed structure
+                                       w,          # numeric(M), not necessarily normalized
+                                       L = 10000,  # total draws
+                                       cl = NULL)  # optional cluster
+{
+  ## --- normalize weights robustly ---
+  w[!is.finite(w)] <- 0
+  w[w < 0] <- 0
+  sw <- sum(w)
+  if (sw <= 0) stop("All weights are zero/invalid.")
+  w <- w / sw
+  
+  M <- length(particles)
+  if (length(w) != M) stop("length(w) must equal number of particles.")
+  if (L < 1L) stop("L must be >= 1.")
+  
+  ## --- counts per particle (sum == L) ---
+  cnt  <- as.vector(rmultinom(1, size = L, prob = w))  # length M
+  used <- which(cnt > 0L)
+  if (length(used) == 0L) {
+    d0 <- ncol(skel$structure)
+    return(matrix(numeric(0), nrow = 0, ncol = d0))
+  }
+  
+  ## --- build each used vine ON MASTER (once) ---
+  vines_used <- lapply(used, function(i) fast_vine_from_particle(particles[[i]], skel))
+  
+  ## helper: reshape rvinecop() output to (ni x d_sim), with d_sim inferred from length(sim)/ni
+  coerce_block <- function(sim, ni) {
+    vec <- as.numeric(sim)                       # flatten deterministically
+    len <- length(vec)
+    if (len %% ni != 0L) {
+      stop(sprintf("rvinecop length mismatch: got %d, not divisible by ni=%d", len, ni))
+    }
+    d_sim <- as.integer(len / ni)
+    dim(vec) <- c(ni, d_sim)
+    vec
+  }
+  
+  ## --- SERIAL PATH ---
+  if (is.null(cl)) {
+    sims  <- vector("list", length(used))
+    d_ref <- NULL
+    for (k in seq_along(used)) {
+      ni  <- cnt[used[k]]
+      sim <- rvinecop(ni, vines_used[[k]])
+      blk <- coerce_block(sim, ni)
+      d_k <- ncol(blk)
+      if (is.null(d_ref)) d_ref <- d_k else if (d_k != d_ref)
+        stop(sprintf("Inconsistent simulated dimension across particles: %d vs %d", d_k, d_ref))
+      sims[[k]] <- blk
+    }
+    out <- do.call(rbind, sims)
+    dimnames(out) <- NULL
+    return(out)
+  }
+  
+  ## --- PARALLEL PATH (load-balanced) ---
+  # Pack only vine + ni (keep payload minimal)
+  work <- lapply(seq_along(used), function(k) {
+    list(vine = vines_used[[k]], ni = cnt[used[k]])
+  })
+  
+  # Make sure workers can call rvinecop()
+  parallel::clusterEvalQ(cl, library(rvinecopulib))
+  
+  sims_list <- parallel::parLapplyLB(cl, work, function(task) {
+    sim <- rvinecop(task$ni, task$vine)
+    vec <- as.numeric(sim)
+    len <- length(vec)
+    if (len %% task$ni != 0L)
+      stop(sprintf("rvinecop length mismatch on worker: len=%d, ni=%d", len, task$ni))
+    d_sim <- as.integer(len / task$ni)
+    dim(vec) <- c(task$ni, d_sim)
+    vec
+  })
+  
+  ## check all blocks have same d, then rbind
+  d_vec <- vapply(sims_list, ncol, integer(1))
+  if (length(unique(d_vec)) != 1L)
+    stop(sprintf("Inconsistent simulated dimension across workers: %s",
+                 paste(unique(d_vec), collapse = ", ")))
+  out <- do.call(rbind, sims_list)
+  dimnames(out) <- NULL
+  out
+}
+
+
+
+
+
+
+
 
 
 # Risk metrics
