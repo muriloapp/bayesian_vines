@@ -14,7 +14,7 @@ smc_full <- function(data, cfg) {
   t_train <- cfg$W_predict
   skeleton <- make_skeleton_CVM(U[1:t_train, ], trunc_tree = cfg$trunc_tree)
   cfg <- add_first_tree_map(cfg, skeleton)
-
+  
   exports <- c(
     # constants & templates 
     "FAM_INFO", "FAM_INDEP", "FAM_GAUSS", "FAM_BB1", "FAM_BB1R180",
@@ -42,9 +42,13 @@ smc_full <- function(data, cfg) {
     "compute_log_incr",
     # small utilities    
     "w_mean", "w_var", "mc_se", "w_quantile", "fillna_neg", "fam_spec","get_tails","clamp01","init_from_tails",
-    "tail_weights", "safe_logdens"
+    "tail_weights", "safe_logdens",
+    "logit","ilogit","dlogitnorm",
+    "emp_tails_FRAPO","seed_family_from_emp",
+    "log_prior_edge_strong",".tip_means_for_edge_t","log_prior_with_tip_time"
   )
   cl <- make_cluster(cfg$nc, cfg$seed, exports)
+  parallel::clusterEvalQ(cl, { library(rvinecopulib); library(FRAPO) })
   
   M <- cfg$M; K <- cfg$K; N <- nrow(U); d <- cfg$d; n_oos <- N - cfg$W_predict
   tickers    <- colnames(U); A <- length(cfg$alphas)
@@ -83,11 +87,12 @@ smc_full <- function(data, cfg) {
 
   
   # init particles
-  particles <- replicate(M, new_particle(cfg), simplify = FALSE)
+  U_init <- U[1:cfg$W, , drop = FALSE]
+  particles <- replicate(M, new_particle(cfg, U_init = U_init), simplify = FALSE)
   out$ancestorIndices[,1] <- seq_len(M)
   
 
-  for (t in seq_len(N)) {
+  for (t in 253:N) {
     
     #if (t==10){break}
     u_t <- U[t,,drop=FALSE]

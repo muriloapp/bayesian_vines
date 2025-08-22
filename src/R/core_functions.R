@@ -91,63 +91,171 @@ log_prior <- function(p, cfg) {
 }
 
 
-new_particle <- function(cfg) {
+# new_particle <- function(cfg) {
+#   K   <- cfg$K
+#   fam <- integer(K); th1 <- numeric(K); th2 <- numeric(K)
+#   
+#   for (k in seq_len(K)) {
+#     tr_k <- cfg$edge_tree[k]
+#     allowed_names <- if (tr_k == 1) cfg$families_first else cfg$families_deep
+#     fam_tbl <- FAM_INFO[FAM_INFO$name %in% allowed_names, ]
+#     #weights <- exp(-cfg$lambda * fam_tbl$npar)
+#     weights <- rep(1/dim(fam_tbl)[1], dim(fam_tbl)[1])
+#     code_k  <- sample(fam_tbl$code, 1, prob = weights)
+#     fam[k]  <- code_k
+#     
+#     if (code_k == FAM_INDEP) {
+#       th1[k] <- 0; th2[k] <- 0
+#       
+#     } else if (code_k == FAM_GAUSS) {
+#       th1[k] <- runif(1, -0.99, 0.99); th2[k] <- 0
+#       
+#     } else if (code_k == FAM_BB1) {
+#       lamU <- rbeta(1, 2, 2); lamL <- rbeta(1, 2, 2)
+#       pars <- sanitize_bb1(bb1_tail2par(lamL, lamU)[1],
+#                            bb1_tail2par(lamL, lamU)[2])
+#       th1[k] <- pars[1]; th2[k] <- pars[2]
+#       
+#     } else if (code_k == FAM_BB1R180) {
+#       # sample in rotated tail space, then map with rotated converter
+#       lamL_rot <- rbeta(1, 2, 2); lamU_rot <- rbeta(1, 2, 2)
+#       pars <- sanitize_bb1(bb1r180_tail2par(lamL_rot, lamU_rot)[1],
+#                            bb1r180_tail2par(lamL_rot, lamU_rot)[2])
+#       th1[k] <- pars[1]; th2[k] <- pars[2]
+#       
+#     } else if (code_k == FAM_BB8R180) {
+#       ## λ_L^rot ~ Beta, map to θ; δ (Frank) is tail-free → draw diffuse
+#       lamLr <- rbeta(1, 2, 2)
+#       pars  <- bb8r180_tail2par(lamLr, delta_free = runif(1, 1.1, 5.0))
+#       pars  <- sanitize_bb8(pars[1], pars[2])
+#       th1[k] <- pars[1]; th2[k] <- pars[2]
+#       
+#     } else if (code_k == FAM_BB7) {
+#       ## (λL, λU) ~ Beta×Beta, map to (θ, δ)
+#       lamL <- rbeta(1, 2, 2); lamU <- rbeta(1, 2, 2)
+#       pars <- bb7_tail2par(lamL, lamU)
+#       pars <- sanitize_bb7(pars[1], pars[2])
+#       th1[k] <- pars[1]; th2[k] <- pars[2]
+#       
+#     } else if (code_k == FAM_BB7R180) {
+#       ## (λL^rot, λU^rot) ~ Beta×Beta, map to (θ, δ) via rotated transform
+#       lamLr <- rbeta(1, 2, 2); lamUr <- rbeta(1, 2, 2)
+#       pars  <- bb7r180_tail2par(lamLr, lamUr)
+#       pars  <- sanitize_bb7(pars[1], pars[2])
+#       th1[k] <- pars[1]; th2[k] <- pars[2]
+#     }
+#   }
+#   
+#   list(fam = fam, th1 = th1, th2 = th2, w = 1 / cfg$M, last_accept = FALSE)
+# }
+
+new_particle <- function(cfg, U_init = NULL) {
   K   <- cfg$K
   fam <- integer(K); th1 <- numeric(K); th2 <- numeric(K)
   
+  tip_on  <- isTRUE(cfg$use_tail_informed_prior) && !is.null(U_init)
+  if (tip_on) {
+    if (is.null(cfg$edge_pair))
+      stop("TIP init requested but cfg$edge_pair is NULL. Provide Tree-1 pairs aligned with edge order.")
+  }
+  
   for (k in seq_len(K)) {
     tr_k <- cfg$edge_tree[k]
-    allowed_names <- if (tr_k == 1) cfg$families_first else cfg$families_deep
-    fam_tbl <- FAM_INFO[FAM_INFO$name %in% allowed_names, ]
-    #weights <- exp(-cfg$lambda * fam_tbl$npar)
-    weights <- rep(1/dim(fam_tbl)[1], dim(fam_tbl)[1])
-    code_k  <- sample(fam_tbl$code, 1, prob = weights)
-    fam[k]  <- code_k
+    allowed_names <- if (tr_k == 1L) cfg$families_first else cfg$families_deep
+    fam_tbl <- FAM_INFO[FAM_INFO$name %in% allowed_names, , drop = FALSE]
     
-    if (code_k == FAM_INDEP) {
-      th1[k] <- 0; th2[k] <- 0
+    ## --------- FAMILY SELECTION (TIP-aware on Tree 1) -----------------
+    if (tip_on && tr_k == 1L) {
+      # local index within Tree 1 and its (i,j) pair
+      local_idx <- sum(cfg$edge_tree[seq_len(k)] == 1L)
+      pair      <- cfg$edge_pair[local_idx, ]
+      uv        <- U_init[, pair, drop = FALSE]
       
-    } else if (code_k == FAM_GAUSS) {
-      th1[k] <- runif(1, -0.99, 0.99); th2[k] <- 0
+      # empirical tails from FRAPO (uses only U_init)
+      emps <- emp_tails_FRAPO(uv, method = cfg$tip_method, k = cfg$tip_k)
+      mL   <- as.numeric(emps["L"]);  mU <- as.numeric(emps["U"])
+      tail_strength <- max(mL, mU)             # ∈ (0,1)
       
-    } else if (code_k == FAM_BB1) {
-      lamU <- rbeta(1, 2, 2); lamL <- rbeta(1, 2, 2)
-      pars <- sanitize_bb1(bb1_tail2par(lamL, lamU)[1],
-                           bb1_tail2par(lamL, lamU)[2])
-      th1[k] <- pars[1]; th2[k] <- pars[2]
+      # weight tail families up with tail_strength; keep others possible
+      tail_codes <- c(FAM_BB1, FAM_BB1R180, FAM_BB7, FAM_BB7R180, FAM_BB8R180)
+      base_w     <- rep(1.0, nrow(fam_tbl))
+      is_tailfam <- fam_tbl$code %in% tail_codes
+      # e.g., tails strong -> upweight tail fams by up to 4x; downweight Gauss/Indep
+      w          <- base_w * ifelse(is_tailfam, 1 + 3*tail_strength, pmax(1 - 0.9*tail_strength, 0.1))
+      w          <- w / sum(w)
       
-    } else if (code_k == FAM_BB1R180) {
-      # sample in rotated tail space, then map with rotated converter
-      lamL_rot <- rbeta(1, 2, 2); lamU_rot <- rbeta(1, 2, 2)
-      pars <- sanitize_bb1(bb1r180_tail2par(lamL_rot, lamU_rot)[1],
-                           bb1r180_tail2par(lamL_rot, lamU_rot)[2])
-      th1[k] <- pars[1]; th2[k] <- pars[2]
+      code_k  <- sample(fam_tbl$code, 1L, prob = w)
+      fam[k]  <- code_k
       
-    } else if (code_k == FAM_BB8R180) {
-      ## λ_L^rot ~ Beta, map to θ; δ (Frank) is tail-free → draw diffuse
-      lamLr <- rbeta(1, 2, 2)
-      pars  <- bb8r180_tail2par(lamLr, delta_free = runif(1, 1.1, 5.0))
-      pars  <- sanitize_bb8(pars[1], pars[2])
-      th1[k] <- pars[1]; th2[k] <- pars[2]
+      ## --------- PARAMETER SEEDING from empirical tails ----------------
+      if (code_k == FAM_INDEP) {
+        th1[k] <- 0; th2[k] <- 0
+        
+      } else if (code_k == FAM_GAUSS) {
+        th1[k] <- runif(1, -0.99, 0.99); th2[k] <- 0
+        
+      } else {
+        # strong seeding for tail families (logit-normal around mL/mU)
+        th_new <- seed_family_from_emp(
+          new_code     = code_k,
+          mL           = mL,
+          mU           = mU,
+          cur_delta    = runif(1, 1.1, 5.0),   # starting delta if needed (BB8r180)
+          step_sd      = cfg$step_sd,
+          tip_sd_logit = cfg$tip_sd_logit      # small sd -> strong prior around empirical tails
+        )
+        th1[k] <- th_new[1]; th2[k] <- th_new[2]
+      }
       
-    } else if (code_k == FAM_BB7) {
-      ## (λL, λU) ~ Beta×Beta, map to (θ, δ)
-      lamL <- rbeta(1, 2, 2); lamU <- rbeta(1, 2, 2)
-      pars <- bb7_tail2par(lamL, lamU)
-      pars <- sanitize_bb7(pars[1], pars[2])
-      th1[k] <- pars[1]; th2[k] <- pars[2]
+    } else {
+      ## --------- ORIGINAL (non-TIP or deeper trees) -------------------
+      # Equal weights across allowed families (your current behavior)
+      weights <- rep(1 / nrow(fam_tbl), nrow(fam_tbl))
+      code_k  <- sample(fam_tbl$code, 1L, prob = weights)
+      fam[k]  <- code_k
       
-    } else if (code_k == FAM_BB7R180) {
-      ## (λL^rot, λU^rot) ~ Beta×Beta, map to (θ, δ) via rotated transform
-      lamLr <- rbeta(1, 2, 2); lamUr <- rbeta(1, 2, 2)
-      pars  <- bb7r180_tail2par(lamLr, lamUr)
-      pars  <- sanitize_bb7(pars[1], pars[2])
-      th1[k] <- pars[1]; th2[k] <- pars[2]
+      if (code_k == FAM_INDEP) {
+        th1[k] <- 0; th2[k] <- 0
+        
+      } else if (code_k == FAM_GAUSS) {
+        th1[k] <- runif(1, -0.99, 0.99); th2[k] <- 0
+        
+      } else if (code_k == FAM_BB1) {
+        lamU <- rbeta(1, 2, 2); lamL <- rbeta(1, 2, 2)
+        pars <- sanitize_bb1(bb1_tail2par(lamL, lamU)[1],
+                             bb1_tail2par(lamL, lamU)[2])
+        th1[k] <- pars[1]; th2[k] <- pars[2]
+        
+      } else if (code_k == FAM_BB1R180) {
+        lamL_rot <- rbeta(1, 2, 2); lamU_rot <- rbeta(1, 2, 2)
+        pars <- sanitize_bb1(bb1r180_tail2par(lamL_rot, lamU_rot)[1],
+                             bb1r180_tail2par(lamL_rot, lamU_rot)[2])
+        th1[k] <- pars[1]; th2[k] <- pars[2]
+        
+      } else if (code_k == FAM_BB8R180) {
+        lamLr <- rbeta(1, 2, 2)
+        pars  <- bb8r180_tail2par(lamLr, delta_free = runif(1, 1.1, 5.0))
+        pars  <- sanitize_bb8(pars[1], pars[2])
+        th1[k] <- pars[1]; th2[k] <- pars[2]
+        
+      } else if (code_k == FAM_BB7) {
+        lamL <- rbeta(1, 2, 2); lamU <- rbeta(1, 2, 2)
+        pars <- bb7_tail2par(lamL, lamU)
+        pars <- sanitize_bb7(pars[1], pars[2])
+        th1[k] <- pars[1]; th2[k] <- pars[2]
+        
+      } else if (code_k == FAM_BB7R180) {
+        lamLr <- rbeta(1, 2, 2); lamUr <- rbeta(1, 2, 2)
+        pars  <- bb7r180_tail2par(lamLr, lamUr)
+        pars  <- sanitize_bb7(pars[1], pars[2])
+        th1[k] <- pars[1]; th2[k] <- pars[2]
+      }
     }
   }
   
   list(fam = fam, th1 = th1, th2 = th2, w = 1 / cfg$M, last_accept = FALSE)
 }
+
 
 
 
@@ -287,6 +395,7 @@ init_from_tails <- function(new_code, tails) {
 }
 
 mh_step <- function(p, data_up_to_t, skeleton, cfg) {
+  
   K    <- cfg$K
   prop <- p
   
@@ -301,7 +410,6 @@ mh_step <- function(p, data_up_to_t, skeleton, cfg) {
         if (tr_idx != 1L) next  # safety; we only flip on Tree 1
         
         old_code <- prop$fam[idx]
-        
         allowed_names <- if (tr_idx == 1L) cfg$families_first else cfg$families_deep
         allowed_codes <- FAM_INFO$code[FAM_INFO$name %in% allowed_names]
         allowed_codes <- setdiff(allowed_codes, old_code)  # avoid no-op
@@ -310,12 +418,32 @@ mh_step <- function(p, data_up_to_t, skeleton, cfg) {
         new_code <- sample(allowed_codes, 1L)
         prop$fam[idx] <- new_code
         
-        ## seed the proposal using CURRENT tails when available; otherwise prior
-        tails_old <- get_tails(old_code, prop$th1[idx], prop$th2[idx])
-        tp_new    <- init_from_tails(new_code, tails_old)
+        if (isTRUE(cfg$tip_init)) {
+          ## find the local Tree 1 index and the pair for THIS edge
+          local_idx <- sum(cfg$edge_tree[seq_len(idx)] == 1L)  # 1-based within Tree 1
+          pair      <- cfg$edge_pair[local_idx, ]              # E1 x 2; aligned to your order
+          uv        <- data_up_to_t[, pair, drop = FALSE]
+          
+          emps <- emp_tails_FRAPO(uv, method = cfg$tip_method, k = cfg$tip_k)
+          emps
+          mL   <- emps["L"];  mU <- emps["U"]
+          
+          th_new <- seed_family_from_emp(
+            new_code, mL, mU,
+            cur_delta   = prop$th2[idx],
+            step_sd     = cfg$step_sd,
+            tip_sd_logit= cfg$tip_sd_logit
+          )
+          prop$th1[idx] <- th_new[1]; prop$th2[idx] <- th_new[2]
+        } else {
         
-        prop$th1[idx] <- tp_new[1]
-        prop$th2[idx] <- tp_new[2]
+          ## seed the proposal using CURRENT tails when available; otherwise prior
+          tails_old <- get_tails(old_code, prop$th1[idx], prop$th2[idx])
+          tp_new    <- init_from_tails(new_code, tails_old)
+          
+          prop$th1[idx] <- tp_new[1]
+          prop$th2[idx] <- tp_new[2]
+        }
       }
     }
   }
@@ -392,23 +520,32 @@ mh_step <- function(p, data_up_to_t, skeleton, cfg) {
   
   #ll_prop <- sum(fillna_neg(log(pmax(dvinecop(data_up_to_t, vine_prop), .Machine$double.eps))))
   #ll_curr <- sum(fillna_neg(log(pmax(dvinecop(data_up_to_t, vine_curr), .Machine$double.eps))))
-  ## --- tails-weighted likelihood in MH --------------------------------------
-  wobs    <- tail_weights(
-    data_up_to_t,
-    tau = cfg$tauL %||% 0.05,
-    k   = cfg$joint_k %||% 2L,
-    eps = cfg$tail_eps %||% 0.10
-  )
+
+  if (isTRUE(cfg$use_weighted_ll)) {
+    wobs    <- tail_weights(
+      data_up_to_t,
+      tau = cfg$tauL,
+      k   = cfg$joint_k,
+      eps = cfg$tail_eps
+    )
+    ll_prop <- sum(wobs * safe_logdens(data_up_to_t, vine_prop))
+    ll_curr <- sum(wobs * safe_logdens(data_up_to_t, vine_curr))
+  } else {
+    ll_prop <- sum(safe_logdens(data_up_to_t, vine_prop))
+    ll_curr <- sum(safe_logdens(data_up_to_t, vine_curr))
+  }
   
-  logdens_prop <- safe_logdens(data_up_to_t, vine_prop)
-  logdens_curr <- safe_logdens(data_up_to_t, vine_curr)
   
-  ll_prop <- sum(wobs * logdens_prop)
-  ll_curr <- sum(wobs * logdens_curr)
-  ## --------------------------------------------------------------------------
+  # --- PRIOR (toggle-safe) ----------------------------------------------------
+  lp_prop <- if (isTRUE(cfg$use_tail_informed_prior)) 
+    log_prior_with_tip_time(prop, cfg, data_up_to_t) else 
+      log_prior(prop, cfg)
   
+  lp_curr <- if (isTRUE(cfg$use_tail_informed_prior)) 
+    log_prior_with_tip_time(p,    cfg, data_up_to_t) else 
+      log_prior(p,    cfg)
   
-  log_acc <- (ll_prop + log_prior(prop, cfg)) - (ll_curr + log_prior(p, cfg))
+  log_acc <- (ll_prop + lp_prop) - (ll_curr + lp_curr)
   
   if (log(runif(1)) < log_acc) {
     prop$last_accept <- TRUE
@@ -435,6 +572,148 @@ safe_logdens <- function(U, vine) {
   dens <- dvinecop(U, vine)
   ifelse(is.na(dens) | dens <= 0, -1e100, log(dens))
 }
+
+
+###########################################
+
+## --- math helpers ----------------------------------------------------------
+logit   <- function(x)  log(x/(1-x))
+ilogit  <- function(z)  1/(1+exp(-z))
+clamp01 <- function(x, lo = 1e-6, hi = 1-1e-6) pmin(pmax(x, lo), hi)
+
+## Logit-Normal log-density on (0,1)
+dlogitnorm <- function(lambda, mean_logit, sd_logit) {
+  lam <- clamp01(lambda)
+  dnorm(logit(lam), mean_logit, sd_logit, log = TRUE) - log(lam) - log1p(-lam)
+}
+
+## --- FRAPO-based empirical tails for a 2-column matrix uv ------------------
+emp_tails_FRAPO <- function(uv, method = "EmpTC", k = NULL) {
+  stopifnot(is.matrix(uv), ncol(uv) == 2)
+  # lower tail
+  tL <- FRAPO::tdc(uv, method = method, lower = TRUE,  k = k)
+  # upper tail
+  tU <- FRAPO::tdc(uv, method = method, lower = FALSE, k = k)
+  # robust extraction (FRAPO returns a 2x2 matrix for 2 columns)
+  get12 <- function(x) if (is.matrix(x)) as.numeric(x[1,2]) else as.numeric(x)[1]
+  c(L = clamp01(get12(tL)), U = clamp01(get12(tU)))
+}
+
+## --- Seeding new family params from empirical tails (Tree 1) ---------------
+seed_family_from_emp <- function(new_code, mL, mU, cur_delta, step_sd, tip_sd_logit) {
+  r_lam <- function(m) {
+    z <- rnorm(1, mean = logit(clamp01(m)), sd = tip_sd_logit)
+    ilogit(z)
+  }
+  if (new_code == FAM_INDEP)  return(c(0, 0))
+  if (new_code == FAM_GAUSS)  return(c(runif(1, -0.99, 0.99), 0))
+  
+  if (new_code == FAM_BB1) {
+    lamL <- r_lam(mL); lamU <- r_lam(mU)
+    th   <- bb1_tail2par(lamL, lamU); th <- sanitize_bb1(th[1], th[2]); return(th)
+  }
+  if (new_code == FAM_BB7) {
+    lamL <- r_lam(mL); lamU <- r_lam(mU)
+    th   <- bb7_tail2par(lamL, lamU); th <- sanitize_bb7(th[1], th[2]); return(th)
+  }
+  if (new_code == FAM_BB1R180) {
+    # rotation: lower-rot ↔ upper(orig), upper-rot ↔ lower(orig)
+    lamLr <- r_lam(mU); lamUr <- r_lam(mL)
+    th    <- bb1r180_tail2par(lamLr, lamUr); th <- sanitize_bb1(th[1], th[2]); return(th)
+  }
+  if (new_code == FAM_BB7R180) {
+    lamLr <- r_lam(mU); lamUr <- r_lam(mL)
+    th    <- bb7r180_tail2par(lamLr, lamUr); th <- sanitize_bb7(th[1], th[2]); return(th)
+  }
+  if (new_code == FAM_BB8R180) {
+    lamLr <- r_lam(mL)  # choose L as anchor
+    delta <- pmin(pmax(cur_delta + rnorm(1, 0, step_sd), 0.05), 7.0)
+    th    <- bb8r180_tail2par(lamLr, delta); th <- sanitize_bb8(th[1], th[2]); return(th)
+  }
+  stop("Unknown family code in seed_family_from_emp()")
+}
+
+
+
+log_prior_edge_strong <- function(fam, th1, th2, cfg, tip_means) {
+  if (fam == FAM_INDEP) return(0 - cfg$lambda)
+  if (fam == FAM_GAUSS) return(log(1/1.98) - cfg$lambda)  # uniform ρ in (-.99,.99) + penalty
+  
+  s <- cfg$tip_sd_logit
+  if (fam == FAM_BB1) {
+    lam <- bb1_par2tail(th1, th2)
+    tip <- if (is.null(tip_means)) 0 else
+      dlogitnorm(lam[1], logit(tip_means["mL"]), s) +
+      dlogitnorm(lam[2], logit(tip_means["mU"]), s)
+    return(tip + bb1_log_jacobian(lam[1], lam[2]) - cfg$lambda)
+  }
+  if (fam == FAM_BB7) {
+    lam <- bb7_par2tail(th1, th2)
+    tip <- if (is.null(tip_means)) 0 else
+      dlogitnorm(lam[1], logit(tip_means["mL"]), s) +
+      dlogitnorm(lam[2], logit(tip_means["mU"]), s)
+    return(tip + bb7_log_jacobian(lam[1], lam[2]) - cfg$lambda)
+  }
+  if (fam == FAM_BB1R180) {
+    lam <- bb1r180_par2tail(th1, th2)
+    tip <- if (is.null(tip_means)) 0 else
+      dlogitnorm(lam[1], logit(tip_means["mU"]), s) +  # rotated mapping
+      dlogitnorm(lam[2], logit(tip_means["mL"]), s)
+    return(tip + bb1_log_jacobian(lam[1], lam[2]) - cfg$lambda)
+  }
+  if (fam == FAM_BB7R180) {
+    lam <- bb7r180_par2tail(th1, th2)
+    tip <- if (is.null(tip_means)) 0 else
+      dlogitnorm(lam[1], logit(tip_means["mU"]), s) +
+      dlogitnorm(lam[2], logit(tip_means["mL"]), s)
+    return(tip + bb7_log_jacobian(lam[1], lam[2]) - cfg$lambda)
+  }
+  if (fam == FAM_BB8R180) {
+    lamLr <- bb8r180_par2tail(th1, th2)[1]
+    tip   <- if (is.null(tip_means)) 0 else dlogitnorm(lamLr, logit(tip_means["mL"]), s)
+    return(tip + bb8_log_jacobian(lamLr) - cfg$lambda)
+  }
+  stop("unknown family in log_prior_edge_strong")
+}
+
+## empirical means for edge e at time t (Tree 1 only; NULL otherwise)
+.tip_means_for_edge_t <- function(e, data_up_to_t, cfg) {
+  if (!isTRUE(cfg$use_tail_informed_prior)) return(NULL)
+  if (cfg$edge_tree[e] != 1L) return(NULL)
+  ## map global edge index e -> local index within Tree 1, then pick its (i,j) pair
+  local_idx <- sum(cfg$edge_tree[seq_len(e)] == 1L)
+  pair      <- cfg$edge_pair[local_idx, ]
+  uv        <- data_up_to_t[, pair, drop = FALSE]
+  emps      <- emp_tails_FRAPO(uv, method = cfg$tip_method, k = cfg$tip_k)
+  c(mL = emps["L"], mU = emps["U"])
+}
+
+## TIP-aware prior (falls back to your base prior when TIP is OFF)
+log_prior_with_tip_time <- function(p, cfg, data_up_to_t) {
+  if (!isTRUE(cfg$use_tail_informed_prior)) return(log_prior(p, cfg))
+  lp <- 0
+  for (e in seq_len(cfg$K)) {
+    fam  <- p$fam[e]; th1 <- p$th1[e]; th2 <- p$th2[e]
+    tipm <- .tip_means_for_edge_t(e, data_up_to_t, cfg)  # NULL if not Tree 1
+    lp   <- lp + log_prior_edge_strong(fam, th1, th2, cfg, tipm)
+  }
+  lp
+}
+
+
+
+############################################3
+
+
+
+
+
+
+
+
+
+
+
 
 # mh_step <- function(p, data_up_to_t, skeleton, cfg) {
 #   K    <- cfg$K
