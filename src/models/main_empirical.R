@@ -12,16 +12,20 @@ smc_full <- function(data, cfg) {
   
   
   t_train <- cfg$W_predict
-  skeleton <- make_skeleton_CVM(U[1:t_train, ])
+  skeleton <- make_skeleton_CVM(U[1:t_train, ], trunc_tree = cfg$trunc_tree)
   cfg <- add_first_tree_map(cfg, skeleton)
 
   exports <- c(
     # constants & templates 
     "FAM_INFO", "FAM_INDEP", "FAM_GAUSS", "FAM_BB1", "FAM_BB1R180",
     "T_INDEP",  "T_GAUSS",   "T_BB1", "T_BB1R180", "FAM_BB8R180",
+    "FAM_BB7","FAM_BB7R180","T_BB8R180","T_BB7","T_BB7R180",
     # helper functions 
     "active_fams", "sanitize_bb1", "mh_worker_standard", "mh_worker_block",
     "bb1r180_tail2par", "bb1r180_par2tail", "bb1r180_log_jacobian",
+    "bb7_tail2par","bb7_par2tail","bb7_log_jacobian","bb7r180_tail2par","bb7r180_par2tail",
+    "bb7r180_log_jacobian","bb8r180_tail2par","bb8r180_par2tail","bb8r180_log_jacobian_1d",
+    "sanitize_bb7","sanitize_bb8",
     # core SMC kernels 
     "mh_step", "mh_step_in_tree",
     "update_weights", "ESS", "systematic_resample", "resample_move",
@@ -37,7 +41,7 @@ smc_full <- function(data, cfg) {
     "diagnostic_report", "compute_predictive_metrics",
     "compute_log_incr",
     # small utilities    
-    "w_mean", "w_var", "mc_se", "w_quantile", "fillna_neg", "fam_spec"
+    "w_mean", "w_var", "mc_se", "w_quantile", "fillna_neg", "fam_spec","get_tails","clamp01","init_from_tails"
   )
   cl <- make_cluster(cfg$nc, cfg$seed, exports)
   
