@@ -390,8 +390,23 @@ mh_step <- function(p, data_up_to_t, skeleton, cfg) {
   vine_prop <- fast_vine_from_particle(prop, skeleton)
   vine_curr <- fast_vine_from_particle(p,    skeleton)
   
-  ll_prop <- sum(fillna_neg(log(pmax(dvinecop(data_up_to_t, vine_prop), .Machine$double.eps))))
-  ll_curr <- sum(fillna_neg(log(pmax(dvinecop(data_up_to_t, vine_curr), .Machine$double.eps))))
+  #ll_prop <- sum(fillna_neg(log(pmax(dvinecop(data_up_to_t, vine_prop), .Machine$double.eps))))
+  #ll_curr <- sum(fillna_neg(log(pmax(dvinecop(data_up_to_t, vine_curr), .Machine$double.eps))))
+  ## --- tails-weighted likelihood in MH --------------------------------------
+  wobs    <- tail_weights(
+    data_up_to_t,
+    tau = cfg$tauL %||% 0.05,
+    k   = cfg$joint_k %||% 2L,
+    eps = cfg$tail_eps %||% 0.10
+  )
+  
+  logdens_prop <- safe_logdens(data_up_to_t, vine_prop)
+  logdens_curr <- safe_logdens(data_up_to_t, vine_curr)
+  
+  ll_prop <- sum(wobs * logdens_prop)
+  ll_curr <- sum(wobs * logdens_curr)
+  ## --------------------------------------------------------------------------
+  
   
   log_acc <- (ll_prop + log_prior(prop, cfg)) - (ll_curr + log_prior(p, cfg))
   
@@ -402,6 +417,23 @@ mh_step <- function(p, data_up_to_t, skeleton, cfg) {
     p$last_accept <- FALSE
     return(p)
   }
+}
+
+
+## ---- Tail weighting helpers ----------------------------------------------
+
+## Soft weights: 1 for "joint lower-tail" rows, eps for others (renormalized)
+tail_weights <- function(U, tau = 0.05, k = 2L, eps = 0.10) {
+  jt <- rowSums(U <= tau) >= k     # joint lower-tail indicator per row
+  w  <- ifelse(jt, 1, eps)
+  w / mean(w)                      # keep average weight = 1 (stability)
+}
+
+## Safe log-density vector for a vine on matrix U
+## Follows your convention: NA or <= 0  → -1e100
+safe_logdens <- function(U, vine) {
+  dens <- dvinecop(U, vine)
+  ifelse(is.na(dens) | dens <= 0, -1e100, log(dens))
 }
 
 # mh_step <- function(p, data_up_to_t, skeleton, cfg) {

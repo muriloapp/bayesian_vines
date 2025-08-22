@@ -41,7 +41,8 @@ smc_full <- function(data, cfg) {
     "diagnostic_report", "compute_predictive_metrics",
     "compute_log_incr",
     # small utilities    
-    "w_mean", "w_var", "mc_se", "w_quantile", "fillna_neg", "fam_spec","get_tails","clamp01","init_from_tails"
+    "w_mean", "w_var", "mc_se", "w_quantile", "fillna_neg", "fam_spec","get_tails","clamp01","init_from_tails",
+    "tail_weights", "safe_logdens"
   )
   cl <- make_cluster(cfg$nc, cfg$seed, exports)
   
