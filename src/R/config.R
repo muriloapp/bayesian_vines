@@ -17,39 +17,58 @@ load_packages <- function() {
 build_cfg <- function(d,
                       lambda         = 1,
                       step_sd        = 0.05,
-                      q_flip         = 0.2, #0.66, # stay or 2 possible families to go 
-                      K              = d * (d - 1) / 2,
-                      families       = c("gaussian", "bb1", "bb1r180"),  # NEW
-                      families_first = c( "gaussian", "bb1", "bb1r180"),
+                      q_flip         = NULL,                 # <- default now computed later
+                      K              = NULL,                 # <- ignored if truncation given
+                      families       = c("gaussian","bb1","bb1r180","bb7","bb7r180"),
+                      families_first = c("gaussian","bb1","bb1r180","bb7","bb7r180"),
                       families_deep  = c("gaussian"),
-                      adapt_step_sd  = TRUE) {
+                      adapt_step_sd  = TRUE,
+                      trunc_tree     = 2L) {
   
-  if (is.null(q_flip))        # default that mimics “stay vs leave equal”
-    q_flip <- 1 / (K + 1)
+  d <- as.integer(d)
+  K_full <- as.integer(d * (d - 1L) / 2L)
   
-  list(
-    d       = d,
-    K       = K,
-    M       = 1000,                                   # number of particles
-    ess_thr = 0.50,                                   # threshold for resample move
-    W       = 252L,                                  # rolling-window
-    k_step  = 1L,                                     # print diagnostic every k_step  
-    n_mh    = 3L,                                     # number mh moves
-    W_predict = 756L,                                 # training period     
-    q_flip=q_flip,
-    step_sd = step_sd,
-    lambda  = lambda,
-    families = families,                              # store user choice
+  # sanitize truncation and compute truncated K
+  trunc_tree <- max(1L, min(as.integer(trunc_tree), d - 1L))
+  K_trunc <- K_from_trunc(d, trunc_tree)
+  
+  # edge-to-tree mapping consistent with truncation (length == K_trunc)
+  edge_tree <- edge_tree_map(d, trunc_tree)
+  
+  # default q_flip uses *truncated* K (prob. of proposing a family flip vs. stay)
+  if (is.null(q_flip)) q_flip <- 1 / (K_trunc + 1)
+  
+  cfg <- list(
+    d            = d,
+    K            = K_trunc,                 # <- truncated K used everywhere downstream
+    K_full       = K_full,                  # <- for reference if needed
+    trunc_tree   = trunc_tree,
+    M            = 1000L,
+    ess_thr      = 0.50,
+    W            = 252L,
+    k_step       = 1L,
+    n_mh         = 3L,
+    W_predict    = 756L,
+    q_flip       = q_flip,
+    step_sd      = step_sd,
+    lambda       = lambda,
+    families     = families,
     families_first = families_first,
     families_deep  = families_deep,
-    adapt_step_sd = adapt_step_sd,
-    seed    = 42, G = 2L,
-    edge_tree  = edge_tree_map(d),
-    nc       = max(parallel::detectCores()-1, 1),
-    type     = "standard",
-    alphas     = c(0.1, .05, .025, 0.01)
+    adapt_step_sd  = adapt_step_sd,
+    seed         = 42L,
+    G            = 2L,
+    edge_tree    = edge_tree,               # <- length == K
+    nc           = max(parallel::detectCores() - 1L, 1L),
+    type         = "standard",
+    alphas       = c(0.1, 0.05, 0.025, 0.01)
   )
+  
+  # sanity checks that prevent the “length mismatch” errors downstream
+  stopifnot(length(cfg$edge_tree) == cfg$K)
+  cfg
 }
+
 
 source(here("src/R", "utils.R"))
 source(here("src/R", "core_functions.R"))
