@@ -61,7 +61,11 @@ build_cfg <- function(d,
     edge_tree    = edge_tree,               # <- length == K
     nc           = max(parallel::detectCores() - 1L, 1L),
     type         = "standard",
-    alphas       = c(0.1, 0.05, 0.025, 0.01)
+    alphas       = c(0.1, 0.05, 0.025, 0.01),
+    # --- tail-weighted likelihood knobs ---
+    tauL      = 0.1,   # per-margin lower-quantile threshold for "tail"
+    joint_k   = 2L,     # how many margins must be in the lower tail in a row
+    tail_eps  = 0.30   # weight for non-tail rows (0<eps<=1)
   )
   
   # sanity checks that prevent the “length mismatch” errors downstream
