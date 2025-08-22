@@ -63,9 +63,20 @@ build_cfg <- function(d,
     type         = "standard",
     alphas       = c(0.1, 0.05, 0.025, 0.01),
     # --- tail-weighted likelihood knobs ---
+    use_weighted_ll = FALSE,
     tauL      = 0.1,   # per-margin lower-quantile threshold for "tail"
     joint_k   = 2L,     # how many margins must be in the lower tail in a row
-    tail_eps  = 0.30   # weight for non-tail rows (0<eps<=1)
+    tail_eps  = 0.30,   # weight for non-tail rows (0<eps<=1)
+    ## --- Tail-informed prior (TIP), recomputed at each t ---
+    use_tail_informed_prior = TRUE,  # turn on strong tail-centered priors
+    tip_method   = "EmpTC",          # FRAPO::tdc method: "EmpTC" or "EVT"
+    tip_k        = NULL,             # if NULL, FRAPO’s default k=floor(sqrt(n))
+    tip_sd_logit = 0.20,             # SMALL sd => STRONG prior around empirical λ
+    tip_init     = TRUE,             # also seed flip params from empirical λ (Tree 1 only)
+    
+    ## Tree 1 edge map (E1 x 2), in the SAME order as edges where edge_tree==1L
+    ## If you already have it, keep using yours.
+    edge_pair    = NULL
   )
   
   # sanity checks that prevent the “length mismatch” errors downstream
