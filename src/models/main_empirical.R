@@ -114,7 +114,9 @@ smc_full <- function(data, cfg) {
       #draws <- smc_predictive_sample(particles, skeleton, w/sum(w), L = 10000, cl = cl)
       
       
-      draws <- smc_predictive_sample_fast(particles, skeleton, w/sum(w), L = 10000, cl = cl)
+      #draws <- smc_predictive_sample_fast(particles, skeleton, w/sum(w), L = 10000, cl = cl, cfg$nc)
+      
+      draws <- smc_predictive_sample_fast2(particles, skeleton, w, L = 10000, cl = cl)
       
       
       Z_pred <- st_inv_fast(draws, shape_fc[idx, ], df_fc[idx, ])  
