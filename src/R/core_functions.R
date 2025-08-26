@@ -1400,7 +1400,7 @@ smc_predictive_sample_fast <- function(particles,  # list of M particles
   parallel::clusterEvalQ(cl, library(rvinecopulib))
   
   sims_list <- parallel::parLapplyLB(cl, work, function(task) {
-    sim <- rvinecop(task$ni, task$vine)
+    sim <- rvinecop(task$ni, task$vine, cores = cfg$nc)
     vec <- as.numeric(sim)
     len <- length(vec)
     if (len %% task$ni != 0L)
