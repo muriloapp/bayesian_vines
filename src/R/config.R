@@ -20,7 +20,7 @@ build_cfg <- function(d,
                       q_flip         = NULL,                 # <- default now computed later
                       K              = NULL,                 # <- ignored if truncation given
                       families       = c("gaussian","bb1","bb1r180","bb7","bb7r180"),
-                      families_first = c("gaussian","bb1","bb1r180","bb7","bb7r180"),
+                      families_first = c("bb1","bb1r180","bb7","bb7r180"),
                       families_deep  = c("gaussian"),
                       adapt_step_sd  = TRUE,
                       trunc_tree     = 2L) {
@@ -45,7 +45,7 @@ build_cfg <- function(d,
     trunc_tree   = trunc_tree,
     M            = 1000L,
     ess_thr      = 0.50,
-    W            = 252L,
+    W            = 126L,
     k_step       = 1L,
     n_mh         = 3L,
     W_predict    = 756L,
@@ -68,12 +68,11 @@ build_cfg <- function(d,
     joint_k   = 2L,     # how many margins must be in the lower tail in a row
     tail_eps  = 0.30,   # weight for non-tail rows (0<eps<=1)
     ## --- Tail-informed prior (TIP), recomputed at each t ---
-    use_tail_informed_prior = TRUE,  # turn on strong tail-centered priors
+    use_tail_informed_prior = FALSE,  # turn on strong tail-centered priors
     tip_method   = "EmpTC",          # FRAPO::tdc method: "EmpTC" or "EVT"
     tip_k        = NULL,             # if NULL, FRAPO’s default k=floor(sqrt(n))
     tip_sd_logit = 0.20,             # SMALL sd => STRONG prior around empirical λ
-    tip_init     = TRUE,             # also seed flip params from empirical λ (Tree 1 only)
-    
+
     ## Tree 1 edge map (E1 x 2), in the SAME order as edges where edge_tree==1L
     ## If you already have it, keep using yours.
     edge_pair    = NULL

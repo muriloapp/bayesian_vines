@@ -169,9 +169,9 @@ smc_full <- function(data, cfg) {
     
     # resample / move
     if (ESS(w) < cfg$ess_thr * M && t < N) {
-      newAnc <- stratified_resample(w)
+      newAncestors <- stratified_resample(w)
       data_up_to_t <- U[max(1, t - cfg$W + 1):t, , drop = FALSE]
-      move_out <- resample_move_old(particles, newAnc, data_up_to_t, cl,
+      move_out <- resample_move_old(particles, newAncestors, data_up_to_t, cl,
                                   cfg$type, cfg, skeleton = skeleton)
       
       particles <- move_out$particles
@@ -182,9 +182,9 @@ smc_full <- function(data, cfg) {
       }
     } else {
       step_prev <- t - 1L
-      newAnc    <- if (step_prev < 1L) seq_len(M) else out$ancestorIndices[, step_prev]
+      newAncestors    <- if (step_prev < 1L) seq_len(M) else out$ancestorIndices[, step_prev]
     }
-    out$ancestorIndices[, t] <- newAnc
+    out$ancestorIndices[, t] <- newAncestors
     
     # history arrays
     out$fam_hist [ , t,] <- t(vapply(particles, `[[`, integer(K),"fam"))

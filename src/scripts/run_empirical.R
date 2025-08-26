@@ -2,8 +2,8 @@ library(here)
 source(here("src/R", "config.R"))         
 
 
-n_assets <- 1:7
-n_days <- 1:3000
+n_assets <- 1:3
+
 
 run_empirical <- function() {
   
@@ -14,7 +14,7 @@ run_empirical <- function() {
   #   df_fc = readRDS("data/df_fc.rds")[n_days,(n_assets+1), with = FALSE],#[,-1]
   #   shape_fc = readRDS("data/shape_fc.rds")[n_days,(n_assets+1), with = FALSE],
   #   y_real = readRDS("data/returns_actual.rds")[n_days,n_assets+1, with = FALSE]
-  #   
+  # 
   # )
   
   dat <- list(
@@ -24,20 +24,21 @@ run_empirical <- function() {
     df_fc = readRDS("data/df_fc.rds")[,(n_assets+1), with = FALSE],#[,-1]
     shape_fc = readRDS("data/shape_fc.rds")[,(n_assets+1), with = FALSE],
     y_real = readRDS("data/returns_actual.rds")[,n_assets+1, with = FALSE]
-    
+
   )
   
   #cfg_variants <- list(list(label = "test"))   
   cfg_variants <- list(
-    list(label = "test"),
-    list(label = "std",    use_weighted_ll = FALSE),
-    list(label = "tailW_tauL0.2_taileps0.3",  use_weighted_ll = TRUE,
-         tauL = 0.2, joint_k = 2L, tail_eps = 0.30),
-    list(label = "tailW",  use_weighted_ll = TRUE,
-         tauL = 0.05, joint_k = 2L, tail_eps = 0.10)
+    list(label = "std", q_flip = 0.2),
+    list(label = "tailW_tauL0.2_taileps0.5",  use_weighted_ll = TRUE,
+         tauL = 0.2, joint_k = 2L, tail_eps = 0.50, q_flip = 0.2),
+    list(label = "tailW_tauL0.1_taileps0.3",  use_weighted_ll = TRUE,
+         tauL = 0.1, joint_k = 2L, tail_eps = 0.30, q_flip = 0.2),
+    list(label = "tip",  use_tail_informed_prior = TRUE, tip_method = "EmpTC",          
+         tip_k = NULL, tip_sd_logit = 0.025, q_flip = 0.2)
   )
   
-  v=cfg_variants[1]
+  v=cfg_variants[[4]]
   for (v in cfg_variants) {
     cfg <- modifyList(build_cfg(ncol(dat$U)), v[ setdiff(names(v),"label") ])
     cfg$label <- v$label %||% "cfg"

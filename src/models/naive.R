@@ -71,7 +71,7 @@ extend_with_gaussian <- function(vinecop_t1, structure_full) {
 
 
 
-n_assets <- 1:5
+n_assets <- 1:3
 n_days <- 1:3000
 
 data <- list(
@@ -135,7 +135,7 @@ for (t in seq_len(n_oos)) {
   
   if (t == 1)  skel <- make_skeleton_CVM(u_train)
   fit_t1 <- vinecop(u_train,
-                   family_set = c("indep", "gaussian", "bb1"),
+                   family_set = c("bb1", "bb7"),
                    structure   = skel$structure,
                    allow_rotations = TRUE,
                    trunc_lvl       = 1)
@@ -210,7 +210,7 @@ for (t in seq_len(n_oos)) {
 }
   
   
-saveRDS(out, file = file.path("empirical_results", "out_naive_7.rds"))
+saveRDS(out, file = file.path("empirical_results", "out_naive_8.rds"))
 
 
 
@@ -377,9 +377,10 @@ print(eval_covar)        # data.frame per conditioning asset per alpha
 apply(out$port$FZL, 2, sum)
 
 
+apply(out$port$QL, 2, sum)
 
 
-
+sum(out$port$wCRPS)
 
 
 
@@ -439,7 +440,7 @@ legend("topright", legend = c("Actual", "VaR"),
 
 
 
-out <- readRDS("C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/empirical_results/out_naive_7.rds")
+out <- readRDS("C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/empirical_results/out_naive_8.rds")
 
 
 order(out$log_pred)
