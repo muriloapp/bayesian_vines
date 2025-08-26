@@ -45,7 +45,7 @@ smc_full <- function(data, cfg) {
     "tail_weights", "safe_logdens",
     "logit","ilogit","dlogitnorm",
     "emp_tails_FRAPO","seed_family_from_emp",
-    "log_prior_edge_strong",".tip_means_for_edge_t","log_prior_with_tip_time"
+    "log_prior_edge_strong",".tip_means_for_edge_t","log_prior_with_tip_time","log_prior_with_tip_cached"
   )
   cl <- make_cluster(cfg$nc, cfg$seed, exports)
   parallel::clusterEvalQ(cl, { library(rvinecopulib); library(FRAPO) })
@@ -92,7 +92,7 @@ smc_full <- function(data, cfg) {
   out$ancestorIndices[,1] <- seq_len(M)
   
 
-  for (t in 253:N) {
+  for (t in 127:N) {
     
     #if (t==10){break}
     u_t <- U[t,,drop=FALSE]
