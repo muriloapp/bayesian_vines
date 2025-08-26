@@ -1336,7 +1336,8 @@ smc_predictive_sample_fast <- function(particles,  # list of M particles
                                        skel,       # fixed structure
                                        w,          # numeric(M), not necessarily normalized
                                        L = 10000,  # total draws
-                                       cl = NULL)  # optional cluster
+                                       cl = NULL,
+                                       nc = 1)  # optional cluster
 {
   ## --- normalize weights robustly ---
   w[!is.finite(w)] <- 0
@@ -1396,11 +1397,9 @@ smc_predictive_sample_fast <- function(particles,  # list of M particles
     list(vine = vines_used[[k]], ni = cnt[used[k]])
   })
   
-  # Make sure workers can call rvinecop()
-  parallel::clusterEvalQ(cl, library(rvinecopulib))
   
   sims_list <- parallel::parLapplyLB(cl, work, function(task) {
-    sim <- rvinecop(task$ni, task$vine, cores = cfg$nc)
+    sim <- rvinecop(task$ni, task$vine, cores = nc)
     vec <- as.numeric(sim)
     len <- length(vec)
     if (len %% task$ni != 0L)
@@ -1499,5 +1498,122 @@ calculate_log_lik_tree_tr <- function(particle, skel_tr, u_row, t, tr, tr_prev, 
 
 
 
+smc_predictive_sample_fast2 <- function(particles, skel, w, L = 10000, cl = NULL) {
+  # --- normalize weights robustly ---
+  w[!is.finite(w)] <- 0
+  w[w < 0] <- 0
+  sw <- sum(w)
+  if (sw <= 0) stop("All weights are zero/invalid.")
+  w <- w / sw
+  
+  M <- length(particles)
+  if (length(w) != M) stop("length(w) must equal number of particles.")
+  if (L < 1L) stop("L must be >= 1.")
+  
+  # --- counts per particle (sum == L) ---
+  cnt  <- as.vector(rmultinom(1, size = L, prob = w))  # length M
+  used <- which(cnt > 0L)
+  if (length(used) == 0L) {
+    d0 <- ncol(skel$structure)
+    return(matrix(numeric(0), nrow = 0, ncol = d0))
+  }
+  
+  # --- build each used vine ON MASTER (once) ---
+  vines_used <- lapply(used, function(i) fast_vine_from_particle(particles[[i]], skel))
+  
+  # --- SERIAL fast path still available ---
+  if (is.null(cl)) {
+    # single thread, one call per used particle
+    d_ref <- NULL
+    sims  <- vector("list", length(used))
+    for (k in seq_along(used)) {
+      ni  <- cnt[used[k]]
+      sim <- rvinecop(ni, vines_used[[k]], cores = 1)
+      vec <- as.numeric(sim)
+      if (length(vec) %% ni != 0L)
+        stop(sprintf("rvinecop length mismatch: len=%d, ni=%d", length(vec), ni))
+      d_k <- length(vec) / ni
+      dim(vec) <- c(ni, d_k)
+      if (is.null(d_ref)) d_ref <- d_k else if (d_k != d_ref)
+        stop(sprintf("Inconsistent simulated dimension: %d vs %d", d_k, d_ref))
+      sims[[k]] <- vec
+    }
+    out <- do.call(rbind, sims)
+    dimnames(out) <- NULL
+    return(out)
+  }
+  
+  ## ================= PARALLEL: export-once + batched indices =================
+  
+  # 0) set worker count sensibly (avoid oversubscription on big NUMA boxes)
+  W <- length(cl)
+  # (often best: W <- min(W, parallel::detectCores(logical = FALSE)))
+  
+  # 1) Export the heavy list ONCE to workers; send only small indices later
+  parallel::clusterExport(cl, varlist = c("vines_used", "cnt"), envir = environment())
+  # also export the function we call (if not in package namespace)
+  # parallel::clusterExport(cl, varlist = c("rvinecop"), envir = environment())
+  
+  # 2) Kill any nested threading inside workers
+  parallel::clusterEvalQ(cl, {
+    Sys.setenv(OMP_NUM_THREADS = "1",
+               MKL_NUM_THREADS = "1",
+               OPENBLAS_NUM_THREADS = "1",
+               VECLIB_MAXIMUM_THREADS = "1",
+               GOTO_NUM_THREADS = "1")
+    NULL
+  })
+  
+  # 3) Make *batched* tasks: greedy bin packing by ni to balance load
+  ord  <- order(cnt[used], decreasing = TRUE)
+  idxs <- seq_along(used)[ord]
+  bins <- vector("list", W)
+  load <- integer(W)
+  for (j in idxs) {
+    k <- which.min(load)          # lightest bin
+    bins[[k]] <- c(bins[[k]], j)  # store INDEX INTO 'used' / 'vines_used'
+    load[k]  <- load[k] + cnt[used[j]]
+  }
+  
+  # 4) Workers receive only their index lists; vines are read from their local copy
+  sims_list <- parallel::parLapply(cl, bins, function(local_idx) {
+    if (length(local_idx) == 0L) return(NULL)
+    
+    # determine d on the first call to avoid repeated checks
+    first <- local_idx[[1]]
+    ni1   <- cnt[ used[first] ]
+    sim1  <- rvinecop(ni1, vines_used[[first]], cores = 1)
+    v1    <- as.numeric(sim1)
+    if (length(v1) %% ni1 != 0L)
+      stop(sprintf("rvinecop length mismatch on worker: len=%d, ni=%d", length(v1), ni1))
+    d     <- length(v1) / ni1
+    dim(v1) <- c(ni1, d)
+    out_parts <- list(v1)
+    
+    # loop remaining indices
+    if (length(local_idx) > 1L) {
+      for (t in local_idx[-1]) {
+        ni  <- cnt[ used[t] ]
+        sim <- rvinecop(ni, vines_used[[t]], cores = 1)
+        vv  <- as.numeric(sim)
+        if (length(vv) %% ni != 0L)
+          stop(sprintf("rvinecop length mismatch on worker: len=%d, ni=%d", length(vv), ni))
+        dim(vv) <- c(ni, d)  # d is fixed by first call
+        out_parts[[length(out_parts) + 1L]] <- vv
+      }
+    }
+    do.call(rbind, out_parts)
+  })
+  
+  # 5) Combine
+  sims_list <- Filter(Negate(is.null), sims_list)
+  d_vec <- vapply(sims_list, ncol, integer(1))
+  if (length(unique(d_vec)) != 1L)
+    stop(sprintf("Inconsistent simulated dimension across workers: %s",
+                 paste(unique(d_vec), collapse = ", ")))
+  out <- do.call(rbind, sims_list)
+  dimnames(out) <- NULL
+  out
+}
 
 
