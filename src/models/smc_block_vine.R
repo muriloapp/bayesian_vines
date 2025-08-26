@@ -4,14 +4,14 @@
 
 # ================================================================
 #  SMC para C-vine com spike-and-slab 
-# ================================================================
+# =================================================data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABIAAAASCAYAAABWzo5XAAAAbElEQVR4Xs2RQQrAMAgEfZgf7W9LAguybljJpR3wEse5JOL3ZObDb4x1loDhHbBOFU6i2Ddnw2KNiXcdAXygJlwE8OFVBHDgKrLgSInN4WMe9iXiqIVsTMjH7z/GhNTEibOxQswcYIWYOR/zAjBJfiXh3jZ6AAAAAElFTkSuQmCC===============
 
 
 assignInNamespace("assert_that", function(...) invisible(TRUE), ns = "assertthat")
 assignInNamespace("see_if", function(...) invisible(TRUE), ns = "assertthat")
 
-source(here('src','core_functions.R'))
-source(here('src','simulation.R'))
+source(here('src/R','core_functions.R'))
+source(here('src/simulation','simulation.R'))
 
 
 #Rcpp::sourceCpp(here::here("src", "calc_loglik_tree_tr.cpp"))
