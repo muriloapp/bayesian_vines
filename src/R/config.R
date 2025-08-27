@@ -19,9 +19,9 @@ build_cfg <- function(d,
                       step_sd        = 0.05,
                       q_flip         = NULL,                 # <- default now computed later
                       K              = NULL,                 # <- ignored if truncation given
-                      families       = c("gaussian","bb1","bb1r180","bb7","bb7r180"),
+                      families       = c("bb1","bb1r180","bb7","bb7r180"),
                       families_first = c("bb1","bb1r180","bb7","bb7r180"),
-                      families_deep  = c("gaussian"),
+                      families_deep  = c("bb1","bb1r180","bb7","bb7r180"),
                       adapt_step_sd  = TRUE,
                       trunc_tree     = 2L) {
   
@@ -59,7 +59,7 @@ build_cfg <- function(d,
     seed         = 42L,
     G            = 2L,
     edge_tree    = edge_tree,               # <- length == K
-    nc           = 7,#max(parallel::detectCores() - 1L, 1L),
+    nc           = max(parallel::detectCores() - 1L, 1L),
     type         = "standard",
     alphas       = c(0.1, 0.05, 0.025, 0.01),
     # --- tail-weighted likelihood knobs ---

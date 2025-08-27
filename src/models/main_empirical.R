@@ -92,12 +92,8 @@ smc_full <- function(data, cfg) {
   out$ancestorIndices[,1] <- seq_len(M)
   
 
-<<<<<<< HEAD
-  for (t in 650:N) {
-=======
-  for (t in 504:N) {
->>>>>>> d391a3d175f7ea7195a8857a634d0c35764c66a9
-    
+for (t in 127:N) {
+
     #if (t==10){break}
     u_t <- U[t,,drop=FALSE]
     
@@ -201,6 +197,7 @@ smc_full <- function(data, cfg) {
   out$log_model_evidence <- sum(out$log_pred, na.rm = TRUE)
   out
 }
+
 
 
 

@@ -212,7 +212,7 @@ source(here("src/R", "config.R"))
 
 #### VAR FORECASTING
 
-out <- readRDS("C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/empirical_results/standard_20250807_174624.rds")
+out <- readRDS("C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/empirical_results/standard_20250827_093916.rds")
 
 
 out$risk$VaR[4000,,]

@@ -528,7 +528,7 @@ print(eval_covar)
 
 
 out <- readRDS("empirical_results/explore2_out.rds")
-out <- readRDS("empirical_results/explore2_out_tip3.rds")
+out <- readRDS("empirical_results/explore2_out_tip.rds")
 
 
 evaluate(out)
@@ -611,7 +611,7 @@ length(co_hj) == sum(df$hj)
 df$co_hj <- NA              # create empty column
 df$co_hj[df$hj == 1] <- co_hj
 
-df <- df[Date >= as.Date("2012-01-01")]
+df <- df[Date >= as.Date("2021-01-01")]
 
 
 ## indices where co_hj is observed (0/1)
