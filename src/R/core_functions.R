@@ -1617,3 +1617,137 @@ smc_predictive_sample_fast2 <- function(particles, skel, w, L = 10000, cl = NULL
 }
 
 
+
+smc_predictive_sample_fast2_scoped <- function(particles, skel, w, L = 10000, cl = NULL) {
+  # --- normalize weights robustly ---
+  w[!is.finite(w)] <- 0; w[w < 0] <- 0
+  sw <- sum(w); if (sw <= 0) stop("All weights are zero/invalid.")
+  w <- w / sw
+  
+  M <- length(particles)
+  if (length(w) != M) stop("length(w) must equal number of particles.")
+  if (L < 1L) stop("L must be >= 1.")
+  
+  # --- counts per particle (sum == L) ---
+  #cnt  <- as.vector(rmultinom(1, size = L, prob = w))
+  cnt <- residual_counts(w, L)
+  used <- which(cnt > 0L)
+  if (length(used) == 0L) {
+    d0 <- ncol(skel$structure)
+    return(matrix(numeric(0), nrow = 0, ncol = d0))
+  }
+  
+  # --- build each used vine ON MASTER (once) ---
+  vines_used <- lapply(used, function(i) fast_vine_from_particle(particles[[i]], skel))
+  
+  # --- SERIAL PATH ---
+  if (is.null(cl)) {
+    d_ref <- NULL
+    sims  <- vector("list", length(used))
+    for (k in seq_along(used)) {
+      ni  <- cnt[used[k]]
+      sim <- rvinecop(ni, vines_used[[k]], cores = 1)
+      vec <- as.numeric(sim)
+      if (length(vec) %% ni != 0L)
+        stop(sprintf("rvinecop length mismatch: len=%d, ni=%d", length(vec), ni))
+      d_k <- length(vec) / ni
+      dim(vec) <- c(ni, d_k)
+      if (is.null(d_ref)) d_ref <- d_k else if (d_k != d_ref)
+        stop(sprintf("Inconsistent simulated dimension: %d vs %d", d_k, d_ref))
+      sims[[k]] <- vec
+    }
+    out <- do.call(rbind, sims); dimnames(out) <- NULL; return(out)
+  }
+  
+  ## ================= PARALLEL: export-once + batched indices =================
+  W <- length(cl)
+  
+  # Export once (read-only on workers)
+  parallel::clusterExport(cl, varlist = c("vines_used", "cnt", "used"), envir = environment())
+  
+  # --------- bin packing (greedy by workload) ----------
+  ord  <- order(cnt[used], decreasing = TRUE)
+  idxs <- seq_along(used)[ord]
+  bins <- vector("list", W)
+  load <- integer(W)
+  for (j in idxs) {
+    k <- which.min(load)
+    bins[[k]] <- c(bins[[k]], j)          # position into 'used' / 'vines_used'
+    load[k]   <- load[k] + cnt[ used[j] ] # add this job's ni
+  }
+  # -----------------------------------------------------
+  
+  # Worker function with *scoped* thread settings (no leakage)
+  worker_sim <- function(local_idx) {
+    if (length(local_idx) == 0L) return(NULL)
+    
+    # ---- scope single-threading to this task and auto-restore ----
+    VARS <- c("OMP_NUM_THREADS","MKL_NUM_THREADS","OPENBLAS_NUM_THREADS",
+              "VECLIB_MAXIMUM_THREADS","GOTO_NUM_THREADS")
+    old  <- Sys.getenv(VARS, unset = NA_character_)
+    on.exit({
+      for (i in seq_along(VARS)) {
+        if (is.na(old[[i]])) Sys.unsetenv(VARS[[i]])
+        else Sys.setenv(structure(old[[i]], names = VARS[[i]]))
+      }
+    }, add = TRUE)
+    Sys.setenv(OMP_NUM_THREADS="1", MKL_NUM_THREADS="1",
+               OPENBLAS_NUM_THREADS="1", VECLIB_MAXIMUM_THREADS="1",
+               GOTO_NUM_THREADS="1")
+    # ---------------------------------------------------------------
+    
+    # First job: infer d and init parts
+    first <- local_idx[[1]]
+    ni1   <- cnt[ used[first] ]
+    sim1  <- rvinecop(ni1, vines_used[[first]], cores = 1)
+    v1    <- as.numeric(sim1)
+    if (length(v1) %% ni1 != 0L)
+      stop(sprintf("rvinecop length mismatch on worker: len=%d, ni=%d", length(v1), ni1))
+    d <- length(v1) / ni1
+    dim(v1) <- c(ni1, d)
+    out_parts <- list(v1)
+    
+    # Remaining jobs
+    if (length(local_idx) > 1L) {
+      for (t in local_idx[-1]) {
+        ni  <- cnt[ used[t] ]
+        sim <- rvinecop(ni, vines_used[[t]], cores = 1)
+        vv  <- as.numeric(sim)
+        if (length(vv) %% ni != 0L)
+          stop(sprintf("rvinecop length mismatch on worker: len=%d, ni=%d", length(vv), ni))
+        dim(vv) <- c(ni, d)
+        out_parts[[length(out_parts) + 1L]] <- vv
+      }
+    }
+    do.call(rbind, out_parts)
+  }
+  
+  sims_list <- parallel::parLapply(cl, bins, worker_sim)
+  
+  # Combine
+  sims_list <- Filter(Negate(is.null), sims_list)
+  d_vec <- vapply(sims_list, ncol, integer(1))
+  if (length(unique(d_vec)) != 1L)
+    stop(sprintf("Inconsistent simulated dimension across workers: %s",
+                 paste(unique(d_vec), collapse = ", ")))
+  out <- do.call(rbind, sims_list)
+  dimnames(out) <- NULL
+  out
+}
+
+
+residual_counts <- function(w, L) {
+  w <- pmax(w, 0); w <- w/sum(w)
+  base <- floor(L * w)
+  R <- L - sum(base)
+  if (R > 0) {
+    r <- L*w - base
+    if (sum(r) > 0) {
+      r <- r / sum(r)
+      base <- base + as.vector(rmultinom(1, size = R, prob = r))
+    }
+  }
+  base
+}
+
+

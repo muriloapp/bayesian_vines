@@ -92,7 +92,7 @@ smc_full <- function(data, cfg) {
   out$ancestorIndices[,1] <- seq_len(M)
   
 
-  for (t in 127:N) {
+  for (t in 650:N) {
     
     #if (t==10){break}
     u_t <- U[t,,drop=FALSE]
@@ -112,12 +112,11 @@ smc_full <- function(data, cfg) {
       out$log_pred[idx] <- compute_predictive_metrics(u_t, particles, skeleton, w/sum(w), cfg)$log_pred_density
       
       #draws <- smc_predictive_sample(particles, skeleton, w/sum(w), L = 10000, cl = cl)
-      
-      
       #draws <- smc_predictive_sample_fast(particles, skeleton, w/sum(w), L = 10000, cl = cl, cfg$nc)
+    
+      draws <- smc_predictive_sample_fast2_scoped(particles, skeleton, w, L = 10000, cl = cl)
       
-      draws <- smc_predictive_sample_fast2(particles, skeleton, w, L = 10000, cl = cl)
-      
+
       
       Z_pred <- st_inv_fast(draws, shape_fc[idx, ], df_fc[idx, ])  
       R_t  <- sweep(Z_pred, 2, as.numeric(sig_fc[idx, ]), `*`) + as.numeric(mu_fc[idx, ])          # L × d
