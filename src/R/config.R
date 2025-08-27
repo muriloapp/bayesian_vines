@@ -59,7 +59,7 @@ build_cfg <- function(d,
     seed         = 42L,
     G            = 2L,
     edge_tree    = edge_tree,               # <- length == K
-    nc           = max(parallel::detectCores() - 1L, 1L),
+    nc           = 7,#max(parallel::detectCores() - 1L, 1L),
     type         = "standard",
     alphas       = c(0.1, 0.05, 0.025, 0.01),
     # --- tail-weighted likelihood knobs ---
