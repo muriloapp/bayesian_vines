@@ -92,7 +92,7 @@ smc_full <- function(data, cfg) {
   out$ancestorIndices[,1] <- seq_len(M)
   
 
-  for (t in 127:N) {
+  for (t in 504:N) {
     
     #if (t==10){break}
     u_t <- U[t,,drop=FALSE]
