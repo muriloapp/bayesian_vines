@@ -287,6 +287,9 @@ covar_hits_by_j <- function(r_p_real, y_real_oos, VaRj_oos, CoVaR_oos, alpha) {
 
 
 y_real_oos = readRDS("data/returns_actual.rds")[1:(length(n_days)-t_train),n_assets+1]
+
+y_real_oos = readRDS("data/returns_actual.rds")[1:(length(n_days)-t_train),n_assets+1]
+
 rp_real_oos <- rowMeans(y_real_oos)
 
 
