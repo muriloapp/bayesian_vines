@@ -4,6 +4,7 @@ source(here("src/R", "config.R"))
 
 
 #### VAR FORECASTING
+n_assets <- 1:3
 
 out <- readRDS("C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/empirical_results/standard_20250827_093916.rds")
 
@@ -81,7 +82,6 @@ covar_hits_by_j <- function(r_p_real, y_real_oos, VaRj_oos, CoVaR_oos, alpha) {
 
 
 
-n_assets <- 1:3
 y_real_oos = readRDS("data/returns_actual.rds")[,n_assets+1, with=FALSE]
 rp_real_oos <- rowMeans(y_real_oos)
 
@@ -165,7 +165,7 @@ eval_covar <- do.call(rbind, lapply(alphas_eval, function(a) {
 
 
 a = 0.1
-j = 2
+j = 3
 
 k <- which.min(abs(alphas_eval - a))
 qj <- out$risk$VaR[, j, k]
@@ -187,7 +187,7 @@ df$co_hj <- NA              # create empty column
 
 df$co_hj[df$hj == 1] <- co_hj
 
-df <- df[Date >= as.Date("2021-01-01")]
+df <- df[Date >= as.Date("2011-01-01")]
 #df <- df[Date <= as.Date("2020-01-01")]
 
 
@@ -205,6 +205,8 @@ df$cum_co_prop[idx] <- cum_prop
 plot(df$Date, df$cum_co_prop, type = "s", lwd = 2,
      xlab = "Date", ylab = "Cumulative proportion (co_hj)",
      main = "Cumulative Proportion of co_hj (conditional on observed)")
+
+
 
 
 
