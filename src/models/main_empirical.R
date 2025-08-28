@@ -114,7 +114,7 @@ for (t in 127:N) {
       #draws <- smc_predictive_sample(particles, skeleton, w/sum(w), L = 10000, cl = cl)
       #draws <- smc_predictive_sample_fast(particles, skeleton, w/sum(w), L = 10000, cl = cl, cfg$nc)
     
-      draws <- smc_predictive_sample_fast2_scoped(particles, skeleton, w, L = 10000, cl = cl)
+      draws <- smc_predictive_sample_fast2_scoped(particles, skeleton, w, L = 20000, cl = cl)
       
 
       
