@@ -246,36 +246,6 @@
       "Maintainer": "Martin Maechler <mmaechler+Matrix@gmail.com>",
       "Repository": "CRAN"
     },
-    "MatrixModels": {
-      "Package": "MatrixModels",
-      "Version": "0.5-4",
-      "Source": "Repository",
-      "VersionNote": "Released 0.5-3 on 2023-11-06",
-      "Date": "2025-03-25",
-      "Title": "Modelling with Sparse and Dense Matrices",
-      "Contact": "Matrix-authors@R-project.org",
-      "Authors@R": "c( person(\"Douglas\", \"Bates\", role = \"aut\", email = \"bates@stat.wisc.edu\", comment = c(ORCID = \"0000-0001-8316-9503\")), person(\"Martin\", \"Maechler\", role = c(\"aut\", \"cre\"), email = \"mmaechler+Matrix@gmail.com\", comment = c(ORCID = \"0000-0002-8685-9910\")))",
-      "Description": "Generalized Linear Modelling with sparse and dense 'Matrix' matrices, using modular prediction and response module classes.",
-      "Depends": [
-        "R (>= 3.6.0)"
-      ],
-      "Imports": [
-        "stats",
-        "methods",
-        "Matrix (>= 1.6-0)",
-        "Matrix(< 1.8-0)"
-      ],
-      "ImportsNote": "_not_yet_stats4",
-      "Encoding": "UTF-8",
-      "LazyLoad": "yes",
-      "License": "GPL (>= 2)",
-      "URL": "https://Matrix.R-forge.R-project.org/, https://r-forge.r-project.org/R/?group_id=61",
-      "BugReports": "https://R-forge.R-project.org/tracker/?func=add&atid=294&group_id=61",
-      "NeedsCompilation": "no",
-      "Author": "Douglas Bates [aut] (<https://orcid.org/0000-0001-8316-9503>), Martin Maechler [aut, cre] (<https://orcid.org/0000-0002-8685-9910>)",
-      "Maintainer": "Martin Maechler <mmaechler+Matrix@gmail.com>",
-      "Repository": "CRAN"
-    },
     "R6": {
       "Package": "R6",
       "Version": "2.6.1",
@@ -449,6 +419,40 @@
       "Maintainer": "Thomas Nagler <mail@tnagler.com>",
       "Repository": "CRAN"
     },
+    "Rdpack": {
+      "Package": "Rdpack",
+      "Version": "2.6.4",
+      "Source": "Repository",
+      "Type": "Package",
+      "Title": "Update and Manipulate Rd Documentation Objects",
+      "Authors@R": "c( person(given = c(\"Georgi\", \"N.\"), family = \"Boshnakov\",  role = c(\"aut\", \"cre\"),  email = \"georgi.boshnakov@manchester.ac.uk\", comment = c(ORCID = \"0000-0003-2839-346X\")), person(given = \"Duncan\",  family = \"Murdoch\",  role = \"ctb\", email = \"murdoch.duncan@gmail.com\") )",
+      "Description": "Functions for manipulation of R documentation objects, including functions reprompt() and ereprompt() for updating 'Rd' documentation for functions, methods and classes; 'Rd' macros for citations and import of references from 'bibtex' files for use in 'Rd' files and 'roxygen2' comments; 'Rd' macros for evaluating and inserting snippets of 'R' code and the results of its evaluation or creating graphics on the fly; and many functions for manipulation of references and Rd files.",
+      "URL": "https://geobosh.github.io/Rdpack/ (doc), https://github.com/GeoBosh/Rdpack (devel)",
+      "BugReports": "https://github.com/GeoBosh/Rdpack/issues",
+      "Depends": [
+        "R (>= 2.15.0)",
+        "methods"
+      ],
+      "Imports": [
+        "tools",
+        "utils",
+        "rbibutils (>= 1.3)"
+      ],
+      "Suggests": [
+        "grDevices",
+        "testthat",
+        "rstudioapi",
+        "rprojroot",
+        "gbRd"
+      ],
+      "License": "GPL (>= 2)",
+      "LazyLoad": "yes",
+      "RoxygenNote": "7.1.1",
+      "NeedsCompilation": "no",
+      "Author": "Georgi N. Boshnakov [aut, cre] (<https://orcid.org/0000-0003-2839-346X>), Duncan Murdoch [ctb]",
+      "Maintainer": "Georgi N. Boshnakov <georgi.boshnakov@manchester.ac.uk>",
+      "Repository": "CRAN"
+    },
     "Rglpk": {
       "Package": "Rglpk",
       "Version": "0.6-5.1",
@@ -532,33 +536,6 @@
       "License": "GPL (>= 2)",
       "URL": "https://r-forge.r-project.org/projects/rmetrics/",
       "NeedsCompilation": "no",
-      "Repository": "CRAN"
-    },
-    "SparseM": {
-      "Package": "SparseM",
-      "Version": "1.84-2",
-      "Source": "Repository",
-      "Authors@R": "c( person(\"Roger\", \"Koenker\",  role = c(\"cre\",\"aut\"), email =  \"rkoenker@uiuc.edu\"), person(c(\"Pin\", \"Tian\"), \"Ng\",  role = c(\"ctb\"), comment = \"Contributions to Sparse QR code\", email =  \"pin.ng@nau.edu\") , person(\"Yousef\", \"Saad\",  role = c(\"ctb\"), comment = \"author of sparskit2\") , person(\"Ben\", \"Shaby\", role = c(\"ctb\"), comment = \"author of chol2csr\") , person(\"Martin\", \"Maechler\", role = \"ctb\", comment = c(\"chol() tweaks; S4\", ORCID = \"0000-0002-8685-9910\")) )",
-      "Maintainer": "Roger Koenker <rkoenker@uiuc.edu>",
-      "Depends": [
-        "R (>= 2.15)",
-        "methods"
-      ],
-      "Imports": [
-        "graphics",
-        "stats",
-        "utils"
-      ],
-      "VignetteBuilder": "knitr",
-      "Suggests": [
-        "knitr"
-      ],
-      "Description": "Some basic linear algebra functionality for sparse matrices is provided:  including Cholesky decomposition and backsolving as well as standard R subsetting and Kronecker products.",
-      "License": "GPL (>= 2)",
-      "Title": "Sparse Linear Algebra",
-      "URL": "http://www.econ.uiuc.edu/~roger/research/sparse/sparse.html",
-      "NeedsCompilation": "yes",
-      "Author": "Roger Koenker [cre, aut], Pin Tian Ng [ctb] (Contributions to Sparse QR code), Yousef Saad [ctb] (author of sparskit2), Ben Shaby [ctb] (author of chol2csr), Martin Maechler [ctb] (chol() tweaks; S4, <https://orcid.org/0000-0002-8685-9910>)",
       "Repository": "CRAN"
     },
     "VineCopula": {
@@ -959,6 +936,34 @@
       "Maintainer": "Gábor Csárdi <csardi.gabor@gmail.com>",
       "Repository": "CRAN"
     },
+    "cvar": {
+      "Package": "cvar",
+      "Version": "0.5",
+      "Source": "Repository",
+      "Type": "Package",
+      "Title": "Compute Expected Shortfall and Value at Risk for Continuous Distributions",
+      "Authors@R": "person(given = c(\"Georgi\", \"N.\"), family = \"Boshnakov\", role = c(\"aut\", \"cre\"),  email = \"georgi.boshnakov@manchester.ac.uk\")",
+      "Description": "Compute expected shortfall (ES) and Value at Risk (VaR) from a quantile function, distribution function, random number generator or probability density function.  ES is also known as Conditional Value at Risk (CVaR). Virtually any continuous distribution can be specified. The functions are vectorized over the arguments. The computations are done directly from the definitions, see e.g. Acerbi and Tasche (2002) <doi:10.1111/1468-0300.00091>. Some support for GARCH models is provided, as well.",
+      "URL": "https://geobosh.github.io/cvar/ (doc), https://github.com/GeoBosh/cvar (devel)",
+      "BugReports": "https://github.com/GeoBosh/cvar/issues",
+      "Imports": [
+        "gbutils",
+        "Rdpack (>= 0.8)"
+      ],
+      "RdMacros": "Rdpack",
+      "License": "GPL (>= 2)",
+      "Collate": "VaR.R cvar-package.R garch.R",
+      "RoxygenNote": "7.2.0",
+      "Suggests": [
+        "testthat",
+        "fGarch",
+        "PerformanceAnalytics"
+      ],
+      "NeedsCompilation": "no",
+      "Author": "Georgi N. Boshnakov [aut, cre]",
+      "Maintainer": "Georgi N. Boshnakov <georgi.boshnakov@manchester.ac.uk>",
+      "Repository": "CRAN"
+    },
     "data.table": {
       "Package": "data.table",
       "Version": "1.17.6",
@@ -1120,6 +1125,77 @@
       "Maintainer": "Hadley Wickham <hadley@posit.co>",
       "Repository": "CRAN"
     },
+    "fBasics": {
+      "Package": "fBasics",
+      "Version": "4041.97",
+      "Source": "Repository",
+      "Title": "Rmetrics - Markets and Basic Statistics",
+      "Authors@R": "c(person(\"Diethelm\", \"Wuertz\", role=\"aut\", comment = \"original code\") , person(\"Tobias\", \"Setz\", role = c(\"aut\"), email = \"tobias.setz@live.com\") , person(\"Yohan\", \"Chalabi\", role = \"aut\") , person(\"Martin\",\"Maechler\", role=\"ctb\", email=\"maechler@stat.math.ethz.ch\", comment = c(ORCID = \"0000-0002-8685-9910\")) , person(\"CRAN Team\", role = \"ctb\") , person(given = c(\"Georgi\", \"N.\"), family = \"Boshnakov\",  role = c(\"cre\", \"aut\"), email = \"georgi.boshnakov@manchester.ac.uk\") )",
+      "Description": "Provides a collection of functions to  explore and to investigate basic properties of financial returns  and related quantities. The covered fields include techniques of explorative data analysis and the investigation of distributional properties, including parameter estimation and hypothesis testing. Even more there are several utility functions for data handling and management.",
+      "Depends": [
+        "R (>= 2.15.1)"
+      ],
+      "Imports": [
+        "timeDate",
+        "timeSeries (>= 4021.105)",
+        "stats",
+        "grDevices",
+        "graphics",
+        "methods",
+        "utils",
+        "MASS",
+        "spatial",
+        "gss",
+        "stabledist"
+      ],
+      "Suggests": [
+        "interp",
+        "RUnit",
+        "tcltk"
+      ],
+      "LazyData": "yes",
+      "License": "GPL (>= 2)",
+      "Encoding": "UTF-8",
+      "URL": "https://geobosh.github.io/fBasicsDoc/ (doc), https://r-forge.r-project.org/scm/viewvc.php/pkg/fBasics/?root=rmetrics (devel), https://www.rmetrics.org",
+      "BugReports": "https://r-forge.r-project.org/projects/rmetrics",
+      "NeedsCompilation": "yes",
+      "Author": "Diethelm Wuertz [aut] (original code), Tobias Setz [aut], Yohan Chalabi [aut], Martin Maechler [ctb] (<https://orcid.org/0000-0002-8685-9910>), CRAN Team [ctb], Georgi N. Boshnakov [cre, aut]",
+      "Maintainer": "Georgi N. Boshnakov <georgi.boshnakov@manchester.ac.uk>",
+      "Repository": "CRAN"
+    },
+    "fGarch": {
+      "Package": "fGarch",
+      "Version": "4033.92",
+      "Source": "Repository",
+      "Title": "Rmetrics - Autoregressive Conditional Heteroskedastic Modelling",
+      "Authors@R": "c(person(\"Diethelm\", \"Wuertz\", role=\"aut\", comment = \"original code\") , person(\"Yohan\", \"Chalabi\", role = \"aut\") , person(\"Tobias\", \"Setz\", role = c(\"aut\"), email = \"tobias.setz@live.com\") , person(\"Martin\",\"Maechler\", role=\"aut\", email=\"maechler@stat.math.ethz.ch\", comment = c(ORCID = \"0000-0002-8685-9910\")) , person(\"Chris\", \"Boudt\", role = \"ctb\") , person(\"Pierre\", \"Chausse\", role = \"ctb\") , person(\"Michal\", \"Miklovac\", role = \"ctb\") , person(given = c(\"Georgi\", \"N.\"), family = \"Boshnakov\",  role = c(\"aut\", \"cre\"), email = \"georgi.boshnakov@manchester.ac.uk\") )",
+      "Description": "Analyze and model heteroskedastic behavior in financial time series.",
+      "Imports": [
+        "fBasics",
+        "timeDate",
+        "timeSeries",
+        "fastICA",
+        "Matrix (>= 1.5-0)",
+        "cvar (>= 0.5)",
+        "graphics",
+        "methods",
+        "stats",
+        "utils"
+      ],
+      "Suggests": [
+        "RUnit",
+        "tcltk",
+        "goftest"
+      ],
+      "LazyData": "yes",
+      "License": "GPL (>= 2)",
+      "URL": "https://geobosh.github.io/fGarchDoc/ (doc), https://www.rmetrics.org (devel)",
+      "BugReports": "https://r-forge.r-project.org/projects/rmetrics",
+      "NeedsCompilation": "yes",
+      "Author": "Diethelm Wuertz [aut] (original code), Yohan Chalabi [aut], Tobias Setz [aut], Martin Maechler [aut] (<https://orcid.org/0000-0002-8685-9910>), Chris Boudt [ctb], Pierre Chausse [ctb], Michal Miklovac [ctb], Georgi N. Boshnakov [aut, cre]",
+      "Maintainer": "Georgi N. Boshnakov <georgi.boshnakov@manchester.ac.uk>",
+      "Repository": "CRAN"
+    },
     "farver": {
       "Package": "farver",
       "Version": "2.1.2",
@@ -1141,6 +1217,26 @@
       "NeedsCompilation": "yes",
       "Author": "Thomas Lin Pedersen [cre, aut] (<https://orcid.org/0000-0002-5147-4711>), Berendea Nicolae [aut] (Author of the ColorSpace C++ library), Romain François [aut] (<https://orcid.org/0000-0002-2444-4226>), Posit, PBC [cph, fnd]",
       "Maintainer": "Thomas Lin Pedersen <thomas.pedersen@posit.co>",
+      "Repository": "CRAN"
+    },
+    "fastICA": {
+      "Package": "fastICA",
+      "Version": "1.2-7",
+      "Source": "Repository",
+      "Date": "2024-12-10",
+      "Title": "FastICA Algorithms to Perform ICA and Projection Pursuit",
+      "Authors@R": "c(person(given = c(\"Jonathan\", \"L\"), family = \"Marchini\", role = \"aut\"), person(given = \"Chris\", family = \"Heaton\", role = \"aut\"), person(given = \"Brian\", family = \"Ripley\", role = c(\"aut\", \"cre\"), email = \"Brian.Ripley@R-project.org\"))",
+      "Depends": [
+        "R (>= 4.0.0)"
+      ],
+      "Suggests": [
+        "MASS"
+      ],
+      "Description": "Implementation of FastICA algorithm to perform Independent Component Analysis (ICA) and Projection Pursuit.",
+      "License": "GPL-2 | GPL-3",
+      "NeedsCompilation": "yes",
+      "Author": "Jonathan L Marchini [aut], Chris Heaton [aut], Brian Ripley [aut, cre]",
+      "Maintainer": "Brian Ripley <Brian.Ripley@R-project.org>",
       "Repository": "CRAN"
     },
     "fastmap": {
@@ -1341,6 +1437,41 @@
       "Maintainer": "Henrik Bengtsson <henrikb@braju.com>",
       "Repository": "CRAN"
     },
+    "gbutils": {
+      "Package": "gbutils",
+      "Version": "0.5",
+      "Source": "Repository",
+      "Type": "Package",
+      "Title": "Utilities for Simulation, Plots, Quantile Functions and Programming",
+      "Date": "2022-05-27",
+      "Depends": [
+        "methods"
+      ],
+      "Imports": [
+        "stats",
+        "utils",
+        "Rdpack (>= 0.9)"
+      ],
+      "Suggests": [
+        "testthat (>= 3.0.0)",
+        "classGraph",
+        "graph",
+        "Rgraphviz"
+      ],
+      "RdMacros": "Rdpack",
+      "Authors@R": "person(given = c(\"Georgi\", \"N.\"), family = \"Boshnakov\", role = c(\"aut\", \"cre\"),  email = \"georgi.boshnakov@manchester.ac.uk\")",
+      "Description": "Plot density and distribution functions with automatic selection of suitable regions. Numerically invert (compute quantiles) distribution functions. Simulate real and complex numbers from distributions of their magnitude and arguments. Optionally, the magnitudes and/or arguments may be fixed in almost arbitrary ways. Create polynomials from roots given in Cartesian or polar form. Small programming utilities: check if an object is identical to NA, count positional arguments in a call, set intersection of more than two sets, check if an argument is unnamed, compute the graph of S4 classes in packages.",
+      "URL": "https://github.com/GeoBosh/gbutils (devel), https://geobosh.github.io/gbutils/ (website)",
+      "BugReports": "https://github.com/GeoBosh/gbutils/issues",
+      "License": "GPL (>= 2)",
+      "Encoding": "UTF-8",
+      "Collate": "parse_text.R sim_numbers.R isNA.R mintersect.R pad.R args.R history.R cdf2qf.R S4utils.R pseudoInverse.R rpoly.R",
+      "Config/testthat/edition": "3",
+      "NeedsCompilation": "no",
+      "Author": "Georgi N. Boshnakov [aut, cre]",
+      "Maintainer": "Georgi N. Boshnakov <georgi.boshnakov@manchester.ac.uk>",
+      "Repository": "CRAN"
+    },
     "generics": {
       "Package": "generics",
       "Version": "0.1.4",
@@ -1507,6 +1638,24 @@
       "NeedsCompilation": "yes",
       "Author": "Jim Hester [aut] (<https://orcid.org/0000-0002-2739-7082>), Jennifer Bryan [aut, cre] (<https://orcid.org/0000-0002-6983-2759>), Posit Software, PBC [cph, fnd]",
       "Maintainer": "Jennifer Bryan <jenny@posit.co>",
+      "Repository": "CRAN"
+    },
+    "gss": {
+      "Package": "gss",
+      "Version": "2.2-9",
+      "Source": "Repository",
+      "Date": "2025-04-13",
+      "Title": "General Smoothing Splines",
+      "Authors@R": "c(person(\"Chong\",\"Gu\",role=c(\"aut\",\"cre\"), email=\"chong@purdue.edu\"))",
+      "Author": "Chong Gu [aut, cre]",
+      "Maintainer": "Chong Gu <chong@purdue.edu>",
+      "Depends": [
+        "R (>= 3.0.0)",
+        "stats"
+      ],
+      "Description": "A comprehensive package for structural multivariate function estimation using smoothing splines.",
+      "License": "GPL (>= 2)",
+      "NeedsCompilation": "yes",
       "Repository": "CRAN"
     },
     "gtable": {
@@ -2279,24 +2428,6 @@
       "Maintainer": "Yihui Xie <xie@yihui.name>",
       "Repository": "CRAN"
     },
-    "mnormt": {
-      "Package": "mnormt",
-      "Version": "2.1.1",
-      "Source": "Repository",
-      "Date": "2022-09-26",
-      "Title": "The Multivariate Normal and t Distributions, and Their Truncated Versions",
-      "Author": "Adelchi Azzalini [aut, cre], Alan Genz [aut] (most Fortran code), Alan Miller [ctb] (Fortran routine PHI), Michael J. Wichura  [ctb] (Fortran routine PHINV), G. W. Hill [ctb] (Fortran routine STDINV), Yihong Ge [ctb] (Fortran routines BNVU and MVBVU).",
-      "Maintainer": "Adelchi Azzalini <adelchi.azzalini@unipd.it>",
-      "Depends": [
-        "R (>= 2.2.0)"
-      ],
-      "Description": "Functions are provided for computing the density and the distribution function of d-dimensional normal and \"t\" random variables, possibly truncated (on one side or two sides),  and for generating random  vectors sampled from these distributions, except sampling from the truncated \"t\". Moments of arbitrary order of a multivariate truncated normal are computed, and converted to cumulants up to order 4.  Probabilities are computed via non-Monte Carlo methods; different routines  are used in the case d=1, d=2, d=3, d>3, if d denotes the dimensionality.",
-      "License": "GPL-2 | GPL-3",
-      "URL": "http://azzalini.stat.unipd.it/SW/Pkg-mnormt/",
-      "NeedsCompilation": "yes",
-      "Encoding": "UTF-8",
-      "Repository": "CRAN"
-    },
     "multicool": {
       "Package": "multicool",
       "Version": "1.0.1",
@@ -2791,44 +2922,6 @@
       "Maintainer": "Hadley Wickham <hadley@posit.co>",
       "Repository": "CRAN"
     },
-    "quantreg": {
-      "Package": "quantreg",
-      "Version": "6.1",
-      "Source": "Repository",
-      "Title": "Quantile Regression",
-      "Description": "Estimation and inference methods for models for conditional quantile functions:  Linear and nonlinear parametric and non-parametric (total variation penalized) models  for conditional quantiles of a univariate response and several methods for handling censored survival data.  Portfolio selection methods based on expected shortfall risk are also now included. See Koenker, R. (2005) Quantile Regression, Cambridge U. Press, <doi:10.1017/CBO9780511754098> and Koenker, R. et al. (2017) Handbook of Quantile Regression,  CRC Press, <doi:10.1201/9781315120256>.",
-      "Authors@R": "c( person(\"Roger\", \"Koenker\",  role = c(\"cre\",\"aut\"), email =  \"rkoenker@illinois.edu\"), person(\"Stephen\", \"Portnoy\",  role = c(\"ctb\"),  comment = \"Contributions to Censored QR code\", email =  \"sportnoy@illinois.edu\"), person(c(\"Pin\", \"Tian\"), \"Ng\",  role = c(\"ctb\"),  comment = \"Contributions to Sparse QR code\", email =  \"pin.ng@nau.edu\"), person(\"Blaise\", \"Melly\",  role = c(\"ctb\"),  comment = \"Contributions to preprocessing code\", email =  \"mellyblaise@gmail.com\"), person(\"Achim\", \"Zeileis\",  role = c(\"ctb\"),  comment = \"Contributions to dynrq code essentially identical to his dynlm code\",  email =  \"Achim.Zeileis@uibk.ac.at\"), person(\"Philip\", \"Grosjean\",  role = c(\"ctb\"),  comment = \"Contributions to nlrq code\", email =  \"phgrosjean@sciviews.org\"), person(\"Cleve\", \"Moler\",  role = c(\"ctb\"),  comment = \"author of several linpack routines\"), person(\"Yousef\", \"Saad\",  role = c(\"ctb\"),  comment = \"author of sparskit2\"), person(\"Victor\", \"Chernozhukov\",  role = c(\"ctb\"),  comment = \"contributions to extreme value inference code\"), person(\"Ivan\", \"Fernandez-Val\",  role = c(\"ctb\"),  comment = \"contributions to extreme value inference code\"), person(\"Martin\", \"Maechler\", role = \"ctb\", comment = c(\"tweaks (src/chlfct.f, 'tiny','Large')\", ORCID = \"0000-0002-8685-9910\")), person(c(\"Brian\", \"D\"), \"Ripley\",  role = c(\"trl\",\"ctb\"),  comment = \"Initial (2001) R port from S (to my everlasting shame --  how could I have been so slow to adopt R!) and for numerous other  suggestions and useful advice\", email =  \"ripley@stats.ox.ac.uk\"))",
-      "Maintainer": "Roger Koenker <rkoenker@illinois.edu>",
-      "Repository": "CRAN",
-      "Depends": [
-        "R (>= 3.5)",
-        "stats",
-        "SparseM"
-      ],
-      "Imports": [
-        "methods",
-        "graphics",
-        "Matrix",
-        "MatrixModels",
-        "survival",
-        "MASS"
-      ],
-      "Suggests": [
-        "interp",
-        "rgl",
-        "logspline",
-        "nor1mix",
-        "Formula",
-        "zoo",
-        "R.rsp",
-        "conquer"
-      ],
-      "License": "GPL (>= 2)",
-      "URL": "https://www.r-project.org",
-      "NeedsCompilation": "yes",
-      "VignetteBuilder": "R.rsp",
-      "Author": "Roger Koenker [cre, aut], Stephen Portnoy [ctb] (Contributions to Censored QR code), Pin Tian Ng [ctb] (Contributions to Sparse QR code), Blaise Melly [ctb] (Contributions to preprocessing code), Achim Zeileis [ctb] (Contributions to dynrq code essentially identical to his dynlm code), Philip Grosjean [ctb] (Contributions to nlrq code), Cleve Moler [ctb] (author of several linpack routines), Yousef Saad [ctb] (author of sparskit2), Victor Chernozhukov [ctb] (contributions to extreme value inference code), Ivan Fernandez-Val [ctb] (contributions to extreme value inference code), Martin Maechler [ctb] (tweaks (src/chlfct.f, 'tiny','Large'), <https://orcid.org/0000-0002-8685-9910>), Brian D Ripley [trl, ctb] (Initial (2001) R port from S (to my everlasting shame -- how could I have been so slow to adopt R!) and for numerous other suggestions and useful advice)"
-    },
     "randtoolbox": {
       "Package": "randtoolbox",
       "Version": "2.0.5",
@@ -2874,6 +2967,34 @@
       "NeedsCompilation": "yes",
       "Author": "Hadley Wickham [trl, cre, cph], RStudio [cph], Sridhar Ratnakumar [aut], Trent Mick [aut], ActiveState [cph] (R/appdir.r, R/cache.r, R/data.r, R/log.r translated from appdirs), Eddy Petrisor [ctb], Trevor Davis [trl, aut], Gabor Csardi [ctb], Gregory Jefferis [ctb]",
       "Maintainer": "Hadley Wickham <hadley@rstudio.com>",
+      "Repository": "CRAN"
+    },
+    "rbibutils": {
+      "Package": "rbibutils",
+      "Version": "2.3",
+      "Source": "Repository",
+      "Type": "Package",
+      "Title": "Read 'Bibtex' Files and Convert Between Bibliography Formats",
+      "Authors@R": "c( person(given = c(\"Georgi\", \"N.\"), family = \"Boshnakov\",  role = c(\"aut\", \"cre\"), \t email = \"georgi.boshnakov@manchester.ac.uk\", comment = \"R port, R code, new C code and modifications to bibutils' C code, conversion to Bibentry (R and C code)\" ), person(given = \"Chris\", family = \"Putman\", role = \"aut\", comment = \"src/*, author of the bibutils libraries, https://sourceforge.net/projects/bibutils/\"), person(given = \"Richard\", family = \"Mathar\", role = \"ctb\", comment = \"src/addsout.c\"), person(given = \"Johannes\", family = \"Wilm\", role = \"ctb\", comment = \"src/biblatexin.c, src/bltypes.c\"), person(\"R Core Team\", role = \"ctb\", comment = \"base R's bibentry and bibstyle implementation\") )",
+      "Description": "Read and write 'Bibtex' files. Convert between bibliography formats, including 'Bibtex', 'Biblatex', 'PubMed', 'Endnote', and 'Bibentry'.  Includes a port of the 'bibutils' utilities by Chris Putnam <https://sourceforge.net/projects/bibutils/>. Supports all bibliography formats and character encodings implemented in 'bibutils'.",
+      "License": "GPL-2",
+      "URL": "https://geobosh.github.io/rbibutils/ (doc), https://github.com/GeoBosh/rbibutils (devel)",
+      "BugReports": "https://github.com/GeoBosh/rbibutils/issues",
+      "Depends": [
+        "R (>= 2.10)"
+      ],
+      "Imports": [
+        "utils",
+        "tools"
+      ],
+      "Suggests": [
+        "testthat"
+      ],
+      "Encoding": "UTF-8",
+      "NeedsCompilation": "yes",
+      "Config/Needs/memcheck": "devtools, rcmdcheck",
+      "Author": "Georgi N. Boshnakov [aut, cre] (R port, R code, new C code and modifications to bibutils' C code, conversion to Bibentry (R and C code)), Chris Putman [aut] (src/*, author of the bibutils libraries, https://sourceforge.net/projects/bibutils/), Richard Mathar [ctb] (src/addsout.c), Johannes Wilm [ctb] (src/biblatexin.c, src/bltypes.c), R Core Team [ctb] (base R's bibentry and bibstyle implementation)",
+      "Maintainer": "Georgi N. Boshnakov <georgi.boshnakov@manchester.ac.uk>",
       "Repository": "CRAN"
     },
     "readxl": {
@@ -3375,35 +3496,31 @@
       "Maintainer": "Kurt Hornik <Kurt.Hornik@R-project.org>",
       "Repository": "CRAN"
     },
-    "sn": {
-      "Package": "sn",
-      "Version": "2.1.1",
+    "spatial": {
+      "Package": "spatial",
+      "Version": "7.3-17",
       "Source": "Repository",
-      "Date": "2023-04-04",
-      "Title": "The Skew-Normal and Related Distributions Such as the Skew-t and the SUN",
-      "Authors@R": "person(given = \"Adelchi\", family = \"Azzalini\",  email = \"adelchi.azzalini@unipd.it\", role = c(\"aut\", \"cre\"),  comment = c(ORCID = \"0000-0002-7583-1269\"))",
-      "Maintainer": "Adelchi Azzalini <adelchi.azzalini@unipd.it>",
+      "Priority": "recommended",
+      "Date": "2023-07-20",
       "Depends": [
         "R (>= 3.0.0)",
-        "methods",
-        "stats4"
-      ],
-      "Imports": [
-        "mnormt (>= 2.0.0)",
-        "numDeriv",
-        "utils",
-        "quantreg"
+        "graphics",
+        "stats",
+        "utils"
       ],
       "Suggests": [
-        "R.rsp"
+        "MASS"
       ],
-      "VignetteBuilder": "R.rsp",
-      "Description": "Build and manipulate probability distributions of the skew-normal  family and some related ones, notably the skew-t and the SUN families.  For the skew-normal and the skew-t distributions, statistical methods are  provided for data fitting and model diagnostics, in the univariate and the  multivariate case.",
+      "Authors@R": "c(person(\"Brian\", \"Ripley\", role = c(\"aut\", \"cre\", \"cph\"), email = \"ripley@stats.ox.ac.uk\"), person(\"Roger\", \"Bivand\", role = \"ctb\"), person(\"William\", \"Venables\", role = \"cph\"))",
+      "Description": "Functions for kriging and point pattern analysis.",
+      "Title": "Functions for Kriging and Point Pattern Analysis",
+      "LazyLoad": "yes",
+      "ByteCompile": "yes",
       "License": "GPL-2 | GPL-3",
-      "URL": "http://azzalini.stat.unipd.it/SN/",
-      "Encoding": "UTF-8",
-      "NeedsCompilation": "no",
-      "Author": "Adelchi Azzalini [aut, cre] (<https://orcid.org/0000-0002-7583-1269>)",
+      "URL": "http://www.stats.ox.ac.uk/pub/MASS4/",
+      "NeedsCompilation": "yes",
+      "Author": "Brian Ripley [aut, cre, cph], Roger Bivand [ctb], William Venables [cph]",
+      "Maintainer": "Brian Ripley <ripley@stats.ox.ac.uk>",
       "Repository": "CRAN"
     },
     "spd": {
@@ -3430,6 +3547,37 @@
       "URL": "http://www.unstarched.net, https://bitbucket.org/alexiosg",
       "License": "GPL",
       "NeedsCompilation": "no",
+      "Repository": "CRAN"
+    },
+    "stabledist": {
+      "Package": "stabledist",
+      "Version": "0.7-2",
+      "Source": "Repository",
+      "Date": "2024-08-14",
+      "Title": "Stable Distribution Functions",
+      "Authors@R": "c( person(\"Diethelm\", \"Wuertz\", role=\"aut\", comment = \"original code\"), person(\"Martin\",\"Maechler\", role=c(\"aut\",\"cre\"), email=\"maechler@stat.math.ethz.ch\", comment = c(\"checks/tests; fixes, ..\", ORCID = \"0000-0002-8685-9910\")), person(\"Yohan\", \"Chalabi\", role=\"ctb\", comment= \"namespace; admin\"))",
+      "Maintainer": "Martin Maechler <maechler@stat.math.ethz.ch>",
+      "Depends": [
+        "R (>= 3.1.0)"
+      ],
+      "Imports": [
+        "stats"
+      ],
+      "Suggests": [
+        "Matrix",
+        "fBasics",
+        "FMStable",
+        "RUnit",
+        "Rmpfr",
+        "sfsmisc",
+        "libstable4u"
+      ],
+      "SuggestsNote": "'libstable4u', based on 'libstableR', is said to be uniformly better both accuracy and speed wise, at least in parts.",
+      "Description": "Density, Probability and Quantile functions, and random number generation for (skew) stable distributions, using the parametrizations of Nolan.",
+      "License": "GPL (>= 2)",
+      "URL": "https://r-forge.r-project.org/scm/viewvc.php/pkg/stabledist/?root=rmetrics",
+      "NeedsCompilation": "no",
+      "Author": "Diethelm Wuertz [aut] (original code), Martin Maechler [aut, cre] (checks/tests; fixes, .., <https://orcid.org/0000-0002-8685-9910>), Yohan Chalabi [ctb] (namespace; admin)",
       "Repository": "CRAN"
     },
     "stringi": {
@@ -3504,36 +3652,6 @@
       "NeedsCompilation": "no",
       "Author": "Hadley Wickham [aut, cre, cph], Posit Software, PBC [cph, fnd]",
       "Maintainer": "Hadley Wickham <hadley@posit.co>",
-      "Repository": "CRAN"
-    },
-    "survival": {
-      "Package": "survival",
-      "Version": "3.6-4",
-      "Source": "Repository",
-      "Title": "Survival Analysis",
-      "Priority": "recommended",
-      "Date": "2024-04-22",
-      "Depends": [
-        "R (>= 3.5.0)"
-      ],
-      "Imports": [
-        "graphics",
-        "Matrix",
-        "methods",
-        "splines",
-        "stats",
-        "utils"
-      ],
-      "LazyData": "Yes",
-      "LazyDataCompression": "xz",
-      "ByteCompile": "Yes",
-      "Authors@R": "c(person(c(\"Terry\", \"M\"), \"Therneau\", email=\"therneau.terry@mayo.edu\", role=c(\"aut\", \"cre\")), person(\"Thomas\", \"Lumley\", role=c(\"ctb\", \"trl\"), comment=\"original S->R port and R maintainer until 2009\"), person(\"Atkinson\", \"Elizabeth\", role=\"ctb\"), person(\"Crowson\", \"Cynthia\", role=\"ctb\"))",
-      "Description": "Contains the core survival analysis routines, including definition of Surv objects,  Kaplan-Meier and Aalen-Johansen (multi-state) curves, Cox models, and parametric accelerated failure time models.",
-      "License": "LGPL (>= 2)",
-      "URL": "https://github.com/therneau/survival",
-      "NeedsCompilation": "yes",
-      "Author": "Terry M Therneau [aut, cre], Thomas Lumley [ctb, trl] (original S->R port and R maintainer until 2009), Atkinson Elizabeth [ctb], Crowson Cynthia [ctb]",
-      "Maintainer": "Terry M Therneau <therneau.terry@mayo.edu>",
       "Repository": "CRAN"
     },
     "tibble": {

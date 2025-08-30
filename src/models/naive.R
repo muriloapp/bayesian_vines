@@ -123,7 +123,7 @@ out <- list(
     wCRPS = numeric(n_oos)
   ),
   
-  CoVaR_tail = array(NA_real_, c(n_oos, d, 2), dimnames = list(NULL, tickers, c("a0.05","a0.10")))
+  CoVaR_tail = array(NA_real_, c(n_oos, d, 4), dimnames = list(NULL, tickers, c("a0.05b0.05","a0.05b0.1","a0.1b0.1","a0.1b0.05")))
 )
 
 
@@ -161,7 +161,7 @@ for (t in seq_len(n_oos)) {
   out$log_pred[t]   <- dvinecop(u_test, model, cores = cfg$nc)
   
   ## Draws & risk metrics 
-  draws <- rvinecop(n=10000, model, qrng = FALSE, cores = cfg$nc)
+  draws <- rvinecop(n=20000, model, qrng = FALSE, cores = cfg$nc)
   Z_pred <- st_inv_fast(draws, shape_fc[t, ], df_fc[t, ])  
   R_t <- sweep(Z_pred, 2, as.numeric(sig_fc[t, ]), `*`) + as.numeric(mu_fc[t, ])
   
@@ -199,10 +199,14 @@ for (t in seq_len(n_oos)) {
   VaRj_5  <- rs$VaR[, k5]   # d-vector
   VaRj_10 <- rs$VaR[, k10]
   covar5  <- covar_tail_vec(R_t, r_p, VaRj_5,  port_alpha = 0.05, minN = 50)
+  covar5b10  <- covar_tail_vec(R_t, r_p, VaRj_5,  port_alpha = 0.1, minN = 50)
   covar10 <- covar_tail_vec(R_t, r_p, VaRj_10, port_alpha = 0.10, minN = 50)
+  covar10b5 <- covar_tail_vec(R_t, r_p, VaRj_10, port_alpha = 0.05, minN = 50)
   
-  out$CoVaR_tail[t, , "a0.05"] <- covar5
-  out$CoVaR_tail[t, , "a0.10"] <- covar10
+  out$CoVaR_tail[idx, , "a0.05b0.05"] <- covar5
+  out$CoVaR_tail[idx, , "a0.05b0.1"] <- covar5b10
+  out$CoVaR_tail[idx, , "a0.1b0.1"] <- covar10
+  out$CoVaR_tail[idx, , "a0.1b0.05"] <- covar10b5
   
   
   print(t)

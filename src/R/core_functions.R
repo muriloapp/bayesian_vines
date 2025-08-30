@@ -6,11 +6,11 @@ library(matrixStats)
 
 
 FAM_INFO <- data.frame(
-  name      = c("indep","gaussian","bb1","bb1r180","bb8r180","bb7","bb7r180"),
-  rv_name   = c("indep","gaussian","bb1","bb1","bb8","bb7","bb7"),
-  rotation  = c(0L, 0L, 0L, 180L, 180L, 0L, 180L),
-  code      = c(0L, 1L, 3L, 13L, 16L, 7L, 17L),  # any unique ints are fine internally
-  npar      = c(0L, 1L, 2L, 2L, 2L, 2L, 2L),
+  name      = c("indep","gaussian","bb1","bb1r180","bb8r180","bb7","bb7r180","t"),
+  rv_name   = c("indep","gaussian","bb1","bb1","bb8","bb7","bb7","t"),
+  rotation  = c(0L, 0L, 0L, 180L, 180L, 0L, 180L, 0L),
+  code      = c(0L, 1L, 3L, 13L, 16L, 7L, 17L, 2L),  # any unique ints are fine internally
+  npar      = c(0L, 1L, 2L, 2L, 2L, 2L, 2L, 2L),
   stringsAsFactors = FALSE
 )
 
@@ -22,6 +22,7 @@ FAM_BB1R180  <- FAM_INFO$code[FAM_INFO$name == "bb1r180"]
 FAM_BB8R180  <- FAM_INFO$code[FAM_INFO$name == "bb8r180"]
 FAM_BB7      <- FAM_INFO$code[FAM_INFO$name == "bb7"]          # NEW
 FAM_BB7R180  <- FAM_INFO$code[FAM_INFO$name == "bb7r180"]      # NEW
+FAM_T <- FAM_INFO$code[FAM_INFO$name == "t"]
 
 ## Minimal templates (we’ll build bicops from rv_name/rotation on the fly too)
 T_INDEP     <- bicop_dist("indep")
@@ -34,6 +35,9 @@ T_BB8R180   <- bicop_dist("bb8", rotation = 180, parameters = c(1, 1))  # dummy 
 
 T_BB7       <- bicop_dist("bb7", rotation = 0,   parameters = c(1, 2))   # NEW
 T_BB7R180   <- bicop_dist("bb7", rotation = 180, parameters = c(1, 2))   # NEW
+
+T_T <- bicop_dist("t", rotation = 0, parameters = c(0, 5))  # rho=0, nu=5 dummy
+
 
 
 log_prior_edge <- function(fam, th1, th2, cfg) {
@@ -78,6 +82,16 @@ log_prior_edge <- function(fam, th1, th2, cfg) {
     lp <- lp_tail + bb8r180_log_jacobian_1d(lamLr) #- 2*cfg$lambda
     return(fillna_neg(lp))
   }
+  
+  if (fam == FAM_T) {
+    # map to tail, add λ prior + Jacobian + df prior
+    lam <- t_par2tail(th1, th2)
+    lp_tail <- dbeta(lam, 2, 2, log = TRUE)           # diffuse
+    lp_jac  <- t_log_jacobian(lam, th2)
+    lp_df <- if (th2 >= 2 && th2 <= 30) -log(th2) - log(log(30)) else -Inf
+    return(fillna_neg(lp_tail + lp_jac + lp_df))      # - cfg$lambda if you re-enable penalties
+  }
+  
   
   stop("Unknown family code in log_prior_edge: ", fam)
 }
@@ -177,7 +191,7 @@ new_particle <- function(cfg, U_init = NULL) {
       tail_strength <- max(mL, mU)             # ∈ (0,1)
       
       # weight tail families up with tail_strength; keep others possible
-      tail_codes <- c(FAM_BB1, FAM_BB1R180, FAM_BB7, FAM_BB7R180, FAM_BB8R180)
+      tail_codes <- c(FAM_BB1, FAM_BB1R180, FAM_BB7, FAM_BB7R180, FAM_BB8R180, FAM_T)
       base_w     <- rep(1.0, nrow(fam_tbl))
       is_tailfam <- fam_tbl$code %in% tail_codes
       # e.g., tails strong -> upweight tail fams by up to 4x; downweight Gauss/Indep
@@ -249,6 +263,13 @@ new_particle <- function(cfg, U_init = NULL) {
         pars  <- bb7r180_tail2par(lamLr, lamUr)
         pars  <- sanitize_bb7(pars[1], pars[2])
         th1[k] <- pars[1]; th2[k] <- pars[2]
+      
+      } else if (code_k == FAM_T) {
+        nu <- exp(runif(1, log(2), log(30)))# log-uniform
+        lam <- rbeta(1, 2, 2)                          # diffuse tail
+        rho <- t_tail2rho(lam, nu)
+        pr  <- sanitize_t(rho, nu)
+        th1[k] <- pr[1]; th2[k] <- pr[2]
       }
     }
   }
@@ -299,6 +320,12 @@ fast_vine_from_particle <- function(p, skel) {
         bc <- rlang::duplicate(T_BB7R180, shallow = TRUE)
         bc$parameters[1:2] <- c(p$th1[idx], p$th2[idx])
         pcs[[tr]][[ed]] <- bc
+        
+      } else if (code == FAM_T) {
+        bc <- rlang::duplicate(T_T, shallow = TRUE)
+        bc$parameters[1:2] <- c(p$th1[idx], p$th2[idx])  # rho, nu
+        pcs[[tr]][[ed]] <- bc
+        
       } else {
         stop("fast_vine_from_particle: unsupported family code: ", code)
       }
@@ -356,6 +383,8 @@ get_tails <- function(code, th1, th2) {
   if (code == FAM_BB7)      { v <- bb7_par2tail(th1, th2);      return(list(L = v[1], U = v[2])) }
   if (code == FAM_BB7R180)  { v <- bb7r180_par2tail(th1, th2);  return(list(Lr = v[1], Ur = v[2])) }
   if (code == FAM_BB8R180)  { v <- bb8r180_par2tail(th1, th2);  return(list(Lr = v[1])) }
+  if (code == FAM_T) { v <- t_par2tail(th1, th2); return(list(L = v, U = v)) }
+  
   list()  # Indep/Gauss
 }
 
@@ -391,7 +420,15 @@ init_from_tails <- function(new_code, tails) {
     delta <- if (!is.null(tails$delta_hint)) tails$delta_hint else draw_delta_bb8()
     tp    <- bb8r180_tail2par(lamLr, delta); return(sanitize_bb8(tp[1], tp[2]))
   }
-  stop("Unknown family code in init_from_tails")
+  if (new_code == FAM_T) {
+    lam <- clamp01(if (!is.null(tails$L)) tails$L else if (!is.null(tails$U)) tails$U else rbeta(1,2,2))
+    nu <- exp(runif(1, log(2), log(30)))             # log-uniform
+    rho <- t_tail2rho(lam, nu)
+    pr  <- sanitize_t(rho, nu)
+    return(pr)
+  }
+  
+  stop("Unknown family code in mh_step")
 }
 
 mh_step <- function(p, data_up_to_t, skeleton, cfg, tip_means_cache = NULL,   # <-- NEW
@@ -510,6 +547,27 @@ mh_step <- function(p, data_up_to_t, skeleton, cfg, tip_means_cache = NULL,   # 
     prop$th1[bb7r_idx] <- par[,1]; prop$th2[bb7r_idx] <- par[,2]
   }
   
+  # t-copula — RW in λ (tail) and z=log(nu), then map back to (rho, nu)
+  t_idx <- which(prop$fam == FAM_T)
+  if (length(t_idx)) {
+    lam <- vapply(t_idx, function(i) t_par2tail(prop$th1[i], prop$th2[i]), numeric(1))
+    lam <- rtnorm_vec(lam, cfg$step_sd, 1e-3, 0.99)
+    
+    z  <- log(pmax(prop$th2[t_idx], 2))                 # enforce ≥2
+    z  <- rtnorm_vec(z, cfg$step_sd, log(2), log(30))   # truncated normal in [log 2, log 30]
+    nu <- exp(z)
+    
+    pars <- t(vapply(seq_along(t_idx), function(j) {
+      i   <- t_idx[j]
+      rho <- t_tail2rho(lam[j], nu[j])
+      sanitize_t(rho, nu[j])
+    }, numeric(2)))
+    prop$th1[t_idx] <- pars[,1]; prop$th2[t_idx] <- pars[,2]
+  }
+  
+  
+  
+  
   
   ## (c) MH ratio
   vine_prop <- fast_vine_from_particle(prop, skeleton)
@@ -614,6 +672,17 @@ seed_family_from_emp <- function(new_code, mL, mU, cur_delta, step_sd, tip_sd_lo
     delta <- pmin(pmax(cur_delta + rnorm(1, 0, step_sd), 0.05), 7.0)
     th    <- bb8r180_tail2par(lamLr, delta); th <- sanitize_bb8(th[1], th[2]); return(th)
   }
+  if (new_code == FAM_T) {
+    lam <- {
+      z <- rnorm(1, mean = logit(clamp01(max(mL, mU))), sd = tip_sd_logit)
+      ilogit(z)
+    }
+    nu  <- exp(runif(1, 0, log(30)))
+    rho <- t_tail2rho(lam, nu)
+    pr  <- sanitize_t(rho, nu)
+    return(pr)
+  }
+  
   stop("Unknown family code in seed_family_from_emp()")
 }
 
@@ -732,6 +801,22 @@ log_prior_with_tip_cached <- function(p, cfg, tip_means_cache) {
         }
       lp <- lp + tip_or_diffuse + bb8r180_log_jacobian_1d(lamLr); next
     }
+    
+    if (fam == FAM_T) {
+    lam <- t_par2tail(th1, th2)
+    tip_or_diffuse <-
+      if (is.null(tipm)) {
+        dbeta(lam, 2, 2, log = TRUE)
+      } else {
+        m <- max(tipm["mL"], tipm["mU"])
+        dlogitnorm(lam, logit(m), s)  # symmetric: use max/mU; see seeding below
+      }
+    lp_jac <- t_log_jacobian(lam, th2)
+    lp_df <- if (th2 >= 2 && th2 <= 30) -log(th2) - log(log(30)) else -Inf
+    lp <- tip_or_diffuse + lp_jac + lp_df
+    return(fillna_neg(lp))
+  }
+
     
     stop("unknown family in log_prior_with_tip_cached")
   }
@@ -1010,6 +1095,7 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
   BB8s <- FAM_BB8R180
   BB7   <- FAM_BB7
   BB7s  <- FAM_BB7R180
+  TT <- FAM_T
   
   
   ## weights & ESS
@@ -1061,6 +1147,7 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
     p_bb8r  <- sum(w_new[fam_mat[, e] == BB8s])
     p_bb7   <- sum(w_new[fam_mat[, e] == BB7])
     p_bb7r  <- sum(w_new[fam_mat[, e] == BB7s])
+    p_t <- sum(w_new[fam_mat[, e] == TT ])
     
     res <- list(edge   = e,
                 p_indep = p_indep,
@@ -1244,6 +1331,22 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
           s1[1], s1[2], s1[3], s1[4],
           s2[1], s2[2], s2[3], s2[4]
         ))
+    }
+    
+    ## student parameter stats
+    if (p_t > 0) {
+      mask <- fam_mat[, e] == TT
+      rho_e <- th1_mat[mask, e]
+      nu_e  <- th2_mat[mask, e]
+      wloc  <- w_new[mask] / p_t
+      stats <- function(x){
+        mu <- sum(wloc * x); sd <- sqrt(sum(wloc * (x - mu)^2)); qs <- w_quantile(x, wloc, q_probs)
+        c(mu, sd, qs)
+      }
+      s_rho <- stats(rho_e); s_nu <- stats(nu_e)
+      if (print_flag)
+        cat(sprintf("                t      : P=%.3f | rho=%.3f±%.3f CI=[%.3f,%.3f] | nu=%.2f±%.2f CI=[%.2f,%.2f]\n",
+                    p_t, s_rho[1], s_rho[2], s_rho[3], s_rho[4], s_nu[1], s_nu[2], s_nu[3], s_nu[4]))
     }
     
     edge_summ[[e]] <- res

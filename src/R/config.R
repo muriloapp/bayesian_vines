@@ -19,9 +19,9 @@ build_cfg <- function(d,
                       step_sd        = 0.05,
                       q_flip         = NULL,                 # <- default now computed later
                       K              = NULL,                 # <- ignored if truncation given
-                      families       = c("bb1","bb1r180","bb7","bb7r180"),
-                      families_first = c("bb1","bb1r180","bb7","bb7r180"),
-                      families_deep  = c("bb1","bb1r180","bb7","bb7r180"),
+                      families       = c("bb1","bb1r180","bb7","bb7r180","t"),
+                      families_first = c("bb1","bb1r180","bb7","bb7r180","t"),
+                      families_deep  = c("bb1","bb1r180","bb7","bb7r180","t"),
                       adapt_step_sd  = TRUE,
                       trunc_tree     = 2L) {
   
@@ -45,8 +45,8 @@ build_cfg <- function(d,
     trunc_tree   = trunc_tree,
     M            = 1000L,
     ess_thr      = 0.50,
-    W            = 126L,
-    k_step       = 20L,
+    W            = 252L,
+    k_step       = 1L,
     n_mh         = 3L,
     W_predict    = 756L,
     q_flip       = q_flip,

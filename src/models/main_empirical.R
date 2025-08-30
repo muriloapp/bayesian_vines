@@ -19,13 +19,14 @@ smc_full <- function(data, cfg) {
     # constants & templates 
     "FAM_INFO", "FAM_INDEP", "FAM_GAUSS", "FAM_BB1", "FAM_BB1R180",
     "T_INDEP",  "T_GAUSS",   "T_BB1", "T_BB1R180", "FAM_BB8R180",
-    "FAM_BB7","FAM_BB7R180","T_BB8R180","T_BB7","T_BB7R180",
+    "FAM_BB7","FAM_BB7R180","T_BB8R180","T_BB7","T_BB7R180", "FAM_T","T_T",
     # helper functions 
     "active_fams", "sanitize_bb1", "mh_worker_standard", "mh_worker_block",
     "bb1r180_tail2par", "bb1r180_par2tail", "bb1r180_log_jacobian",
     "bb7_tail2par","bb7_par2tail","bb7_log_jacobian","bb7r180_tail2par","bb7r180_par2tail",
     "bb7r180_log_jacobian","bb8r180_tail2par","bb8r180_par2tail","bb8r180_log_jacobian_1d",
     "sanitize_bb7","sanitize_bb8",
+    "t_par2tail","t_tail2rho","t_log_jacobian","sanitize_t",
     # core SMC kernels 
     "mh_step", "mh_step_in_tree",
     "update_weights", "ESS", "systematic_resample", "resample_move",
@@ -82,24 +83,25 @@ smc_full <- function(data, cfg) {
                     wCRPS = numeric(n_oos)
                   ),
     
-    CoVaR_tail = array(NA_real_, c(n_oos, d, 2), dimnames = list(NULL, tickers, c("a0.05","a0.10")))
+    CoVaR_tail = array(NA_real_, c(n_oos, d, 4), dimnames = list(NULL, tickers, c("a0.05b0.05","a0.05b0.1","a0.1b0.1","a0.1b0.05")))
   )
 
   
   # init particles
-  U_init <- U[1:cfg$W, , drop = FALSE]
+  U_init <- U[1:(cfg$W-1), , drop = FALSE]
   particles <- replicate(M, new_particle(cfg, U_init = U_init), simplify = FALSE)
   out$ancestorIndices[,1] <- seq_len(M)
   
 
-for (t in 127:N) {
+for (t in 253:N) {
 
     #if (t==10){break}
+    u_t_1 <- U[t-1,,drop=FALSE]
     u_t <- U[t,,drop=FALSE]
     
     
     # weight-update
-    log_inc <- compute_log_incr(particles, u_t, skeleton, cfg)
+    log_inc <- compute_log_incr(particles, u_t_1, skeleton, cfg)
     particles <- update_weights(particles, log_inc)
     w <- vapply(particles, `[[`, numeric(1), "w")
     
@@ -152,10 +154,14 @@ for (t in 127:N) {
       VaRj_5  <- rs$VaR[, k5]   # d-vector
       VaRj_10 <- rs$VaR[, k10]
       covar5  <- covar_tail_vec(R_t, r_p, VaRj_5,  port_alpha = 0.05, minN = 50)
+      covar5b10  <- covar_tail_vec(R_t, r_p, VaRj_5,  port_alpha = 0.1, minN = 50)
       covar10 <- covar_tail_vec(R_t, r_p, VaRj_10, port_alpha = 0.10, minN = 50)
+      covar10b5 <- covar_tail_vec(R_t, r_p, VaRj_10, port_alpha = 0.05, minN = 50)
       
-      out$CoVaR_tail[idx, , "a0.05"] <- covar5
-      out$CoVaR_tail[idx, , "a0.10"] <- covar10
+      out$CoVaR_tail[idx, , "a0.05b0.05"] <- covar5
+      out$CoVaR_tail[idx, , "a0.05b0.1"] <- covar5b10
+      out$CoVaR_tail[idx, , "a0.1b0.1"] <- covar10
+      out$CoVaR_tail[idx, , "a0.1b0.05"] <- covar10b5
       
       
     }
@@ -171,7 +177,7 @@ for (t in 127:N) {
     # resample / move
     if (ESS(w) < cfg$ess_thr * M && t < N) {
       newAncestors <- stratified_resample(w)
-      data_up_to_t <- U[max(1, t - cfg$W + 1):t, , drop = FALSE]
+      data_up_to_t <- U[max(1, t - cfg$W + 1):(t-1), , drop = FALSE]
       move_out <- resample_move_old(particles, newAncestors, data_up_to_t, cl,
                                   cfg$type, cfg, skeleton = skeleton)
       

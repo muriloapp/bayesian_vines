@@ -35,7 +35,7 @@ run_empirical <- function() {
     list(label = "tailW_tauL0.1_taileps0.3",  use_weighted_ll = TRUE,
          tauL = 0.1, joint_k = 2L, tail_eps = 0.30, q_flip = 0.2),
     list(label = "tip",  use_tail_informed_prior = TRUE, tip_method = "EmpTC",          
-         tip_k = NULL, tip_sd_logit = 0.025, q_flip = 0.2)
+         tip_k = 25, tip_sd_logit = 0.025, q_flip = 0.2)
   )
   
   v=cfg_variants[[4]]

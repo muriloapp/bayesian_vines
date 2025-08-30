@@ -6,7 +6,7 @@ source(here("src/R", "config.R"))
 #### VAR FORECASTING
 n_assets <- 1:3
 
-out <- readRDS("C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/empirical_results/standard_20250827_093916.rds")
+out <- readRDS("C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/empirical_results/standard_20250829_055123.rds")
 
 data <- list(
   U      = readRDS("data/PIT.rds")[,n_assets],
@@ -165,7 +165,7 @@ eval_covar <- do.call(rbind, lapply(alphas_eval, function(a) {
 
 
 a = 0.1
-j = 3
+j = 2
 
 k <- which.min(abs(alphas_eval - a))
 qj <- out$risk$VaR[, j, k]
@@ -187,7 +187,7 @@ df$co_hj <- NA              # create empty column
 
 df$co_hj[df$hj == 1] <- co_hj
 
-df <- df[Date >= as.Date("2011-01-01")]
+#df <- df[Date >= as.Date("2010-01-01")]
 #df <- df[Date <= as.Date("2020-01-01")]
 
 
