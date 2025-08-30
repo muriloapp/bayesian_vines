@@ -130,6 +130,39 @@ sanitize_bb8 <- function(theta, delta, eps = 0.01, upper = 7 - 0.01) {
   c(theta, delta)
 }
 
+## ---- Student-t tail helpers ----------------------------------------------
+
+t_par2tail <- function(rho, nu) {
+  # symmetric: λL = λU = λ
+  nu1 <- nu + 1
+  s   <- sqrt( nu1 * (1 - rho) / (1 + rho) )
+  # λ = 2 * CDF_t(nu+1)(-s)
+  2 * stats::pt(-s, df = nu1)
+}
+
+t_tail2rho <- function(lambda, nu) {
+  lam <- clamp01(lambda, 1e-6, 1 - 1e-6)
+  nu1 <- nu + 1
+  x   <- stats::qt(lam / 2, df = nu1)               # x <= 0
+  s2  <- x^2
+  ((nu1) - s2) / ((nu1) + s2)                       # in (-1,1)
+}
+
+t_log_jacobian <- function(lambda, nu) {
+  lam <- clamp01(lambda, 1e-6, 1 - 1e-6)
+  nu1 <- nu + 1
+  x   <- stats::qt(lam / 2, df = nu1)               # inverse-CDF
+  ft  <- stats::dt(x, df = nu1)                     # pdf at x
+  # |dr/dλ| = [ 2 (nu+1) |x| ] / [ ((nu+1)+x^2)^2 * f_t(x) ]
+  log( 2 * nu1 * abs(x) ) - 2*log(nu1 + x^2) - log(ft)
+}
+
+sanitize_t <- function(rho, nu, rho_max = 0.99, nu_lo = 2, nu_hi = 30) {
+  rho <- pmin(pmax(rho, -rho_max), rho_max)
+  nu  <- pmin(pmax(nu, nu_lo), nu_hi)
+  c(rho, nu)
+}
+
 
 
 fam_spec <- function(code) {
@@ -307,38 +340,57 @@ add_first_tree_map <- function(cfg, skeleton) {
 #   return(Z)
 # }
 
-st_inv <- function(U_dt, shape, df_row_dt) {
-  U     <- as.matrix(U_dt)
-  shape <- as.numeric(shape)
-  nu    <- as.numeric(df_row_dt)
-  
-  out <- matrix(NA_real_, nrow = nrow(U), ncol = ncol(U))
-  for (j in seq_along(shape)) {
-    out[, j] <- sn::qst(U[, j], shape = shape[j], df = nu[j])
-  }
-  colnames(out) <- colnames(U_dt)
-  out
-}
+# st_inv <- function(U_dt, shape, df_row_dt) {
+#   U     <- as.matrix(U_dt)
+#   shape <- as.numeric(shape)
+#   nu    <- as.numeric(df_row_dt)
+#   
+#   out <- matrix(NA_real_, nrow = nrow(U), ncol = ncol(U))
+#   for (j in seq_along(shape)) {
+#     out[, j] <- sn::qst(U[, j], shape = shape[j], df = nu[j])
+#   }
+#   colnames(out) <- colnames(U_dt)
+#   out
+# }
 
-st_inv_fast <- function(U_dt, shape, df_row_dt) {
-  U          <- as.matrix(U_dt)
-  n_obs      <- nrow(U)
-  n_dim      <- ncol(U)
+# st_inv_fast <- function(U_dt, shape, df_row_dt) {
+#   U          <- as.matrix(U_dt)
+#   n_obs      <- nrow(U)
+#   n_dim      <- ncol(U)
+#   
+#   # vectorise everything ----------------------------------------------------
+#   p_long     <- as.vector(U)                       # length = n_obs * n_dim
+#   shape_long <- rep(as.numeric(shape   ), each = n_obs)
+#   df_long    <- rep(as.numeric(df_row_dt), each = n_obs)
+#   
+#   # single call to qst ------------------------------------------------------
+#   out <- sn::qst(p_long, shape = shape_long, df = df_long)
+#   
+#   # reshape back to L × d ---------------------------------------------------
+#   dim(out) <- c(n_obs, n_dim)
+#   dimnames(out) <- list(NULL, colnames(U_dt))
+#   out
+# }
+
+
+st_inv_fast <- function(U_dt, xi, nu, eps = 1e-12) {
+  stopifnot(is.matrix(U_dt))
+  U <- pmin(pmax(as.matrix(U_dt), eps), 1 - eps)  # guard 0/1
+  n_obs <- nrow(U); n_dim <- ncol(U)
+  stopifnot(length(xi) == n_dim, length(nu) == n_dim)
   
-  # vectorise everything ----------------------------------------------------
-  p_long     <- as.vector(U)                       # length = n_obs * n_dim
-  shape_long <- rep(as.numeric(shape   ), each = n_obs)
-  df_long    <- rep(as.numeric(df_row_dt), each = n_obs)
-  
-  # single call to qst ------------------------------------------------------
-  out <- sn::qst(p_long, shape = shape_long, df = df_long)
-  
-  # reshape back to L × d ---------------------------------------------------
+  # vectorized single call
+  p_long   <- as.vector(U)
+  xi_long  <- rep(as.numeric(xi), each = n_obs)
+  nu_long  <- rep(as.numeric(nu), each = n_obs)
+  out <- fGarch::qsstd(p_long,
+                       mean = 0, sd = 1,
+                       nu   = nu_long,
+                       xi   = xi_long)
   dim(out) <- c(n_obs, n_dim)
   dimnames(out) <- list(NULL, colnames(U_dt))
   out
 }
-
 
 
 
