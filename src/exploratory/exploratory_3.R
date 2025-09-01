@@ -6,7 +6,7 @@ source(here("src/R", "config.R"))
 #### VAR FORECASTING
 n_assets <- 1:3
 
-out <- readRDS("C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/empirical_results/standard_20250829_055123.rds")
+out <- readRDS("C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/empirical_results/standard_20250830_025730.rds")
 
 data <- list(
   U      = readRDS("data/PIT.rds")[,n_assets],
@@ -83,8 +83,10 @@ covar_hits_by_j <- function(r_p_real, y_real_oos, VaRj_oos, CoVaR_oos, alpha) {
 
 
 y_real_oos = readRDS("data/returns_actual.rds")[,n_assets+1, with=FALSE]
-rp_real_oos <- rowMeans(y_real_oos)
+#y_real_oos = readRDS("data/returns_actual.rds")[,1:4, with=FALSE]
 
+y_real_oos <- y_real_oos[(.N - nrow(out$port$VaR) + 1):.N]
+rp_real_oos <- rowMeans(y_real_oos)
 
 
 alphas_eval <- c(0.10, 0.05, 0.025, 0.01)
@@ -160,6 +162,62 @@ eval_covar <- do.call(rbind, lapply(alphas_eval, function(a) {
 }))
 
 
+alphas_eval <- c(0.10, 0.05)  # order doesn't matter
+
+# helper to match your dimnames exactly: 0.05 -> "0.05", 0.10 -> "0.1"
+fmt_ab <- function(x) ifelse(abs(x - 0.05) < 1e-12, "0.05", 
+                             ifelse(abs(x - 0.10) < 1e-12, "0.1", as.character(x)))
+
+grid_ab <- expand.grid(alpha_j = alphas_eval,
+                       alpha_port = alphas_eval,
+                       KEEP.OUT.ATTRS = FALSE, stringsAsFactors = FALSE)
+
+# ==== C) CoVaR backtests (per conditioning stock j, α_j ∈ {5%,10%} & portfolio α_p ∈ {5%,10%}) ====
+eval_covar <- do.call(rbind, lapply(seq_len(nrow(grid_ab)), function(i) {
+  a <- grid_ab$alpha_j[i]      # VaR threshold for conditioning asset j
+  b <- grid_ab$alpha_port[i]   # portfolio CoVaR threshold
+  k <- which.min(abs(alphas_eval - a))  # pick matching VaR slice
+  
+  # labels like "a0.05b0.1", "a0.1b0.05", etc.
+  lab <- paste0("a", fmt_ab(a), "b", fmt_ab(b))
+  
+  # n_oos × d
+  VaRj_oos  <- out$risk$VaR[, , k, drop = FALSE][, , 1]
+  CoVaR_oos <- out$CoVaR_tail[, , lab]  # n_oos × d
+  
+  # hits when r_p ≤ CoVaR(j; a,b) conditional on asset j being in VaR event at level a
+  cond_hits <- covar_hits_by_j(rp_real_oos, y_real_oos, VaRj_oos, CoVaR_oos, alpha = a)
+  
+  do.call(rbind, lapply(seq_len(d), function(j) {
+    hj <- cond_hits$hits[[j]]
+    if (length(hj) == 0) {
+      data.frame(
+        asset      = tickers[j],
+        alpha_j    = a,
+        alpha_port = b,
+        T_event    = 0,
+        rate       = NA_real_,
+        kupiec_p   = NA_real_,
+        ind_p      = NA_real_,
+        cc_p       = NA_real_,
+        row.names  = NULL
+      )
+    } else {
+      data.frame(
+        asset      = tickers[j],
+        alpha_j    = a,
+        alpha_port = b,
+        T_event    = length(hj),
+        rate       = mean(hj),
+        kupiec_p   = kupiec_test(hj, b)$pval,                 # test vs portfolio level b
+        ind_p      = christoffersen_ind_test(hj)$pval,
+        cc_p       = christoffersen_cc_test(hj, b)$pval,      # cc vs portfolio level b
+        row.names  = NULL
+      )
+    }
+  }))
+}))
+
 
 
 
@@ -172,14 +230,20 @@ qj <- out$risk$VaR[, j, k]
 hj <- var_hits(y_real_oos[, j, with=FALSE], qj)
 
 VaRj_oos   <- out$risk$VaR[, , k, drop = FALSE][, , 1]   # n_oos×d
-lab <- if (a == 0.05) "a0.05" else "a0.10"
+#lab <- if (a == 0.05) "a0.05" else "a0.10"
+lab = "a0.1b0.1"
 CoVaR_oos  <- out$CoVaR_tail[, , lab]                    # n_oos×d
 cond_hits  <- covar_hits_by_j(rp_real_oos, y_real_oos, VaRj_oos, CoVaR_oos, alpha = a)
 co_hj <- cond_hits$hits[[j]]
 
 
 
-y_real = readRDS("data/returns_actual.rds")[,1:3, with = FALSE]
+y_real = readRDS("data/returns_actual.rds")[,1:4, with=FALSE]
+#y_real_oos = readRDS("data/returns_actual.rds")[,1:4, with=FALSE]
+
+y_real <- y_real[(.N - nrow(out$port$VaR) + 1):.N]
+rp_real_oos <- rowMeans(y_real_oos)
+
 df <- cbind(y_real, hj)
 
 length(co_hj) == sum(df$hj)
