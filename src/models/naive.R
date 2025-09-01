@@ -74,27 +74,38 @@ extend_with_gaussian <- function(vinecop_t1, structure_full) {
 n_assets <- 1:3
 n_days <- 1:3000
 
+# data <- list(
+#   U      = readRDS("data/PIT.rds")[1:length(n_days),n_assets, with=FALSE],
+#   mu_fc  = readRDS("data/returns_mean_forecast.rds")[n_days,n_assets+1, with=FALSE],# [,-1],  # drop date col
+#   sig_fc = readRDS("data/returns_vol_forecast.rds")[n_days,n_assets+1, with=FALSE],  #[,-1],
+#   df_fc = readRDS("data/df_fc.rds")[n_days,n_assets+1, with=FALSE],#[,-1]
+#   shape_fc = readRDS("data/shape_fc.rds")[n_days,n_assets+1, with=FALSE]#[,-1]
+# )
+# y_real = readRDS("data/returns_actual.rds")[n_days,n_assets+1, with=FALSE]
+
+
 data <- list(
-  U      = readRDS("data/PIT.rds")[1:length(n_days),n_assets],
-  mu_fc  = readRDS("data/returns_mean_forecast.rds")[n_days,n_assets+1],# [,-1],  # drop date col
-  sig_fc = readRDS("data/returns_vol_forecast.rds")[n_days,n_assets+1],  #[,-1],
-  df_fc = readRDS("data/df_fc.rds")[n_days,n_assets+1],#[,-1]
-  shape_fc = readRDS("data/shape_fc.rds")[n_days,n_assets+1]#[,-1]
+  U      = readRDS("data/PIT.rds")[,n_assets],
+  mu_fc  = readRDS("data/returns_mean_forecast.rds")[,n_assets+1, with=FALSE],# [,-1],  # drop date col
+  sig_fc = readRDS("data/returns_vol_forecast.rds")[,n_assets+1, with=FALSE],  #[,-1],
+  df_fc = readRDS("data/df_fc.rds")[,n_assets+1, with=FALSE],#[,-1]
+  shape_fc = readRDS("data/shape_fc.rds")[,n_assets+1, with=FALSE]#[,-1]
 )
-y_real = readRDS("data/returns_actual.rds")[n_days,n_assets+1]
-
-
-
-U         <- data$U
-mu_fc     <- data$mu_fc
-sig_fc    <- data$sig_fc
-df_fc     <- data$df_fc 
-shape_fc     <- data$shape_fc 
+y_real = readRDS("data/returns_actual.rds")[,n_assets+1, with=FALSE]
 
 
 cfg <- build_cfg(d = ncol(U))
 N <- nrow(U); K <- cfg$K; tickers <- colnames(U); A <- length(cfg$alphas)
 n_oos <- N - cfg$W_predict; d <- cfg$d; t_train <- cfg$W_predict
+
+
+
+U         <- data$U
+mu_fc     <- data$mu_fc[(.N - n_oos + 1):.N]
+sig_fc    <- data$sig_fc[(.N - n_oos + 1):.N]
+df_fc     <- data$df_fc[(.N - n_oos + 1):.N]
+shape_fc     <- data$shape_fc[(.N - n_oos + 1):.N]
+y_real <- y_real[(.N - n_oos + 1):.N]
 
 
 out <- list(
@@ -128,6 +139,8 @@ out <- list(
 
 
 
+
+
 for (t in seq_len(n_oos)) {
   test_idx <- t_train + t
   u_train <- U[(test_idx - t_train):(test_idx - 1), , drop = FALSE]
@@ -135,7 +148,7 @@ for (t in seq_len(n_oos)) {
   
   if (t == 1)  skel <- make_skeleton_CVM(u_train)
   fit_t1 <- vinecop(u_train,
-                   family_set = c("bb1", "bb7"),
+                   family_set = c("bb1", "bb7", "t"),
                    structure   = skel$structure,
                    allow_rotations = TRUE,
                    trunc_lvl       = 1)
@@ -187,9 +200,9 @@ for (t in seq_len(n_oos)) {
   
   
   
-  out$QL[t, , ]  <- pinball_matrix(y_real_t, rs$VaR, cfg$alphas) # Quantile loss per asset & alpha using the VaR you already computed
+  out$QL[t, , ]  <- pinball_matrix(as.matrix(y_real_t), rs$VaR, cfg$alphas) # Quantile loss per asset & alpha using the VaR you already computed
   out$FZL[t, , ] <- fzl_pzc_matrix(y_real_t, rs$VaR, rs$ES, cfg$alphas) # FZL joint loss for (VaR, ES)
-  out$wCRPS[t, ] <- wcrps_gr_matrix(R_t, y_real_t) # Weighted CRPS from predictive draws 'R_t' and realization
+  out$wCRPS[t, ] <- wcrps_gr_matrix(R_t, as.matrix(y_real_t)) # Weighted CRPS from predictive draws 'R_t' and realization
   
   
   # CoVaR
@@ -203,10 +216,10 @@ for (t in seq_len(n_oos)) {
   covar10 <- covar_tail_vec(R_t, r_p, VaRj_10, port_alpha = 0.10, minN = 50)
   covar10b5 <- covar_tail_vec(R_t, r_p, VaRj_10, port_alpha = 0.05, minN = 50)
   
-  out$CoVaR_tail[idx, , "a0.05b0.05"] <- covar5
-  out$CoVaR_tail[idx, , "a0.05b0.1"] <- covar5b10
-  out$CoVaR_tail[idx, , "a0.1b0.1"] <- covar10
-  out$CoVaR_tail[idx, , "a0.1b0.05"] <- covar10b5
+  out$CoVaR_tail[t, , "a0.05b0.05"] <- covar5
+  out$CoVaR_tail[t, , "a0.05b0.1"] <- covar5b10
+  out$CoVaR_tail[t, , "a0.1b0.1"] <- covar10
+  out$CoVaR_tail[t, , "a0.1b0.05"] <- covar10b5
   
   
   print(t)
@@ -214,7 +227,7 @@ for (t in seq_len(n_oos)) {
 }
   
   
-saveRDS(out, file = file.path("empirical_results", "out_naive_8.rds"))
+saveRDS(out, file = file.path("empirical_results", "out_naive_10.rds"))
 
 
 
@@ -290,10 +303,14 @@ covar_hits_by_j <- function(r_p_real, y_real_oos, VaRj_oos, CoVaR_oos, alpha) {
 
 
 
-y_real_oos = readRDS("data/returns_actual.rds")[1:(length(n_days)-t_train),n_assets+1]
+out$port$VaR <- na.omit(out$port$VaR)
+out$CoVaR_tail <- na.omit(out$CoVaR_tail)
+
 
 y_real_oos = readRDS("data/returns_actual.rds")[1:(length(n_days)-t_train),n_assets+1]
 
+
+y_real_oos <- y_real[1:3061,]
 rp_real_oos <- rowMeans(y_real_oos)
 
 
@@ -323,7 +340,7 @@ eval_asset_var <- do.call(rbind, lapply(seq_len(d), function(j) {
   do.call(rbind, lapply(alphas_eval, function(a) {
     k <- which.min(abs(cfg$alphas - a))
     qj <- out$risk$VaR[, j, k]
-    hj <- var_hits(y_real_oos[, j], qj)
+    hj <- var_hits(y_real_oos[, j, with=FALSE], qj)
     data.frame(
       asset = tickers[j], alpha = a,
       n = length(hj), hits = sum(hj), rate = mean(hj),
@@ -366,6 +383,63 @@ eval_covar <- do.call(rbind, lapply(alphas_eval, function(a) {
   }))
 }))
 
+
+
+alphas_eval <- c(0.10, 0.05)  # order doesn't matter
+
+# helper to match your dimnames exactly: 0.05 -> "0.05", 0.10 -> "0.1"
+fmt_ab <- function(x) ifelse(abs(x - 0.05) < 1e-12, "0.05", 
+                             ifelse(abs(x - 0.10) < 1e-12, "0.1", as.character(x)))
+
+grid_ab <- expand.grid(alpha_j = alphas_eval,
+                       alpha_port = alphas_eval,
+                       KEEP.OUT.ATTRS = FALSE, stringsAsFactors = FALSE)
+
+# ==== C) CoVaR backtests (per conditioning stock j, α_j ∈ {5%,10%} & portfolio α_p ∈ {5%,10%}) ====
+eval_covar <- do.call(rbind, lapply(seq_len(nrow(grid_ab)), function(i) {
+  a <- grid_ab$alpha_j[i]      # VaR threshold for conditioning asset j
+  b <- grid_ab$alpha_port[i]   # portfolio CoVaR threshold
+  k <- which.min(abs(alphas_eval - a))  # pick matching VaR slice
+  
+  # labels like "a0.05b0.1", "a0.1b0.05", etc.
+  lab <- paste0("a", fmt_ab(a), "b", fmt_ab(b))
+  
+  # n_oos × d
+  VaRj_oos  <- out$risk$VaR[1:3061, , k, drop = FALSE][, , 1]
+  CoVaR_oos <- out$CoVaR_tail[1:3061, , lab]  # n_oos × d
+  
+  # hits when r_p ≤ CoVaR(j; a,b) conditional on asset j being in VaR event at level a
+  cond_hits <- covar_hits_by_j(rp_real_oos, as.matrix(y_real_oos), VaRj_oos, CoVaR_oos, alpha = a)
+  
+  do.call(rbind, lapply(seq_len(d), function(j) {
+    hj <- cond_hits$hits[[j]]
+    if (length(hj) == 0) {
+      data.frame(
+        asset      = tickers[j],
+        alpha_j    = a,
+        alpha_port = b,
+        T_event    = 0,
+        rate       = NA_real_,
+        kupiec_p   = NA_real_,
+        ind_p      = NA_real_,
+        cc_p       = NA_real_,
+        row.names  = NULL
+      )
+    } else {
+      data.frame(
+        asset      = tickers[j],
+        alpha_j    = a,
+        alpha_port = b,
+        T_event    = length(hj),
+        rate       = mean(hj),
+        kupiec_p   = kupiec_test(hj, b)$pval,                 # test vs portfolio level b
+        ind_p      = christoffersen_ind_test(hj)$pval,
+        cc_p       = christoffersen_cc_test(hj, b)$pval,      # cc vs portfolio level b
+        row.names  = NULL
+      )
+    }
+  }))
+}))
 
 
 

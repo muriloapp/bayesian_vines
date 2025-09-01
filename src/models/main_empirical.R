@@ -2,16 +2,16 @@
 
 smc_full <- function(data, cfg) {
   
+  M <- cfg$M; K <- cfg$K; N <- nrow(U); d <- cfg$d; n_oos <- N - cfg$W_predict
+  tickers    <- colnames(U); A <- length(cfg$alphas); t_train <- cfg$W_predict
+  
   U      <- data$U
-  mu_fc  <- data$mu_fc
-  sig_fc <- data$sig_fc
-  df_fc     <- data$df_fc 
-  shape_fc     <- data$shape_fc 
+  mu_fc  <- data$mu_fc[(.N - n_oos + 1):.N]
+  sig_fc <- data$sig_fc[(.N - n_oos + 1):.N]
+  df_fc     <- data$df_fc[(.N - n_oos + 1):.N]
+  shape_fc     <- data$shape_fc[(.N - n_oos + 1):.N]
+  y_real <- data$y_real[(.N - n_oos + 1):.N]
   
-  y_real <- data$y_real
-  
-  
-  t_train <- cfg$W_predict
   skeleton <- make_skeleton_CVM(U[1:t_train, ], trunc_tree = cfg$trunc_tree)
   cfg <- add_first_tree_map(cfg, skeleton)
   
@@ -51,8 +51,7 @@ smc_full <- function(data, cfg) {
   cl <- make_cluster(cfg$nc, cfg$seed, exports)
   parallel::clusterEvalQ(cl, { library(rvinecopulib); library(FRAPO) })
   
-  M <- cfg$M; K <- cfg$K; N <- nrow(U); d <- cfg$d; n_oos <- N - cfg$W_predict
-  tickers    <- colnames(U); A <- length(cfg$alphas)
+  
 
   out <- list(
     log_pred    = numeric(n_oos),
