@@ -6,7 +6,7 @@ source(here("src/R", "config.R"))
 #### VAR FORECASTING
 n_assets <- 1:3
 
-out <- readRDS("C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/empirical_results/standard_20250830_025730.rds")
+out <- readRDS("C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/empirical_results/standard_tip.rds")
 
 data <- list(
   U      = readRDS("data/PIT.rds")[,n_assets],
@@ -16,7 +16,12 @@ data <- list(
   shape_fc = readRDS("data/shape_fc.rds")[,n_assets+1]#[,-1]
 )
 
-
+for (i in 1:5000){
+vals <- out$fam_hist[,i , 3]
+prop <- prop.table(table(vals))
+print(prop)
+print(i)
+}
 
 # Hits for VaR (unconditional): y <= q  (vectors of same length)
 var_hits <- function(y, q) as.numeric(y <= q)
@@ -79,7 +84,7 @@ covar_hits_by_j <- function(r_p_real, y_real_oos, VaRj_oos, CoVaR_oos, alpha) {
   list(hits = hits_list, n = n_list)
 }
 
-
+out <- append(out, cfg)
 
 
 y_real_oos = readRDS("data/returns_actual.rds")[,n_assets+1, with=FALSE]
@@ -223,7 +228,7 @@ eval_covar <- do.call(rbind, lapply(seq_len(nrow(grid_ab)), function(i) {
 
 
 a = 0.1
-j = 2
+j = 5
 
 k <- which.min(abs(alphas_eval - a))
 qj <- out$risk$VaR[, j, k]
@@ -233,7 +238,7 @@ VaRj_oos   <- out$risk$VaR[, , k, drop = FALSE][, , 1]   # n_oos×d
 #lab <- if (a == 0.05) "a0.05" else "a0.10"
 lab = "a0.1b0.1"
 CoVaR_oos  <- out$CoVaR_tail[, , lab]                    # n_oos×d
-cond_hits  <- covar_hits_by_j(rp_real_oos, y_real_oos, VaRj_oos, CoVaR_oos, alpha = a)
+cond_hits  <- covar_hits_by_j(rp_real_oos, as.matrix(y_real_oos), VaRj_oos, CoVaR_oos, alpha = a)
 co_hj <- cond_hits$hits[[j]]
 
 
@@ -251,8 +256,8 @@ df$co_hj <- NA              # create empty column
 
 df$co_hj[df$hj == 1] <- co_hj
 
-#df <- df[Date >= as.Date("2010-01-01")]
-#df <- df[Date <= as.Date("2020-01-01")]
+df <- df[Date >= as.Date("2006-01-01")]
+#df <- df[Date <= as.Date("2010-01-01")]
 
 
 ## indices where co_hj is observed (0/1)
