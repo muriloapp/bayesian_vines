@@ -2,10 +2,11 @@
 
 smc_full <- function(data, cfg) {
   
+  U      <- data$U
   M <- cfg$M; K <- cfg$K; N <- nrow(U); d <- cfg$d; n_oos <- N - cfg$W_predict
   tickers    <- colnames(U); A <- length(cfg$alphas); t_train <- cfg$W_predict
   
-  U      <- data$U
+  
   mu_fc  <- data$mu_fc[(.N - n_oos + 1):.N]
   sig_fc <- data$sig_fc[(.N - n_oos + 1):.N]
   df_fc     <- data$df_fc[(.N - n_oos + 1):.N]

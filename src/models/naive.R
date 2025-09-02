@@ -1,6 +1,7 @@
 library(rvinecopulib)
 library(VineCopula)
 library(here)
+library(data.table)
 
 source(here("src/R", "utils.R"))
 source(here("src/R", "metrics.R"))
@@ -62,6 +63,25 @@ extend_with_gaussian <- function(vinecop_t1, structure_full) {
   obj
 }
 
+extend_with_t <- function(vinecop_t1, structure_full) {
+  # get dimension from structure (or from T1 length + 1)
+  d <- dim(structure_full)[1]
+  
+  obj <- vinecop_t1                       # keep class 'vinecop'
+  obj$structure <- structure_full         # ensure full structure set
+  
+  # ensure 'pair_copulas' has d-1 trees; keep Tree 1 as-is
+  pcs <- obj$pair_copulas
+  pcs <- c(pcs, vector("list", (d - 1) - length(pcs)))  # pad if needed
+  
+  # fill Trees 2..(d-1) with Gaussian placeholders
+  for (t in 2:(d - 1)) {
+    pcs[[t]] <- replicate(d - t, bicop_dist("t", parameters = c(0,5)), simplify = FALSE)
+  }
+  obj$pair_copulas <- pcs
+  obj
+}
+
 
 
 
@@ -72,35 +92,35 @@ extend_with_gaussian <- function(vinecop_t1, structure_full) {
 
 
 n_assets <- 1:3
-n_days <- 1:3000
-
-# data <- list(
-#   U      = readRDS("data/PIT.rds")[1:length(n_days),n_assets, with=FALSE],
-#   mu_fc  = readRDS("data/returns_mean_forecast.rds")[n_days,n_assets+1, with=FALSE],# [,-1],  # drop date col
-#   sig_fc = readRDS("data/returns_vol_forecast.rds")[n_days,n_assets+1, with=FALSE],  #[,-1],
-#   df_fc = readRDS("data/df_fc.rds")[n_days,n_assets+1, with=FALSE],#[,-1]
-#   shape_fc = readRDS("data/shape_fc.rds")[n_days,n_assets+1, with=FALSE]#[,-1]
-# )
-# y_real = readRDS("data/returns_actual.rds")[n_days,n_assets+1, with=FALSE]
-
+n_days <- 1:2000
 
 data <- list(
-  U      = readRDS("data/PIT.rds")[,n_assets],
-  mu_fc  = readRDS("data/returns_mean_forecast.rds")[,n_assets+1, with=FALSE],# [,-1],  # drop date col
-  sig_fc = readRDS("data/returns_vol_forecast.rds")[,n_assets+1, with=FALSE],  #[,-1],
-  df_fc = readRDS("data/df_fc.rds")[,n_assets+1, with=FALSE],#[,-1]
-  shape_fc = readRDS("data/shape_fc.rds")[,n_assets+1, with=FALSE]#[,-1]
+  U      = readRDS("data/PIT.rds")[1:length(n_days),n_assets],
+  mu_fc  = readRDS("data/returns_mean_forecast.rds")[n_days,n_assets+1, with=FALSE],# [,-1],  # drop date col
+  sig_fc = readRDS("data/returns_vol_forecast.rds")[n_days,n_assets+1, with=FALSE],  #[,-1],
+  df_fc = readRDS("data/df_fc.rds")[n_days,n_assets+1, with=FALSE],#[,-1]
+  shape_fc = readRDS("data/shape_fc.rds")[n_days,n_assets+1, with=FALSE]#[,-1]
 )
-y_real = readRDS("data/returns_actual.rds")[,n_assets+1, with=FALSE]
+y_real = readRDS("data/returns_actual.rds")[n_days,n_assets+1, with=FALSE]
 
 
+# data <- list(
+#   U      = readRDS("data/PIT.rds")[,n_assets],
+#   mu_fc  = readRDS("data/returns_mean_forecast.rds")[,n_assets+1, with=FALSE],# [,-1],  # drop date col
+#   sig_fc = readRDS("data/returns_vol_forecast.rds")[,n_assets+1, with=FALSE],  #[,-1],
+#   df_fc = readRDS("data/df_fc.rds")[,n_assets+1, with=FALSE],#[,-1]
+#   shape_fc = readRDS("data/shape_fc.rds")[,n_assets+1, with=FALSE]#[,-1]
+# )
+# y_real = readRDS("data/returns_actual.rds")[,n_assets+1, with=FALSE]
+
+U         <- data$U
 cfg <- build_cfg(d = ncol(U))
 N <- nrow(U); K <- cfg$K; tickers <- colnames(U); A <- length(cfg$alphas)
 n_oos <- N - cfg$W_predict; d <- cfg$d; t_train <- cfg$W_predict
 
 
 
-U         <- data$U
+
 mu_fc     <- data$mu_fc[(.N - n_oos + 1):.N]
 sig_fc    <- data$sig_fc[(.N - n_oos + 1):.N]
 df_fc     <- data$df_fc[(.N - n_oos + 1):.N]
@@ -146,13 +166,14 @@ for (t in seq_len(n_oos)) {
   u_train <- U[(test_idx - t_train):(test_idx - 1), , drop = FALSE]
   y_real_t <- y_real[t,]
   
-  if (t == 1)  skel <- make_skeleton_CVM(u_train)
+  if (t == 1)  skel <- make_skeleton_CVM(u_train, trunc_tree = 2)
   fit_t1 <- vinecop(u_train,
                    family_set = c("bb1", "bb7", "t"),
                    structure   = skel$structure,
                    allow_rotations = TRUE,
                    trunc_lvl       = 1)
   
+  #template_vinecop  <- extend_with_gaussian(fit_t1, skel$structure)
   template_vinecop  <- extend_with_gaussian(fit_t1, skel$structure)
   
   model <- vinecop(
@@ -226,14 +247,14 @@ for (t in seq_len(n_oos)) {
   
 }
   
+out$cfg <- cfg
   
-saveRDS(out, file = file.path("empirical_results", "out_naive_10.rds"))
+saveRDS(out, file = file.path("empirical_results", "test_naive_10000.rds"))
 
 
 
 
 ###########################################################################################
-
 
 
 
@@ -301,16 +322,16 @@ covar_hits_by_j <- function(r_p_real, y_real_oos, VaRj_oos, CoVaR_oos, alpha) {
 
 
 
-
+cfg = out$cfg
 
 out$port$VaR <- na.omit(out$port$VaR)
 out$CoVaR_tail <- na.omit(out$CoVaR_tail)
 
 
-y_real_oos = readRDS("data/returns_actual.rds")[1:(length(n_days)-t_train),n_assets+1]
+y_real_oos = readRDS("data/returns_actual.rds")[,n_assets+1, with=FALSE]
 
 
-y_real_oos <- y_real[1:3061,]
+y_real_oos <- y_real
 rp_real_oos <- rowMeans(y_real_oos)
 
 
@@ -405,8 +426,8 @@ eval_covar <- do.call(rbind, lapply(seq_len(nrow(grid_ab)), function(i) {
   lab <- paste0("a", fmt_ab(a), "b", fmt_ab(b))
   
   # n_oos × d
-  VaRj_oos  <- out$risk$VaR[1:3061, , k, drop = FALSE][, , 1]
-  CoVaR_oos <- out$CoVaR_tail[1:3061, , lab]  # n_oos × d
+  VaRj_oos  <- out$risk$VaR[, , k, drop = FALSE][, , 1]
+  CoVaR_oos <- out$CoVaR_tail[, , lab]  # n_oos × d
   
   # hits when r_p ≤ CoVaR(j; a,b) conditional on asset j being in VaR event at level a
   cond_hits <- covar_hits_by_j(rp_real_oos, as.matrix(y_real_oos), VaRj_oos, CoVaR_oos, alpha = a)
@@ -521,7 +542,7 @@ legend("topright", legend = c("Actual", "VaR"),
 
 
 
-out <- readRDS("C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/empirical_results/out_naive_8.rds")
+out <- readRDS("C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/empirical_results/out_naive_2_extend_t.rds")
 
 
 order(out$log_pred)
