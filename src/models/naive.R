@@ -249,7 +249,7 @@ for (t in seq_len(n_oos)) {
   
 out$cfg <- cfg
   
-saveRDS(out, file = file.path("empirical_results", "test_naive_10000.rds"))
+saveRDS(out, file = file.path("empirical_results", "test.rds"))
 
 
 

@@ -21,7 +21,7 @@ build_cfg <- function(d,
                       K              = NULL,                 # <- ignored if truncation given
                       families       = c("bb1","bb1r180","bb7","bb7r180","t"),
                       families_first = c("bb1","bb1r180","bb7","bb7r180","t"),
-                      families_deep  = c("bb1","bb1r180","bb7","bb7r180","t"),
+                      families_deep  = c("t"),
                       adapt_step_sd  = TRUE,
                       trunc_tree     = 2L) {
   

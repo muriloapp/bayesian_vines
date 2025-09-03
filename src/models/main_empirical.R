@@ -6,12 +6,12 @@ smc_full <- function(data, cfg) {
   M <- cfg$M; K <- cfg$K; N <- nrow(U); d <- cfg$d; n_oos <- N - cfg$W_predict
   tickers    <- colnames(U); A <- length(cfg$alphas); t_train <- cfg$W_predict
   
+  mu_fc   <- data$mu_fc[(nrow(data$mu_fc)   - n_oos + 1):nrow(data$mu_fc), , drop = FALSE]
+  sig_fc  <- data$sig_fc[(nrow(data$sig_fc) - n_oos + 1):nrow(data$sig_fc), , drop = FALSE]
+  df_fc   <- data$df_fc[(nrow(data$df_fc)   - n_oos + 1):nrow(data$df_fc), , drop = FALSE]
+  shape_fc<- data$shape_fc[(nrow(data$shape_fc) - n_oos + 1):nrow(data$shape_fc), , drop = FALSE]
+  y_real  <- data$y_real[(nrow(data$y_real) - n_oos + 1):nrow(data$y_real), , drop = FALSE]
   
-  mu_fc  <- data$mu_fc[(.N - n_oos + 1):.N]
-  sig_fc <- data$sig_fc[(.N - n_oos + 1):.N]
-  df_fc     <- data$df_fc[(.N - n_oos + 1):.N]
-  shape_fc     <- data$shape_fc[(.N - n_oos + 1):.N]
-  y_real <- data$y_real[(.N - n_oos + 1):.N]
   
   skeleton <- make_skeleton_CVM(U[1:t_train, ], trunc_tree = cfg$trunc_tree)
   cfg <- add_first_tree_map(cfg, skeleton)
@@ -30,12 +30,12 @@ smc_full <- function(data, cfg) {
     "t_par2tail","t_tail2rho","t_log_jacobian","sanitize_t",
     # core SMC kernels 
     "mh_step", "mh_step_in_tree",
-    "update_weights", "ESS", "systematic_resample", "resample_move",
+    "update_weights", "ESS", "systematic_resample",
     # log-target & proposals 
     "log_prior", "bb1_tail2par", "bb1_par2tail", "bb1_log_jacobian",
     "rtnorm_vec", "log_prior_edge",
     # likelihood helpers 
-    "bicop_dist", "vinecop_dist", "dvinecop", "fast_vine_from_particle",
+    "bicop_dist", "vinecop_dist", "dvinecop",
     "rvinecop","bicop",
     # shared data objects 
     "skeleton", "cfg",
@@ -47,11 +47,33 @@ smc_full <- function(data, cfg) {
     "tail_weights", "safe_logdens",
     "logit","ilogit","dlogitnorm",
     "emp_tails_FRAPO","seed_family_from_emp",
-    "log_prior_edge_strong",".tip_means_for_edge_t","log_prior_with_tip_time","log_prior_with_tip_cached"
+    "log_prior_edge_strong",".tip_means_for_edge_t","log_prior_with_tip_time","log_prior_with_tip_cached",
+    ".safe_logdens1","fast_vine_from_row",".build_vine_from_vectors",
+    ".as_particle_vectors","K_of_skeleton","safe_sample"
   )
   cl <- make_cluster(cfg$nc, cfg$seed, exports)
-  parallel::clusterEvalQ(cl, { library(rvinecopulib); library(FRAPO) })
+  parallel::clusterEvalQ(cl, {
+    ## 1) Pin native threads on each worker (prevents oversubscription)
+    Sys.setenv(
+      OMP_NUM_THREADS        = "1",
+      MKL_NUM_THREADS        = "1",
+      OPENBLAS_NUM_THREADS   = "1",
+      VECLIB_MAXIMUM_THREADS = "1",
+      GOTO_NUM_THREADS       = "1"
+    )
+    if (requireNamespace("RhpcBLASctl", quietly = TRUE)) {
+      RhpcBLASctl::blas_set_num_threads(1)
+      RhpcBLASctl::omp_set_num_threads(1)
+    }
+    
+    ## 2) Load your libs
+    library(rvinecopulib)
+    library(FRAPO)
+    
+    NULL
+  })
   
+  #register_worker_helpers(cl)
   
 
   out <- list(
@@ -89,42 +111,46 @@ smc_full <- function(data, cfg) {
   
   # init particles
   U_init <- U[1:(cfg$W-1), , drop = FALSE]
-  particles <- replicate(M, new_particle(cfg, U_init = U_init), simplify = FALSE)
+  particles <- new_particles_mats(cfg, U_init)
   out$ancestorIndices[,1] <- seq_len(M)
   
 
 for (t in 253:N) {
 
-    #if (t==10){break}
     u_t_1 <- U[t-1,,drop=FALSE]
     u_t <- U[t,,drop=FALSE]
-    
-    
-    # weight-update
-    log_inc <- compute_log_incr(particles, u_t_1, skeleton, cfg)
+
+    log_inc <- compute_log_incr(particles, u_t_1, skeleton)
     particles <- update_weights(particles, log_inc)
-    w <- vapply(particles, `[[`, numeric(1), "w")
+    w <- particles$w
     
-    # prediction 
     if (t > cfg$W_predict) {
-      # log predictive density, predictive draws, risk metrics
       idx <- t - cfg$W_predict
       
       y_real_t <- y_real[idx,]
       out$log_pred[idx] <- compute_predictive_metrics(u_t, particles, skeleton, w/sum(w), cfg)$log_pred_density
       
-      #draws <- smc_predictive_sample(particles, skeleton, w/sum(w), L = 10000, cl = cl)
-      #draws <- smc_predictive_sample_fast(particles, skeleton, w/sum(w), L = 10000, cl = cl, cfg$nc)
-    
+      #system.time(
       draws <- smc_predictive_sample_fast2_scoped(particles, skeleton, w, L = 20000, cl = cl)
+      #)
+      # system.time(
+      #   R_draws <- smc_predictive_sample_fast2_grouped_epoch(
+      #     w   = particles$w,
+      #     L   = 20000,         # or whatever you need
+      #     cl  = cl,
+      #     round_digits = 6,    # more aggressive (e.g., 5) groups more; try 5–6
+      #     top_k = NULL,        # optional
+      #     min_count = 0,       # optional
+      #     nc = 1               # keep 1 unless W*nc <= physical cores
+      #   )
+      # )
+      #draws2 <- smc_predictive_sample_fast2_scoped2(particles, skeleton, w, L = 20000, cl = cl)
       
 
-      
       Z_pred <- st_inv_fast(draws, shape_fc[idx, ], df_fc[idx, ])  
       R_t  <- sweep(Z_pred, 2, as.numeric(sig_fc[idx, ]), `*`) + as.numeric(mu_fc[idx, ])          # L × d
-      
+  
       rs <- risk_stats_full(R_t, cfg$alphas)
-
       out$risk$dates[idx]   <- t
       out$risk$VaR [idx, , ] <- rs$VaR          # d × A
       out$risk$ES  [idx, , ] <- rs$ES
@@ -132,7 +158,6 @@ for (t in 253:N) {
       # EW-portfolio metrics 
       r_p  <- rowMeans(R_t)                                           
       ps   <- port_stats(r_p, cfg$alphas)    
-      
       out$port$dates[idx]   <- t                                       
       out$port$VaR [idx, ]  <- ps$VaR
       out$port$ES  [idx, ]  <- ps$ES 
@@ -142,9 +167,9 @@ for (t in 253:N) {
       out$port$FZL[idx, ]  <- vapply(seq_along(cfg$alphas), function(k) fzl_pzc_scalar(r_p_real, ps$VaR[k], ps$ES[k], cfg$alphas[k]), numeric(1))
       out$port$wCRPS[idx]  <- wcrps_gr_scalar(r_p, r_p_real)
       
-      out$QL[idx, , ]  <- pinball_matrix(as.matrix(y_real_t[1, ]), rs$VaR, cfg$alphas) # Quantile loss per asset & alpha using the VaR you already computed
-      out$FZL[idx, , ] <- fzl_pzc_matrix(as.matrix(y_real_t[1, ]), rs$VaR, rs$ES, cfg$alphas) # FZL joint loss for (VaR, ES)
-      out$wCRPS[idx, ] <- wcrps_gr_matrix(R_t, as.matrix(y_real_t[1, ])) # Weighted CRPS from predictive draws 'R_t' and realization
+      out$QL[idx, , ]  <- pinball_matrix(t(as.matrix(y_real_t)), rs$VaR, cfg$alphas) # Quantile loss per asset & alpha using the VaR you already computed
+      out$FZL[idx, , ] <- fzl_pzc_matrix(t(as.matrix(y_real_t)), rs$VaR, rs$ES, cfg$alphas) # FZL joint loss for (VaR, ES)
+      out$wCRPS[idx, ] <- wcrps_gr_matrix(R_t, t(as.matrix(y_real_t))) # Weighted CRPS from predictive draws 'R_t' and realization
       
       
       # CoVaR
@@ -167,7 +192,9 @@ for (t in 253:N) {
     }
     
     # diagnostics
+
     dg <- diagnostic_report(t, 0, U, particles, w, cfg)
+    
     out$diag_log[t, `:=`(t        = t,
                          ESS      = dg$ESS,
                          unique   = dg$unique,
@@ -178,8 +205,9 @@ for (t in 253:N) {
     if (ESS(w) < cfg$ess_thr * M && t < N) {
       newAncestors <- stratified_resample(w)
       data_up_to_t <- U[max(1, t - cfg$W + 1):(t-1), , drop = FALSE]
+ 
       move_out <- resample_move_old(particles, newAncestors, data_up_to_t, cl,
-                                  cfg$type, cfg, skeleton = skeleton)
+                                    cfg$type, cfg, skeleton = skeleton)
       
       particles <- move_out$particles
       out$mh_acc_pct[t] <- move_out$acc_pct
@@ -191,12 +219,16 @@ for (t in 253:N) {
       step_prev <- t - 1L
       newAncestors    <- if (step_prev < 1L) seq_len(M) else out$ancestorIndices[, step_prev]
     }
+    
+    # after MH/resample at time t:
+    #push_epoch_state(cl, particles, skeleton, epoch_id = t)
     out$ancestorIndices[, t] <- newAncestors
     
     # history arrays
-    out$fam_hist [ , t,] <- t(vapply(particles, `[[`, integer(K),"fam"))
-    out$par1_hist[, t,]  <- t(vapply(particles, `[[`, numeric(K),"th1"))
-    out$par2_hist[, t,]  <- t(vapply(particles, `[[`, numeric(K),"th2"))
+    out$fam_hist [ , t,] <- particles$fam_mat
+    out$par1_hist[, t,]  <- particles$th1_mat
+    out$par2_hist[, t,]  <- particles$th2_mat
+
   }
   
   out$particles_final    <- particles

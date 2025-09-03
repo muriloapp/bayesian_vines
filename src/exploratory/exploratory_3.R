@@ -6,22 +6,10 @@ source(here("src/R", "config.R"))
 #### VAR FORECASTING
 n_assets <- 1:3
 
-out <- readRDS("C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/empirical_results/standard_tip.rds")
+out <- readRDS("C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/empirical_results/test.rds")
 
-data <- list(
-  U      = readRDS("data/PIT.rds")[,n_assets],
-  mu_fc  = readRDS("data/returns_mean_forecast.rds")[,n_assets+1],# [,-1],  # drop date col
-  sig_fc = readRDS("data/returns_vol_forecast.rds")[,n_assets+1],  #[,-1],
-  df_fc = readRDS("data/df_fc.rds")[,n_assets+1],#[,-1]
-  shape_fc = readRDS("data/shape_fc.rds")[,n_assets+1]#[,-1]
-)
+data <- import_data(drop_first_col = TRUE, n_assets = 3)
 
-for (i in 1:5000){
-vals <- out$fam_hist[,i , 3]
-prop <- prop.table(table(vals))
-print(prop)
-print(i)
-}
 
 # Hits for VaR (unconditional): y <= q  (vectors of same length)
 var_hits <- function(y, q) as.numeric(y <= q)
@@ -73,7 +61,7 @@ covar_hits_by_j <- function(r_p_real, y_real_oos, VaRj_oos, CoVaR_oos, alpha) {
   hits_list <- vector("list", d)
   n_list    <- integer(d)
   for (j in seq_len(d)) {
-    mask <- y_real_oos[, j, with=FALSE] <= VaRj_oos[, j]  # days when j is distressed
+    mask <- y_real_oos[, j] <= VaRj_oos[, j]  # days when j is distressed
     n_list[j] <- sum(mask)
     if (n_list[j] > 0) {
       hits_list[[j]] <- as.numeric(r_p_real[mask] <= CoVaR_oos[mask, j])
@@ -84,13 +72,12 @@ covar_hits_by_j <- function(r_p_real, y_real_oos, VaRj_oos, CoVaR_oos, alpha) {
   list(hits = hits_list, n = n_list)
 }
 
-out <- append(out, cfg)
 
 
-y_real_oos = readRDS("data/returns_actual.rds")[,n_assets+1, with=FALSE]
+y_real_oos = data$y_real
 #y_real_oos = readRDS("data/returns_actual.rds")[,1:4, with=FALSE]
 
-y_real_oos <- y_real_oos[(.N - nrow(out$port$VaR) + 1):.N]
+y_real_oos <- y_real_oos[(dim(y_real_oos)[1] - nrow(out$port$VaR) + 1):nrow(y_real_oos),]
 rp_real_oos <- rowMeans(y_real_oos)
 
 
@@ -123,7 +110,7 @@ eval_asset_var <- do.call(rbind, lapply(seq_len(d), function(j) {
   do.call(rbind, lapply(alphas_eval, function(a) {
     k <- which.min(abs(alphas_eval - a))
     qj <- out$risk$VaR[, j, k]
-    hj <- var_hits(y_real_oos[, j, with=FALSE], qj)
+    hj <- var_hits(y_real_oos[, j], qj)
     data.frame(
       asset = tickers[j], alpha = a,
       n = length(hj), hits = sum(hj), rate = mean(hj),

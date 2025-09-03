@@ -105,127 +105,83 @@ log_prior <- function(p, cfg) {
 }
 
 
-# new_particle <- function(cfg) {
-#   K   <- cfg$K
-#   fam <- integer(K); th1 <- numeric(K); th2 <- numeric(K)
-#   
-#   for (k in seq_len(K)) {
-#     tr_k <- cfg$edge_tree[k]
-#     allowed_names <- if (tr_k == 1) cfg$families_first else cfg$families_deep
-#     fam_tbl <- FAM_INFO[FAM_INFO$name %in% allowed_names, ]
-#     #weights <- exp(-cfg$lambda * fam_tbl$npar)
-#     weights <- rep(1/dim(fam_tbl)[1], dim(fam_tbl)[1])
-#     code_k  <- sample(fam_tbl$code, 1, prob = weights)
-#     fam[k]  <- code_k
-#     
-#     if (code_k == FAM_INDEP) {
-#       th1[k] <- 0; th2[k] <- 0
-#       
-#     } else if (code_k == FAM_GAUSS) {
-#       th1[k] <- runif(1, -0.99, 0.99); th2[k] <- 0
-#       
-#     } else if (code_k == FAM_BB1) {
-#       lamU <- rbeta(1, 2, 2); lamL <- rbeta(1, 2, 2)
-#       pars <- sanitize_bb1(bb1_tail2par(lamL, lamU)[1],
-#                            bb1_tail2par(lamL, lamU)[2])
-#       th1[k] <- pars[1]; th2[k] <- pars[2]
-#       
-#     } else if (code_k == FAM_BB1R180) {
-#       # sample in rotated tail space, then map with rotated converter
-#       lamL_rot <- rbeta(1, 2, 2); lamU_rot <- rbeta(1, 2, 2)
-#       pars <- sanitize_bb1(bb1r180_tail2par(lamL_rot, lamU_rot)[1],
-#                            bb1r180_tail2par(lamL_rot, lamU_rot)[2])
-#       th1[k] <- pars[1]; th2[k] <- pars[2]
-#       
-#     } else if (code_k == FAM_BB8R180) {
-#       ## λ_L^rot ~ Beta, map to θ; δ (Frank) is tail-free → draw diffuse
-#       lamLr <- rbeta(1, 2, 2)
-#       pars  <- bb8r180_tail2par(lamLr, delta_free = runif(1, 1.1, 5.0))
-#       pars  <- sanitize_bb8(pars[1], pars[2])
-#       th1[k] <- pars[1]; th2[k] <- pars[2]
-#       
-#     } else if (code_k == FAM_BB7) {
-#       ## (λL, λU) ~ Beta×Beta, map to (θ, δ)
-#       lamL <- rbeta(1, 2, 2); lamU <- rbeta(1, 2, 2)
-#       pars <- bb7_tail2par(lamL, lamU)
-#       pars <- sanitize_bb7(pars[1], pars[2])
-#       th1[k] <- pars[1]; th2[k] <- pars[2]
-#       
-#     } else if (code_k == FAM_BB7R180) {
-#       ## (λL^rot, λU^rot) ~ Beta×Beta, map to (θ, δ) via rotated transform
-#       lamLr <- rbeta(1, 2, 2); lamUr <- rbeta(1, 2, 2)
-#       pars  <- bb7r180_tail2par(lamLr, lamUr)
-#       pars  <- sanitize_bb7(pars[1], pars[2])
-#       th1[k] <- pars[1]; th2[k] <- pars[2]
-#     }
-#   }
-#   
-#   list(fam = fam, th1 = th1, th2 = th2, w = 1 / cfg$M, last_accept = FALSE)
-# }
+safe_sample <- function(x, size, replace = FALSE, prob = NULL) {
+  # same call shape as base::sample
+  if (size != 1L) {
+    # fall back to base for any size != 1
+    return(base::sample(x, size = size, replace = replace, prob = prob))
+  }
+  n <- length(x)
+  if (n == 0L) stop("safe_sample: no candidates to sample from")
+  if (n == 1L) return(x[[1L]])  # short-circuit RNG
+  
+  # sanitize probabilities (accept NULL, wrong length, non-finite, all zeros)
+  p <- prob
+  if (!is.null(p)) {
+    p <- as.numeric(p)
+    if (length(p) != n || any(!is.finite(p))) p <- rep(1, n)
+    p <- pmax(p, 0)
+    s <- sum(p)
+    if (s <= 0) p <- rep(1, n) else p <- p / s
+  }
+  base::sample(x, size = 1L, replace = replace, prob = p)
+}
 
-new_particle <- function(cfg, U_init = NULL) {
+
+
+# returns a single particle as 1×K row matrices (so you can rbind into big mats)
+new_particle_row_mat <- function(cfg, U_init = NULL) {
   K   <- cfg$K
   fam <- integer(K); th1 <- numeric(K); th2 <- numeric(K)
   
   tip_on  <- isTRUE(cfg$use_tail_informed_prior) && !is.null(U_init)
-  if (tip_on) {
-    if (is.null(cfg$edge_pair))
-      stop("TIP init requested but cfg$edge_pair is NULL. Provide Tree-1 pairs aligned with edge order.")
-  }
+  if (tip_on && is.null(cfg$edge_pair))
+    stop("TIP init requested but cfg$edge_pair is NULL. Provide Tree-1 pairs aligned with edge order.")
   
   for (k in seq_len(K)) {
     tr_k <- cfg$edge_tree[k]
     allowed_names <- if (tr_k == 1L) cfg$families_first else cfg$families_deep
     fam_tbl <- FAM_INFO[FAM_INFO$name %in% allowed_names, , drop = FALSE]
     
-    ## --------- FAMILY SELECTION (TIP-aware on Tree 1) -----------------
     if (tip_on && tr_k == 1L) {
-      # local index within Tree 1 and its (i,j) pair
+      # ---- TIP-aware family selection on Tree 1 ----
       local_idx <- sum(cfg$edge_tree[seq_len(k)] == 1L)
       pair      <- cfg$edge_pair[local_idx, ]
       uv        <- U_init[, pair, drop = FALSE]
       
-      # empirical tails from FRAPO (uses only U_init)
       emps <- emp_tails_FRAPO(uv, method = cfg$tip_method, k = cfg$tip_k)
       mL   <- as.numeric(emps["L"]);  mU <- as.numeric(emps["U"])
-      tail_strength <- max(mL, mU)             # ∈ (0,1)
+      tail_strength <- max(mL, mU)
       
-      # weight tail families up with tail_strength; keep others possible
       tail_codes <- c(FAM_BB1, FAM_BB1R180, FAM_BB7, FAM_BB7R180, FAM_BB8R180, FAM_T)
       base_w     <- rep(1.0, nrow(fam_tbl))
       is_tailfam <- fam_tbl$code %in% tail_codes
-      # e.g., tails strong -> upweight tail fams by up to 4x; downweight Gauss/Indep
       w          <- base_w * ifelse(is_tailfam, 1 + 3*tail_strength, pmax(1 - 0.9*tail_strength, 0.1))
       w          <- w / sum(w)
       
       code_k  <- sample(fam_tbl$code, 1L, prob = w)
       fam[k]  <- code_k
       
-      ## --------- PARAMETER SEEDING from empirical tails ----------------
       if (code_k == FAM_INDEP) {
         th1[k] <- 0; th2[k] <- 0
-        
       } else if (code_k == FAM_GAUSS) {
         th1[k] <- runif(1, -0.99, 0.99); th2[k] <- 0
-        
       } else {
-        # strong seeding for tail families (logit-normal around mL/mU)
         th_new <- seed_family_from_emp(
           new_code     = code_k,
           mL           = mL,
           mU           = mU,
-          cur_delta    = runif(1, 1.1, 5.0),   # starting delta if needed (BB8r180)
+          cur_delta    = runif(1, 1.1, 5.0),
           step_sd      = cfg$step_sd,
-          tip_sd_logit = cfg$tip_sd_logit      # small sd -> strong prior around empirical tails
+          tip_sd_logit = cfg$tip_sd_logit
         )
         th1[k] <- th_new[1]; th2[k] <- th_new[2]
       }
       
     } else {
-      ## --------- ORIGINAL (non-TIP or deeper trees) -------------------
-      # Equal weights across allowed families (your current behavior)
+      # ---- original selection / seeding ----
       weights <- rep(1 / nrow(fam_tbl), nrow(fam_tbl))
-      code_k  <- sample(fam_tbl$code, 1L, prob = weights)
+      code_k  <- safe_sample(fam_tbl$code, 1L, prob = weights)
       fam[k]  <- code_k
       
       if (code_k == FAM_INDEP) {
@@ -263,10 +219,10 @@ new_particle <- function(cfg, U_init = NULL) {
         pars  <- bb7r180_tail2par(lamLr, lamUr)
         pars  <- sanitize_bb7(pars[1], pars[2])
         th1[k] <- pars[1]; th2[k] <- pars[2]
-      
+        
       } else if (code_k == FAM_T) {
-        nu <- exp(runif(1, log(2), log(30)))# log-uniform
-        lam <- rbeta(1, 2, 2)                          # diffuse tail
+        nu  <- exp(runif(1, log(2), log(30)))   # log-uniform
+        lam <- rbeta(1, 2, 2)
         rho <- t_tail2rho(lam, nu)
         pr  <- sanitize_t(rho, nu)
         th1[k] <- pr[1]; th2[k] <- pr[2]
@@ -274,33 +230,146 @@ new_particle <- function(cfg, U_init = NULL) {
     }
   }
   
-  list(fam = fam, th1 = th1, th2 = th2, w = 1 / cfg$M, last_accept = FALSE)
+  list(
+    fam = matrix(fam, nrow = 1L),
+    th1 = matrix(th1, nrow = 1L),
+    th2 = matrix(th2, nrow = 1L),
+    w   = 1 / cfg$M,
+    last_accept = FALSE
+  )
 }
 
+# Build M particles and stack row-wise: fast to serialize, easy to slice by row
+new_particles_mats <- function(cfg, U_init = NULL) {
+  stopifnot(is.list(cfg), length(cfg$M) == 1L, cfg$M >= 1L, length(cfg$K) == 1L, cfg$K >= 1L)
+  
+  M <- as.integer(cfg$M)
+  
+  rows <- vector("list", M)
+  for (m in seq_len(M)) {
+    rows[[m]] <- new_particle_row_mat(cfg, U_init)  # must return 1×K matrices
+  }
+  
+  fam_mat <- do.call(rbind, lapply(rows, `[[`, "fam"))
+  th1_mat <- do.call(rbind, lapply(rows, `[[`, "th1"))
+  th2_mat <- do.call(rbind, lapply(rows, `[[`, "th2"))
+  
+  storage.mode(fam_mat) <- "integer"  # <-- fix: mutate in place
+  
+  w_vec   <- rep(1 / M, M)
+  acc_vec <- rep(FALSE, M)
+  
+  list(
+    fam_mat     = fam_mat,
+    th1_mat     = th1_mat,
+    th2_mat     = th2_mat,
+    w           = w_vec,
+    last_accept = acc_vec
+  )
+}
 
+# 
+# 
+# fast_vine_from_particle <- function(p, skel) {
+#   pcs <- rlang::duplicate(skel$pair_copulas, shallow = TRUE)
+#   idx <- 1L
+#   
+#   for (tr in seq_along(pcs)) {
+#     for (ed in seq_along(pcs[[tr]])) {
+#       code <- p$fam[idx]
+#       spec <- fam_spec(code)
+#       
+#       if (code == FAM_INDEP) {
+#         pcs[[tr]][[ed]] <- T_INDEP
+#         
+#       } else if (code == FAM_GAUSS) {
+#         bc <- rlang::duplicate(T_GAUSS, shallow = TRUE)
+#         bc$parameters[1] <- p$th1[idx]
+#         pcs[[tr]][[ed]] <- bc
+#         
+#       } else if (code %in% c(FAM_BB1, FAM_BB1R180)) {
+#         pars <- sanitize_bb1(p$th1[idx], p$th2[idx])
+#         p$th1[idx] <- pars[1]; p$th2[idx] <- pars[2]
+#         
+#         tmpl <- if (code == FAM_BB1) T_BB1 else T_BB1R180
+#         bc <- rlang::duplicate(tmpl, shallow = TRUE)
+#         bc$parameters[1:2] <- pars
+#         pcs[[tr]][[ed]] <- bc
+#         
+#       } else if (code == FAM_BB8R180) {
+#         bc <- rlang::duplicate(T_BB8R180, shallow = TRUE)
+#         bc$parameters[1:2] <- c(p$th1[idx], p$th2[idx])
+#         pcs[[tr]][[ed]] <- bc
+#         
+#       } else if (code == FAM_BB7) {                       # NEW
+#         bc <- rlang::duplicate(T_BB7, shallow = TRUE)
+#         bc$parameters[1:2] <- c(p$th1[idx], p$th2[idx])
+#         pcs[[tr]][[ed]] <- bc
+#         
+#       } else if (code == FAM_BB7R180) {                   # NEW
+#         bc <- rlang::duplicate(T_BB7R180, shallow = TRUE)
+#         bc$parameters[1:2] <- c(p$th1[idx], p$th2[idx])
+#         pcs[[tr]][[ed]] <- bc
+#         
+#       } else if (code == FAM_T) {
+#         bc <- rlang::duplicate(T_T, shallow = TRUE)
+#         bc$parameters[1:2] <- c(p$th1[idx], p$th2[idx])  # rho, nu
+#         pcs[[tr]][[ed]] <- bc
+#         
+#       } else {
+#         stop("fast_vine_from_particle: unsupported family code: ", code)
+#       }
+#       
+#       idx <- idx + 1L
+#     }
+#   }
+#   
+#   vinecop_dist(pcs, skel$structure)
+# }
 
+## ---- 0) Small helper: count edges in skeleton (K must match) ----
+K_of_skeleton <- function(skel) {
+  # number of pair-copulas across all trees
+  sum(vapply(skel$pair_copulas, length, integer(1)))
+}
 
-fast_vine_from_particle <- function(p, skel) {
+## ---- 1) Coerce any particle shape into simple vectors ----
+.as_particle_vectors <- function(p) {
+  # Supports:
+  #   - old: p$fam, p$th1, p$th2 as atomic vectors (length K)
+  #   - new: p$fam, p$th1, p$th2 as 1×K matrices (row)
+  fam <- if (is.matrix(p$fam)) as.integer(p$fam[1, ]) else as.integer(p$fam)
+  th1 <- if (is.matrix(p$th1)) as.numeric(p$th1[1, ]) else as.numeric(p$th1)
+  th2 <- if (is.matrix(p$th2)) as.numeric(p$th2[1, ]) else as.numeric(p$th2)
+  list(fam = fam, th1 = th1, th2 = th2)
+}
+
+## ---- 2) Core builder: from fam/th1/th2 vectors to a vine ----
+.build_vine_from_vectors <- function(fam, th1, th2, skel) {
+  K <- K_of_skeleton(skel)
+  if (length(fam) != K || length(th1) != K || length(th2) != K) {
+    stop(sprintf("fast vine build: K mismatch (fam/th1/th2 lengths %d/%d/%d vs K=%d)",
+                 length(fam), length(th1), length(th2), K))
+  }
+  
   pcs <- rlang::duplicate(skel$pair_copulas, shallow = TRUE)
   idx <- 1L
   
   for (tr in seq_along(pcs)) {
     for (ed in seq_along(pcs[[tr]])) {
-      code <- p$fam[idx]
-      spec <- fam_spec(code)
+      
+      code <- fam[idx]
       
       if (code == FAM_INDEP) {
         pcs[[tr]][[ed]] <- T_INDEP
         
       } else if (code == FAM_GAUSS) {
         bc <- rlang::duplicate(T_GAUSS, shallow = TRUE)
-        bc$parameters[1] <- p$th1[idx]
+        bc$parameters[1] <- th1[idx]
         pcs[[tr]][[ed]] <- bc
         
       } else if (code %in% c(FAM_BB1, FAM_BB1R180)) {
-        pars <- sanitize_bb1(p$th1[idx], p$th2[idx])
-        p$th1[idx] <- pars[1]; p$th2[idx] <- pars[2]
-        
+        pars <- sanitize_bb1(th1[idx], th2[idx])
         tmpl <- if (code == FAM_BB1) T_BB1 else T_BB1R180
         bc <- rlang::duplicate(tmpl, shallow = TRUE)
         bc$parameters[1:2] <- pars
@@ -308,22 +377,22 @@ fast_vine_from_particle <- function(p, skel) {
         
       } else if (code == FAM_BB8R180) {
         bc <- rlang::duplicate(T_BB8R180, shallow = TRUE)
-        bc$parameters[1:2] <- c(p$th1[idx], p$th2[idx])
+        bc$parameters[1:2] <- c(th1[idx], th2[idx])
         pcs[[tr]][[ed]] <- bc
         
-      } else if (code == FAM_BB7) {                       # NEW
+      } else if (code == FAM_BB7) {
         bc <- rlang::duplicate(T_BB7, shallow = TRUE)
-        bc$parameters[1:2] <- c(p$th1[idx], p$th2[idx])
+        bc$parameters[1:2] <- c(th1[idx], th2[idx])
         pcs[[tr]][[ed]] <- bc
         
-      } else if (code == FAM_BB7R180) {                   # NEW
+      } else if (code == FAM_BB7R180) {
         bc <- rlang::duplicate(T_BB7R180, shallow = TRUE)
-        bc$parameters[1:2] <- c(p$th1[idx], p$th2[idx])
+        bc$parameters[1:2] <- c(th1[idx], th2[idx])
         pcs[[tr]][[ed]] <- bc
         
       } else if (code == FAM_T) {
         bc <- rlang::duplicate(T_T, shallow = TRUE)
-        bc$parameters[1:2] <- c(p$th1[idx], p$th2[idx])  # rho, nu
+        bc$parameters[1:2] <- c(th1[idx], th2[idx])  # rho, nu
         pcs[[tr]][[ed]] <- bc
         
       } else {
@@ -338,17 +407,29 @@ fast_vine_from_particle <- function(p, skel) {
 }
 
 
-compute_log_incr <- function(particles, u_row, skeleton, cfg) {
-  log_incr <- numeric(cfg$M)
+## ---- 3B) Fast path for matrix storage: take row m directly ----
+fast_vine_from_row <- function(mats, m, skel) {
+  fam <- as.integer(mats$fam_mat[m, ])
+  th1 <- as.numeric(mats$th1_mat[m, ])
+  th2 <- as.numeric(mats$th2_mat[m, ])
+  .build_vine_from_vectors(fam, th1, th2, skel)
+}
+
+
+# Guarded single-row density → log
+.safe_logdens1 <- function(u_row, vine) {
+  U1 <- if (is.matrix(u_row)) u_row else matrix(u_row, nrow = 1L)
+  d  <- dvinecop(U1, vine, cores = 1)
+  if (!is.finite(d) || d <= 0) -1e100 else log(d)
+}
+
+compute_log_incr <- function(particles, u_row, skeleton) {
+  M <- nrow(particles$fam_mat)
+  log_incr <- numeric(M)
   
-  for (j in seq_along(particles)) {
-    p <- particles[[j]]
-    vine_j     <- fast_vine_from_particle(p, skeleton)
-    dens_val     <- dvinecop(u_row, vine_j)
-    li           <- ifelse(is.na(dens_val), -1e100,
-                                      ifelse(dens_val <= 0, -1e100, log(dens_val)))
-    
-    log_incr[j]  <- li
+  for (j in seq_len(M)) {
+    vine_j      <- fast_vine_from_row(particles, j, skeleton)
+    log_incr[j] <- .safe_logdens1(u_row, vine_j)
   }
   
   log_incr
@@ -356,21 +437,23 @@ compute_log_incr <- function(particles, u_row, skeleton, cfg) {
 
 
 update_weights <- function(particles, log_lik) {
+  w_prev <- particles$w
+  if (length(w_prev) != length(log_lik))
+    stop(sprintf("length mismatch: w=%d, log_lik=%d",
+                 length(w_prev), length(log_lik)))
   
-  w_prev <- vapply(particles, `[[`, numeric(1), 'w')
-  log_w  <- log(w_prev) + log_lik
-  log_w  <- log_w - max(log_w)
-  w_new  <- exp(log_w); w_new <- w_new / sum(w_new)
-  for (j in seq_along(particles))
-    particles[[j]]$w <- w_new[j]
+  # log-sum-exp normalization for numerical stability
+  log_w <- log(pmax(w_prev, .Machine$double.xmin)) + log_lik
+  log_w <- log_w - max(log_w)
+  w_new <- exp(log_w)
+  s     <- sum(w_new)
+  if (!is.finite(s) || s <= 0) stop("weights under/overflow")
+  w_new <- w_new / s
   
+  particles$w <- w_new
+  attr(particles, "ESS") <- ESS(w_new)   # handy to read right after
   particles
 }
-
-
-
-
-
 
 
 
@@ -430,173 +513,428 @@ init_from_tails <- function(new_code, tails) {
   
   stop("Unknown family code in mh_step")
 }
+# 
+# mh_step <- function(p, data_up_to_t, skeleton, cfg, tip_means_cache = NULL,   # <-- NEW
+#                     wobs = NULL)              # (optional, unchanged logic)) 
+#   {
+#   
+#   K    <- cfg$K
+#   prop <- p
+#   
+#   ## (a) Family flips — tail-seeded init (Tree 1 only; no MLE)
+#   end_first_tr <- sum(cfg$edge_tree == 1L)  # number of edges in Tree 1
+#   if (end_first_tr > 0L) {
+#     flip_mask <- runif(end_first_tr) < cfg$q_flip
+#     if (any(flip_mask)) {
+#       idxs <- which(flip_mask)
+#       for (idx in idxs) {
+#         tr_idx <- cfg$edge_tree[idx]
+#         if (tr_idx != 1L) next  # safety; we only flip on Tree 1
+#         
+#         old_code <- prop$fam[idx]
+#         allowed_names <- if (tr_idx == 1L) cfg$families_first else cfg$families_deep
+#         allowed_codes <- setdiff(FAM_INFO$code[FAM_INFO$name %in% allowed_names], old_code)
+#         if (!length(allowed_codes)) next
+#         
+#         new_code <- sample(allowed_codes, 1L)
+#         prop$fam[idx] <- new_code
+#         
+#         if (isTRUE(cfg$use_tail_informed_prior)) {
+#           tipm <- if (is.null(tip_means_cache)) NULL else tip_means_cache[[idx]]
+#           if (is.null(tipm)) {
+#             tails_old <- get_tails(old_code, prop$th1[idx], prop$th2[idx])
+#             tp_new    <- init_from_tails(new_code, tails_old)
+#             prop$th1[idx] <- tp_new[1]; prop$th2[idx] <- tp_new[2]
+#           } else {
+#             th_new <- seed_family_from_emp(
+#               new_code,
+#               mL           = tipm["mL"],
+#               mU           = tipm["mU"],
+#               cur_delta    = prop$th2[idx],
+#               step_sd      = cfg$step_sd,
+#               tip_sd_logit = cfg$tip_sd_logit
+#             )
+#             prop$th1[idx] <- th_new[1]; prop$th2[idx] <- th_new[2]
+#           }
+#         } else {
+#           tails_old <- get_tails(old_code, prop$th1[idx], prop$th2[idx])
+#           tp_new    <- init_from_tails(new_code, tails_old)
+#           prop$th1[idx] <- tp_new[1]; prop$th2[idx] <- tp_new[2]
+#         }
+#       }
+#     }
+#   }
+#   
+#   ## (b) Random-walk on parameters of current families
+#   # Gaussian — truncated normal on ρ
+#   ga_idx <- which(prop$fam == FAM_GAUSS)
+#   if (length(ga_idx))
+#     prop$th1[ga_idx] <- rtnorm_vec(prop$th1[ga_idx], cfg$step_sd, -0.99, 0.99)
+#   
+#   # BB1 (0°) — RW in (λL, λU), then map back and sanitize
+#   bb1_idx <- which(prop$fam == FAM_BB1)
+#   if (length(bb1_idx)) {
+#     lam <- t(mapply(bb1_par2tail, prop$th1[bb1_idx], prop$th2[bb1_idx]))
+#     lam[, 1] <- rtnorm_vec(lam[, 1], cfg$step_sd, 1e-3, 0.99)
+#     lam[, 2] <- rtnorm_vec(lam[, 2], cfg$step_sd, 1e-3, 0.99)
+#     par <- t(apply(lam, 1, \(x) bb1_tail2par(x[1], x[2])))
+#     par <- t(apply(par, 1, \(x) sanitize_bb1(x[1], x[2])))
+#     prop$th1[bb1_idx] <- par[, 1]; prop$th2[bb1_idx] <- par[, 2]
+#   }
+#   
+#   # BB1^180 — RW in (λL_rot, λU_rot), map back with rotated converter
+#   bb1r_idx <- which(prop$fam == FAM_BB1R180)
+#   if (length(bb1r_idx)) {
+#     lamr <- t(mapply(bb1r180_par2tail, prop$th1[bb1r_idx], prop$th2[bb1r_idx]))
+#     lamr[, 1] <- rtnorm_vec(lamr[, 1], cfg$step_sd, 1e-3, 0.99)
+#     lamr[, 2] <- rtnorm_vec(lamr[, 2], cfg$step_sd, 1e-3, 0.99)
+#     par <- t(apply(lamr, 1, \(x) bb1r180_tail2par(x[1], x[2])))
+#     par <- t(apply(par, 1, \(x) sanitize_bb1(x[1], x[2])))
+#     prop$th1[bb1r_idx] <- par[, 1]; prop$th2[bb1r_idx] <- par[, 2]
+#   }
+#   
+#   ### BB8^180 — RW in λ_L^rot only (the only nonzero tail), plus small RW on δ
+#   bb8r_idx <- which(prop$fam == FAM_BB8R180)
+#   if (length(bb8r_idx)) {
+#     lamLr <- vapply(bb8r_idx, function(i) bb8r180_par2tail(prop$th1[i], prop$th2[i])[1], numeric(1))
+#     lamLr <- rtnorm_vec(lamLr, cfg$step_sd, 1e-3, 0.99)
+#     pars  <- t(vapply(seq_along(bb8r_idx), function(j) {
+#       i <- bb8r_idx[j]
+#       ## update θ from λ_L^rot; δ small RW directly
+#       delta_prop <- pmin(pmax(prop$th2[i] + rnorm(1, 0, cfg$step_sd), 0.05), 7.0)
+#       bb8r180_tail2par(lamLr[j], delta_prop)
+#     }, numeric(2)))
+#     pars <- t(apply(pars, 1, \(x) sanitize_bb8(x[1], x[2])))
+#     prop$th1[bb8r_idx] <- pars[,1]; prop$th2[bb8r_idx] <- pars[,2]
+#   }
+#   
+#   ## BB7 — RW in (λL, λU), then map back and sanitize
+#   bb7_idx <- which(prop$fam == FAM_BB7)
+#   if (length(bb7_idx)) {
+#     lam <- t(mapply(bb7_par2tail, prop$th1[bb7_idx], prop$th2[bb7_idx]))  # [n×2]
+#     lam[,1] <- rtnorm_vec(lam[,1], cfg$step_sd, 1e-3, 0.99)  # λL
+#     lam[,2] <- rtnorm_vec(lam[,2], cfg$step_sd, 1e-3, 0.99)  # λU
+#     par <- t(apply(lam, 1, \(x) bb7_tail2par(x[1], x[2])))
+#     par <- t(apply(par, 1, \(x) sanitize_bb7(x[1], x[2])))
+#     prop$th1[bb7_idx] <- par[,1]; prop$th2[bb7_idx] <- par[,2]
+#   }
+#   
+#   ## BB7^180 — RW in (λL^rot, λU^rot), swap map back, sanitize
+#   bb7r_idx <- which(prop$fam == FAM_BB7R180)
+#   if (length(bb7r_idx)) {
+#     lamr <- t(mapply(bb7r180_par2tail, prop$th1[bb7r_idx], prop$th2[bb7r_idx]))
+#     lamr[,1] <- rtnorm_vec(lamr[,1], cfg$step_sd, 1e-3, 0.99)  # λL^rot
+#     lamr[,2] <- rtnorm_vec(lamr[,2], cfg$step_sd, 1e-3, 0.99)  # λU^rot
+#     par <- t(apply(lamr, 1, \(x) bb7r180_tail2par(x[1], x[2])))
+#     par <- t(apply(par, 1, \(x) sanitize_bb7(x[1], x[2])))
+#     prop$th1[bb7r_idx] <- par[,1]; prop$th2[bb7r_idx] <- par[,2]
+#   }
+#   
+#   # t-copula — RW in λ (tail) and z=log(nu), then map back to (rho, nu)
+#   t_idx <- which(prop$fam == FAM_T)
+#   if (length(t_idx)) {
+#     lam <- vapply(t_idx, function(i) t_par2tail(prop$th1[i], prop$th2[i]), numeric(1))
+#     lam <- rtnorm_vec(lam, cfg$step_sd, 1e-3, 0.99)
+#     
+#     z  <- log(pmax(prop$th2[t_idx], 2))                 # enforce ≥2
+#     z  <- rtnorm_vec(z, cfg$step_sd, log(2), log(30))   # truncated normal in [log 2, log 30]
+#     nu <- exp(z)
+#     
+#     pars <- t(vapply(seq_along(t_idx), function(j) {
+#       i   <- t_idx[j]
+#       rho <- t_tail2rho(lam[j], nu[j])
+#       sanitize_t(rho, nu[j])
+#     }, numeric(2)))
+#     prop$th1[t_idx] <- pars[,1]; prop$th2[t_idx] <- pars[,2]
+#   }
+#   
+#   
+#   
+#   
+#   
+#   ## (c) MH ratio
+#   vine_prop <- fast_vine_from_particle(prop, skeleton)
+#   vine_curr <- fast_vine_from_particle(p,    skeleton)
+#   
+#   #ll_prop <- sum(fillna_neg(log(pmax(dvinecop(data_up_to_t, vine_prop), .Machine$double.eps))))
+#   #ll_curr <- sum(fillna_neg(log(pmax(dvinecop(data_up_to_t, vine_curr), .Machine$double.eps))))
+# 
+#   if (!is.null(wobs)) {
+#     ll_prop <- sum(wobs * safe_logdens(data_up_to_t, vine_prop))
+#     ll_curr <- sum(wobs * safe_logdens(data_up_to_t, vine_curr))
+#   } else {
+#     ll_prop <- sum(safe_logdens(data_up_to_t, vine_prop))
+#     ll_curr <- sum(safe_logdens(data_up_to_t, vine_curr))
+#   }
+#   
+#   lp_prop <- if (isTRUE(cfg$use_tail_informed_prior))
+#     log_prior_with_tip_cached(prop, cfg, tip_means_cache) else
+#       log_prior(prop, cfg)
+#   
+#   lp_curr <- if (isTRUE(cfg$use_tail_informed_prior))
+#     log_prior_with_tip_cached(p,    cfg, tip_means_cache) else
+#       log_prior(p,    cfg)
+#   
+#   log_acc <- (ll_prop + lp_prop) - (ll_curr + lp_curr)
+#   
+#   if (log(runif(1)) < log_acc) { prop$last_accept <- TRUE; return(prop) }
+#   p$last_accept <- FALSE; return(p)
+# }
+# 
 
-mh_step <- function(p, data_up_to_t, skeleton, cfg, tip_means_cache = NULL,   # <-- NEW
-                    wobs = NULL)              # (optional, unchanged logic)) 
-  {
+
+
+
+
+
+resample_move_old <- function(particles, newAncestors,
+                              data_up_to_t, cl, type, cfg,
+                              skeleton = NULL, tr = NULL, temp_skel = NULL) {
   
-  K    <- cfg$K
-  prop <- p
+  # ----- 1) RESAMPLE (row reindex) -----
+  M <- nrow(particles$fam_mat)
+  stopifnot(length(newAncestors) == M)
+  particles$fam_mat <- particles$fam_mat[newAncestors, , drop = FALSE]
+  particles$th1_mat <- particles$th1_mat[newAncestors, , drop = FALSE]
+  particles$th2_mat <- particles$th2_mat[newAncestors, , drop = FALSE]
+  particles$w       <- rep(1 / M, M)
+  if (!is.null(particles$last_accept)) particles$last_accept[] <- FALSE
   
-  ## (a) Family flips — tail-seeded init (Tree 1 only; no MLE)
-  end_first_tr <- sum(cfg$edge_tree == 1L)  # number of edges in Tree 1
+  # ----- 2) PRECOMPUTE (once) -----
+  tip_cache <- if (isTRUE(cfg$use_tail_informed_prior))
+    precompute_tip_means(data_up_to_t, cfg) else NULL
+  wobs <- if (isTRUE(cfg$use_weighted_ll))
+    tail_weights(data_up_to_t, tau = cfg$tauL,
+                 k = cfg$joint_k, eps = cfg$tail_eps) else NULL
+  
+  # ship big read-only objects once
+  parallel::clusterExport(cl, c("particles","tip_cache","wobs"), envir = environment())
+  
+  mh_n_prop <- M * cfg$n_mh
+  tic("MH move")
+  
+  if (identical(type, "standard")) {
+    mh_results <- parallel::parLapply(
+      cl, seq_len(M),
+      function(i, data_up_to_t, skeleton, cfg, tip_cache, wobs) {
+        fam <- as.integer(particles$fam_mat[i, ])
+        th1 <- as.numeric(particles$th1_mat[i, ])
+        th2 <- as.numeric(particles$th2_mat[i, ])
+        
+        acc_local <- 0L
+        for (k in seq_len(cfg$n_mh)) {
+          res <- mh_step(fam, th1, th2, data_up_to_t, skeleton, cfg,
+                             tip_means_cache = tip_cache, wobs = wobs)
+          fam <- res$fam; th1 <- res$th1; th2 <- res$th2
+          if (isTRUE(res$last_accept)) acc_local <- acc_local + 1L
+        }
+        list(fam = fam, th1 = th1, th2 = th2, acc = acc_local)
+      },
+      data_up_to_t, skeleton, cfg, tip_cache, wobs
+    )
+  } else {
+    stop("Only type='standard' is implemented for the matrix-based path.")
+  }
+  
+  toc()
+  
+  # ----- 3) COLLECT -----
+  mh_n_acc <- sum(vapply(mh_results, `[[`, integer(1), "acc"))
+  for (i in seq_len(M)) {
+    particles$fam_mat[i, ] <- as.integer(mh_results[[i]]$fam)
+    particles$th1_mat[i, ] <- mh_results[[i]]$th1
+    particles$th2_mat[i, ] <- mh_results[[i]]$th2
+  }
+  
+  acc_pct <- 100 * mh_n_acc / mh_n_prop
+  cat(sprintf("MH acceptance = %4d / %4d  =  %.2f%%\n\n",
+              mh_n_acc, mh_n_prop, acc_pct))
+  
+  list(particles = particles, acc_pct = acc_pct)
+}
+
+
+mh_step <- function(fam, th1, th2,
+                        data_up_to_t, skeleton, cfg,
+                        tip_means_cache = NULL,   # list length K, each NULL or c(mL=..,mU=..)
+                        wobs = NULL) {           # optional obs weights
+  K <- length(fam)
+  
+  # --- propose ---
+  fam_p  <- fam
+  th1_p  <- th1
+  th2_p  <- th2
+  
+  ## (a) Family flips — Tree 1 only (tail-seeded init if TIP)
+  end_first_tr <- sum(cfg$edge_tree == 1L)
   if (end_first_tr > 0L) {
     flip_mask <- runif(end_first_tr) < cfg$q_flip
     if (any(flip_mask)) {
       idxs <- which(flip_mask)
       for (idx in idxs) {
         tr_idx <- cfg$edge_tree[idx]
-        if (tr_idx != 1L) next  # safety; we only flip on Tree 1
+        if (tr_idx != 1L) next
         
-        old_code <- prop$fam[idx]
+        old_code <- fam_p[idx]
         allowed_names <- if (tr_idx == 1L) cfg$families_first else cfg$families_deep
         allowed_codes <- setdiff(FAM_INFO$code[FAM_INFO$name %in% allowed_names], old_code)
         if (!length(allowed_codes)) next
         
-        new_code <- sample(allowed_codes, 1L)
-        prop$fam[idx] <- new_code
+        new_code <- safe_sample(allowed_codes, 1L)
+        fam_p[idx] <- new_code
         
         if (isTRUE(cfg$use_tail_informed_prior)) {
           tipm <- if (is.null(tip_means_cache)) NULL else tip_means_cache[[idx]]
           if (is.null(tipm)) {
-            tails_old <- get_tails(old_code, prop$th1[idx], prop$th2[idx])
+            tails_old <- get_tails(old_code, th1_p[idx], th2_p[idx])
             tp_new    <- init_from_tails(new_code, tails_old)
-            prop$th1[idx] <- tp_new[1]; prop$th2[idx] <- tp_new[2]
+            th1_p[idx] <- tp_new[1]; th2_p[idx] <- tp_new[2]
           } else {
             th_new <- seed_family_from_emp(
               new_code,
               mL           = tipm["mL"],
               mU           = tipm["mU"],
-              cur_delta    = prop$th2[idx],
+              cur_delta    = th2_p[idx],
               step_sd      = cfg$step_sd,
               tip_sd_logit = cfg$tip_sd_logit
             )
-            prop$th1[idx] <- th_new[1]; prop$th2[idx] <- th_new[2]
+            th1_p[idx] <- th_new[1]; th2_p[idx] <- th_new[2]
           }
         } else {
-          tails_old <- get_tails(old_code, prop$th1[idx], prop$th2[idx])
+          tails_old <- get_tails(old_code, th1_p[idx], th2_p[idx])
           tp_new    <- init_from_tails(new_code, tails_old)
-          prop$th1[idx] <- tp_new[1]; prop$th2[idx] <- tp_new[2]
+          th1_p[idx] <- tp_new[1]; th2_p[idx] <- tp_new[2]
         }
       }
     }
   }
   
-  ## (b) Random-walk on parameters of current families
-  # Gaussian — truncated normal on ρ
-  ga_idx <- which(prop$fam == FAM_GAUSS)
+  ## (b) Random-walk in tail space, map back, sanitize
+  # Gaussian
+  ga_idx <- which(fam_p == FAM_GAUSS)
   if (length(ga_idx))
-    prop$th1[ga_idx] <- rtnorm_vec(prop$th1[ga_idx], cfg$step_sd, -0.99, 0.99)
+    th1_p[ga_idx] <- rtnorm_vec(th1_p[ga_idx], cfg$step_sd, -0.99, 0.99)
   
-  # BB1 (0°) — RW in (λL, λU), then map back and sanitize
-  bb1_idx <- which(prop$fam == FAM_BB1)
+  # BB1
+  bb1_idx <- which(fam_p == FAM_BB1)
   if (length(bb1_idx)) {
-    lam <- t(mapply(bb1_par2tail, prop$th1[bb1_idx], prop$th2[bb1_idx]))
-    lam[, 1] <- rtnorm_vec(lam[, 1], cfg$step_sd, 1e-3, 0.99)
-    lam[, 2] <- rtnorm_vec(lam[, 2], cfg$step_sd, 1e-3, 0.99)
+    lam <- t(mapply(bb1_par2tail, th1_p[bb1_idx], th2_p[bb1_idx]))
+    lam[,1] <- rtnorm_vec(lam[,1], cfg$step_sd, 1e-3, 0.99)
+    lam[,2] <- rtnorm_vec(lam[,2], cfg$step_sd, 1e-3, 0.99)
     par <- t(apply(lam, 1, \(x) bb1_tail2par(x[1], x[2])))
     par <- t(apply(par, 1, \(x) sanitize_bb1(x[1], x[2])))
-    prop$th1[bb1_idx] <- par[, 1]; prop$th2[bb1_idx] <- par[, 2]
+    th1_p[bb1_idx] <- par[,1]; th2_p[bb1_idx] <- par[,2]
   }
   
-  # BB1^180 — RW in (λL_rot, λU_rot), map back with rotated converter
-  bb1r_idx <- which(prop$fam == FAM_BB1R180)
+  # BB1^180
+  bb1r_idx <- which(fam_p == FAM_BB1R180)
   if (length(bb1r_idx)) {
-    lamr <- t(mapply(bb1r180_par2tail, prop$th1[bb1r_idx], prop$th2[bb1r_idx]))
-    lamr[, 1] <- rtnorm_vec(lamr[, 1], cfg$step_sd, 1e-3, 0.99)
-    lamr[, 2] <- rtnorm_vec(lamr[, 2], cfg$step_sd, 1e-3, 0.99)
+    lamr <- t(mapply(bb1r180_par2tail, th1_p[bb1r_idx], th2_p[bb1r_idx]))
+    lamr[,1] <- rtnorm_vec(lamr[,1], cfg$step_sd, 1e-3, 0.99)
+    lamr[,2] <- rtnorm_vec(lamr[,2], cfg$step_sd, 1e-3, 0.99)
     par <- t(apply(lamr, 1, \(x) bb1r180_tail2par(x[1], x[2])))
     par <- t(apply(par, 1, \(x) sanitize_bb1(x[1], x[2])))
-    prop$th1[bb1r_idx] <- par[, 1]; prop$th2[bb1r_idx] <- par[, 2]
+    th1_p[bb1r_idx] <- par[,1]; th2_p[bb1r_idx] <- par[,2]
   }
   
-  ### BB8^180 — RW in λ_L^rot only (the only nonzero tail), plus small RW on δ
-  bb8r_idx <- which(prop$fam == FAM_BB8R180)
+  # BB8^180
+  bb8r_idx <- which(fam_p == FAM_BB8R180)
   if (length(bb8r_idx)) {
-    lamLr <- vapply(bb8r_idx, function(i) bb8r180_par2tail(prop$th1[i], prop$th2[i])[1], numeric(1))
+    lamLr <- vapply(bb8r_idx, function(i) bb8r180_par2tail(th1_p[i], th2_p[i])[1], numeric(1))
     lamLr <- rtnorm_vec(lamLr, cfg$step_sd, 1e-3, 0.99)
     pars  <- t(vapply(seq_along(bb8r_idx), function(j) {
       i <- bb8r_idx[j]
-      ## update θ from λ_L^rot; δ small RW directly
-      delta_prop <- pmin(pmax(prop$th2[i] + rnorm(1, 0, cfg$step_sd), 0.05), 7.0)
+      delta_prop <- pmin(pmax(th2_p[i] + rnorm(1, 0, cfg$step_sd), 0.05), 7.0)
       bb8r180_tail2par(lamLr[j], delta_prop)
     }, numeric(2)))
     pars <- t(apply(pars, 1, \(x) sanitize_bb8(x[1], x[2])))
-    prop$th1[bb8r_idx] <- pars[,1]; prop$th2[bb8r_idx] <- pars[,2]
+    th1_p[bb8r_idx] <- pars[,1]; th2_p[bb8r_idx] <- pars[,2]
   }
   
-  ## BB7 — RW in (λL, λU), then map back and sanitize
-  bb7_idx <- which(prop$fam == FAM_BB7)
+  # BB7
+  bb7_idx <- which(fam_p == FAM_BB7)
   if (length(bb7_idx)) {
-    lam <- t(mapply(bb7_par2tail, prop$th1[bb7_idx], prop$th2[bb7_idx]))  # [n×2]
-    lam[,1] <- rtnorm_vec(lam[,1], cfg$step_sd, 1e-3, 0.99)  # λL
-    lam[,2] <- rtnorm_vec(lam[,2], cfg$step_sd, 1e-3, 0.99)  # λU
+    lam <- t(mapply(bb7_par2tail, th1_p[bb7_idx], th2_p[bb7_idx]))
+    lam[,1] <- rtnorm_vec(lam[,1], cfg$step_sd, 1e-3, 0.99)
+    lam[,2] <- rtnorm_vec(lam[,2], cfg$step_sd, 1e-3, 0.99)
     par <- t(apply(lam, 1, \(x) bb7_tail2par(x[1], x[2])))
     par <- t(apply(par, 1, \(x) sanitize_bb7(x[1], x[2])))
-    prop$th1[bb7_idx] <- par[,1]; prop$th2[bb7_idx] <- par[,2]
+    th1_p[bb7_idx] <- par[,1]; th2_p[bb7_idx] <- par[,2]
   }
   
-  ## BB7^180 — RW in (λL^rot, λU^rot), swap map back, sanitize
-  bb7r_idx <- which(prop$fam == FAM_BB7R180)
+  # BB7^180
+  bb7r_idx <- which(fam_p == FAM_BB7R180)
   if (length(bb7r_idx)) {
-    lamr <- t(mapply(bb7r180_par2tail, prop$th1[bb7r_idx], prop$th2[bb7r_idx]))
-    lamr[,1] <- rtnorm_vec(lamr[,1], cfg$step_sd, 1e-3, 0.99)  # λL^rot
-    lamr[,2] <- rtnorm_vec(lamr[,2], cfg$step_sd, 1e-3, 0.99)  # λU^rot
+    lamr <- t(mapply(bb7r180_par2tail, th1_p[bb7r_idx], th2_p[bb7r_idx]))
+    lamr[,1] <- rtnorm_vec(lamr[,1], cfg$step_sd, 1e-3, 0.99)
+    lamr[,2] <- rtnorm_vec(lamr[,2], cfg$step_sd, 1e-3, 0.99)
     par <- t(apply(lamr, 1, \(x) bb7r180_tail2par(x[1], x[2])))
     par <- t(apply(par, 1, \(x) sanitize_bb7(x[1], x[2])))
-    prop$th1[bb7r_idx] <- par[,1]; prop$th2[bb7r_idx] <- par[,2]
+    th1_p[bb7r_idx] <- par[,1]; th2_p[bb7r_idx] <- par[,2]
   }
   
-  # t-copula — RW in λ (tail) and z=log(nu), then map back to (rho, nu)
-  t_idx <- which(prop$fam == FAM_T)
+  # t-copula
+  t_idx <- which(fam_p == FAM_T)
   if (length(t_idx)) {
-    lam <- vapply(t_idx, function(i) t_par2tail(prop$th1[i], prop$th2[i]), numeric(1))
+    lam <- vapply(t_idx, function(i) t_par2tail(th1_p[i], th2_p[i]), numeric(1))
     lam <- rtnorm_vec(lam, cfg$step_sd, 1e-3, 0.99)
-    
-    z  <- log(pmax(prop$th2[t_idx], 2))                 # enforce ≥2
-    z  <- rtnorm_vec(z, cfg$step_sd, log(2), log(30))   # truncated normal in [log 2, log 30]
-    nu <- exp(z)
-    
+    z   <- log(pmax(th2_p[t_idx], 2))
+    z   <- rtnorm_vec(z, cfg$step_sd, log(2), log(30))
+    nu  <- exp(z)
     pars <- t(vapply(seq_along(t_idx), function(j) {
       i   <- t_idx[j]
       rho <- t_tail2rho(lam[j], nu[j])
       sanitize_t(rho, nu[j])
     }, numeric(2)))
-    prop$th1[t_idx] <- pars[,1]; prop$th2[t_idx] <- pars[,2]
+    th1_p[t_idx] <- pars[,1]; th2_p[t_idx] <- pars[,2]
   }
-  
-  
-  
-  
   
   ## (c) MH ratio
-  vine_prop <- fast_vine_from_particle(prop, skeleton)
-  vine_curr <- fast_vine_from_particle(p,    skeleton)
+  vine_prop <- .build_vine_from_vectors(fam_p, th1_p, th2_p, skeleton)
+  vine_curr <- .build_vine_from_vectors(fam,   th1,   th2,   skeleton)
   
-  #ll_prop <- sum(fillna_neg(log(pmax(dvinecop(data_up_to_t, vine_prop), .Machine$double.eps))))
-  #ll_curr <- sum(fillna_neg(log(pmax(dvinecop(data_up_to_t, vine_curr), .Machine$double.eps))))
-
-  if (!is.null(wobs)) {
-    ll_prop <- sum(wobs * safe_logdens(data_up_to_t, vine_prop))
-    ll_curr <- sum(wobs * safe_logdens(data_up_to_t, vine_curr))
-  } else {
+  if (is.null(wobs)) {
     ll_prop <- sum(safe_logdens(data_up_to_t, vine_prop))
     ll_curr <- sum(safe_logdens(data_up_to_t, vine_curr))
+  } else {
+    ll_prop <- sum(wobs * safe_logdens(data_up_to_t, vine_prop))
+    ll_curr <- sum(wobs * safe_logdens(data_up_to_t, vine_curr))
   }
   
-  lp_prop <- if (isTRUE(cfg$use_tail_informed_prior))
-    log_prior_with_tip_cached(prop, cfg, tip_means_cache) else
-      log_prior(prop, cfg)
+  # reuse existing prior fns via tiny wrappers
+  p_prop <- list(fam = fam_p, th1 = th1_p, th2 = th2_p)
+  p_curr <- list(fam = fam,   th1 = th1,   th2 = th2)
   
+  lp_prop <- if (isTRUE(cfg$use_tail_informed_prior))
+    log_prior_with_tip_cached(p_prop, cfg, tip_means_cache) else
+      log_prior(p_prop, cfg)
   lp_curr <- if (isTRUE(cfg$use_tail_informed_prior))
-    log_prior_with_tip_cached(p,    cfg, tip_means_cache) else
-      log_prior(p,    cfg)
+    log_prior_with_tip_cached(p_curr, cfg, tip_means_cache) else
+      log_prior(p_curr, cfg)
   
   log_acc <- (ll_prop + lp_prop) - (ll_curr + lp_curr)
   
-  if (log(runif(1)) < log_acc) { prop$last_accept <- TRUE; return(prop) }
-  p$last_accept <- FALSE; return(p)
+  if (log(runif(1)) < log_acc) {
+    return(list(fam = fam_p, th1 = th1_p, th2 = th2_p, last_accept = TRUE))
+  } else {
+    return(list(fam = fam,   th1 = th1,   th2 = th2,   last_accept = FALSE))
+  }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 ## ---- Tail weighting helpers ----------------------------------------------
@@ -928,192 +1266,55 @@ mh_worker_block <- function(idx, n_mh, slice, data_up_to_t, temp_skel, tr, cfg)
 }
 
 
-resample_move <- function(particles, newAncestors, data_up_to_t,
-                          cl, type = "standard",
-                          cfg, skeleton = NULL, tr = NULL, temp_skel = NULL)
-{
-  ## --- 1a.  Resample ------------------------------------------------
-  particles <- particles[newAncestors]        # simple copy
-  for (p in particles) p$w <- 1 / cfg$M       # reset weights
-  
-  ## --- 1b.  Ship particles ONCE to each worker ----------------------
-  clusterExport(cl, "particles")
-  
-  ## --- 1c.  Parallel MH moves --------------------------------------
-  tic("MH move")
-  mh_results <- switch(type,
-                       standard = parLapply(
-                         cl, seq_along(particles),
-                         mh_worker_standard,
-                         n_mh         = cfg$n_mh,
-                         slice        = particles,
-                         data_up_to_t = data_up_to_t,
-                         skeleton     = skeleton,
-                         cfg          = cfg
-                       ),
-                       block = parLapply(
-                         cl, seq_along(particles),
-                         mh_worker_block,
-                         n_mh         = cfg$n_mh,
-                         slice        = particles,
-                         data_up_to_t = data_up_to_t,
-                         temp_skel    = temp_skel,
-                         tr           = tr,
-                         cfg          = cfg
-                       )
-  )
-  toc()
-  
-  ## --- 1d.  Collect outputs ----------------------------------------
-  particles   <- lapply(mh_results, `[[`, "p")
-  acc_vec     <- vapply(mh_results, `[[`, integer(1), "acc")
-  mh_n_prop   <- cfg$M * cfg$n_mh
-  mh_n_acc    <- sum(acc_vec)
-  acc_pct     <- 100 * mh_n_acc / mh_n_prop
-  
-  cat(sprintf(
-    "MH acceptance = %4d / %4d = %.2f%%\n\n",
-    mh_n_acc, mh_n_prop, acc_pct
-  ))
-  
-  list(particles = particles, acc_pct = acc_pct)
-}
-
-
-resample_move_old <- function(particles, newAncestors, data_up_to_t, cl, type, cfg, skeleton=NULL, tr=NULL, temp_skel=NULL) {
-
-  #idx       <- sample.int(M, M, TRUE, prob = w_new)
-  particles <- particles[newAncestors]                  # cópia simples
-  for (p in particles) {p$w <- 1 / cfg$M}
-
-  mh_n_prop <- cfg$M * cfg$n_mh
-  mh_n_acc  <- 0
-  #clusterSetRNGStream(cl, 43)
-  
-  ## NEW: precompute once
-  tip_cache <- if (isTRUE(cfg$use_tail_informed_prior))
-    precompute_tip_means(data_up_to_t, cfg) else NULL
-  wobs <- if (isTRUE(cfg$use_weighted_ll))
-    tail_weights(data_up_to_t, tau = cfg$tauL, k = cfg$joint_k, eps = cfg$tail_eps) else NULL
-  
-
-  parallel::clusterExport(cl, c("tip_cache","wobs"), envir = environment())
-  
-  tic("mh time")
-  if (type=='standard'){
-    mh_results <- parLapply(cl, seq_along(particles), function(i, particles_local, data_up_to_t, skeleton, cfg, tip_cache, wobs) {
-      p <- particles_local[[i]]
-      local_acc <- 0L
-      for (k in seq_len(cfg$n_mh)) {
-        p <- mh_step(p, data_up_to_t, skeleton, cfg, tip_cache, wobs)
-        if (isTRUE(p$last_accept)) {
-          local_acc <- local_acc + 1L
-        }
-      }
-      list(p = p, acc = local_acc)
-    },
-    particles, data_up_to_t, skeleton, cfg, tip_cache, wobs)
-
-  } 
-
-  toc()
-
-  mh_n_acc <- sum(vapply(mh_results, `[[`, integer(1), "acc"))
-  particles <- lapply(mh_results, `[[`, "p")
-
-  acc_pct <- 100 * mh_n_acc / mh_n_prop
-  cat(sprintf(
-    "MH acceptance = %4d / %4d  =  %.2f%%\n\n",
-    mh_n_acc, mh_n_prop, acc_pct
-  ))
-
-  return(list(particles = particles, acc_pct = acc_pct))
-}
-
-resample_move_serialized <- function(particles,
-                              newAncestors,
-                              data_up_to_t,
-                              type,           
-                              cfg,
-                              skeleton = NULL,
-                              tr = NULL,
-                              temp_skel = NULL) {
-  
-  particles <- particles[newAncestors]
-  for (p in particles) p$w <- 1 / cfg$M
-  
-  mh_n_prop <- cfg$M * cfg$n_mh
-  mh_results <- vector("list", length(particles))   
-  
-  for (i in seq_along(particles)) {
-    if (i==220){break}
-    p    <- particles[[i]]
-    acc  <- 0L
-    
-    for (k in seq_len(cfg$n_mh)) {
-      if (type == "standard") {
-        p <- mh_step(p, data_up_to_t, skeleton, cfg)
-      } else if (type == "block") {
-        p <- mh_step_in_tree(p, tr, data_up_to_t, temp_skel, cfg)
-      } else {
-        stop(sprintf("Unknown type '%s' (use 'standard' or 'block')", type))
-      }
-      if (isTRUE(p$last_accept)) acc <- acc + 1L
-    }
-        mh_results[[i]] <- list(p = p, acc = acc)
-  }
-  
-  mh_n_acc <- sum(vapply(mh_results, `[[`, integer(1), "acc"))
-  particles <- lapply(mh_results, `[[`, "p")
-  
-  acc_pct <- 100 * mh_n_acc / mh_n_prop
-  cat(sprintf("MH acceptance = %4d / %4d  =  %.2f%%\n\n",
-              mh_n_acc, mh_n_prop, acc_pct))
-  
-  list(particles = particles, acc_pct = acc_pct)
-}
-
 
 
 diagnostic_report <- function(t, tr, U, particles, w_new,
                               cfg, q_probs = c(0.025, 0.975)) {
+  # ==== inputs & basic flags ====
+  fam_mat <- particles$fam_mat            # M × K (integer)
+  th1_mat <- particles$th1_mat            # M × K (numeric)
+  th2_mat <- particles$th2_mat            # M × K (numeric)
+  M       <- nrow(fam_mat)
+  K       <- ncol(fam_mat)
+  
+  # pick weights: prefer explicit w_new; fall back to particles$w
+  if (missing(w_new) || is.null(w_new) || length(w_new) != M) {
+    w_new <- particles$w
+  }
+  w_new <- w_new / sum(w_new)
   
   k_step     <- cfg$k_step
-  M          <- cfg$M
   print_flag <- (t %% k_step == 0L) || (t == nrow(U))
-  # print_flag <- FALSE
   
-  fam_mat <- do.call(rbind, lapply(particles, `[[`, "fam"))
-  th1_mat <- do.call(rbind, lapply(particles, `[[`, "th1"))
-  th2_mat <- do.call(rbind, lapply(particles, `[[`, "th2"))
-  
-  ## family codes
+  # ==== family codes (short aliases) ====
   IND  <- FAM_INDEP
   GAU  <- FAM_GAUSS
   BB1c <- FAM_BB1
   BB1s <- FAM_BB1R180
   BB8s <- FAM_BB8R180
-  BB7   <- FAM_BB7
-  BB7s  <- FAM_BB7R180
-  TT <- FAM_T
+  BB7  <- FAM_BB7
+  BB7s <- FAM_BB7R180
+  TT   <- FAM_T
   
-  
-  ## weights & ESS
-  w_new <- w_new / sum(w_new)
+  # ==== weights & ESS ====
   ess_t <- 1 / sum(w_new^2)
   
-  ## sparsity etc.
+  # ==== sparsity & diversity ====
   dep_mask   <- fam_mat != IND
   edge_ct    <- rowSums(dep_mask)
   mean_edges <- w_mean(edge_ct, w_new)
   se_edges   <- mc_se(edge_ct, w_new, ess_t)
-  sparsity   <- 1 - mean_edges / cfg$K
+  sparsity   <- 1 - mean_edges / K
   
   key_vec  <- apply(th1_mat, 1, \(row) paste(row, collapse = ","))
   n_unique <- length(unique(key_vec))
   
-  dists    <- as.matrix(stats::dist(th1_mat))
-  avg_dist <- mean(dists[lower.tri(dists)])
+  if (M >= 2) {
+    dists    <- as.matrix(stats::dist(th1_mat))
+    avg_dist <- mean(dists[lower.tri(dists)])
+  } else {
+    avg_dist <- 0
+  }
   
   if (print_flag) {
     cat(sprintf(
@@ -1121,33 +1322,33 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
       t, tr, ess_t / M, mean_edges, se_edges, sparsity, n_unique, avg_dist))
   }
   
-  ## family proportions (driven by cfg$families and FAM_INFO)
+  # ==== family proportions (by cfg$families order) ====
   fam_codes <- FAM_INFO$code[match(cfg$families, FAM_INFO$name)]
   prop_line <- vapply(seq_along(fam_codes), function(j) {
     code <- fam_codes[j]
     if (is.na(code)) {
       sprintf("%s n/a", cfg$families[j])
     } else {
-      p_j <- w_mean(rowSums(fam_mat == code), w_new) / cfg$K
+      p_j <- w_mean(rowSums(fam_mat == code), w_new) / K
       sprintf("%s %.2f", cfg$families[j], p_j)
     }
   }, character(1))
+  
   if (print_flag)
     cat("   Family proportions | ", paste(prop_line, collapse = " | "), "\n")
   
-  ## per-edge summaries
-  edge_summ <- vector("list", cfg$K)
+  # ==== per-edge summaries ====
+  edge_summ <- vector("list", K)
   
-  for (e in seq_len(cfg$K)) {
-    
+  for (e in seq_len(K)) {
     p_indep <- sum(w_new[fam_mat[, e] == IND ])
     p_gauss <- sum(w_new[fam_mat[, e] == GAU ])
     p_bb1   <- sum(w_new[fam_mat[, e] == BB1c])
     p_bb1r  <- sum(w_new[fam_mat[, e] == BB1s])
     p_bb8r  <- sum(w_new[fam_mat[, e] == BB8s])
-    p_bb7   <- sum(w_new[fam_mat[, e] == BB7])
+    p_bb7   <- sum(w_new[fam_mat[, e] == BB7 ])
     p_bb7r  <- sum(w_new[fam_mat[, e] == BB7s])
-    p_t <- sum(w_new[fam_mat[, e] == TT ])
+    p_t     <- sum(w_new[fam_mat[, e] == TT  ])
     
     res <- list(edge   = e,
                 p_indep = p_indep,
@@ -1155,12 +1356,12 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
                 p_bb1   = p_bb1,
                 p_bb1r  = p_bb1r,
                 p_bb8r  = p_bb8r)
+    # (kept same columns as your original; add p_bb7/p_bb7r/p_t if you want)
     
-    if (print_flag)
-      if (p_indep > 0){
+    if (print_flag && p_indep > 0)
       cat(sprintf("     Edge %2d  Indep   : P=%.3f\n", e, p_indep))
-      }
-    ## Gaussian stats
+    
+    # ---- Gaussian
     if (p_gauss > 0) {
       mask   <- fam_mat[, e] == GAU
       rho_e  <- th1_mat[mask, e]
@@ -1169,20 +1370,18 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
       sd_rho <- sqrt(sum(w_g * (rho_e - mu_rho)^2))
       qs     <- w_quantile(rho_e, w_g, q_probs)
       
-      res <- c(res,
-               list(mu_rho = mu_rho, sd_rho = sd_rho,
-                    rho_q025 = qs[1], rho_q975 = qs[2]))
+      res <- c(res, list(mu_rho = mu_rho, sd_rho = sd_rho,
+                         rho_q025 = qs[1], rho_q975 = qs[2]))
       if (print_flag)
-        cat(sprintf(
-          "                Gaussian: P=%.3f | ρ=%.3f (SD %.3f) CI=[%.3f,%.3f]\n",
-          p_gauss, mu_rho, sd_rho, qs[1], qs[2]))
+        cat(sprintf("                Gaussian: P=%.3f | ρ=%.3f (SD %.3f) CI=[%.3f,%.3f]\n",
+                    p_gauss, mu_rho, sd_rho, qs[1], qs[2]))
     }
     
-    ## BB1 (0°) stats (tails + params)
+    # ---- BB1
     if (p_bb1 > 0) {
       mask   <- fam_mat[, e] == BB1c
       th1_e  <- th1_mat[mask, e]; th2_e <- th2_mat[mask, e]
-      lam    <- t(mapply(bb1_par2tail, th1_e, th2_e))   # (λL, λU)
+      lam    <- t(mapply(bb1_par2tail, th1_e, th2_e))
       w_b    <- w_new[mask] / p_bb1
       
       stats <- function(x) {
@@ -1203,7 +1402,6 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
                     theta_q025 = s_th1[3],  theta_q975 = s_th1[4],
                     mu_delta   = s_th2[1],  sd_delta   = s_th2[2],
                     delta_q025 = s_th2[3],  delta_q975 = s_th2[4]))
-      
       if (print_flag)
         cat(sprintf(
           "                BB1     : P=%.3f | λU=%.3f±%.3f CI=[%.3f,%.3f] | λL=%.3f±%.3f CI=[%.3f,%.3f] | θ=%.2f±%.2f | δ=%.2f±%.2f\n",
@@ -1214,11 +1412,11 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
           s_th2[1],  s_th2[2]))
     }
     
-    ## BB1^180 (survival) stats – rotated tail map
+    # ---- BB1^180
     if (p_bb1r > 0) {
       mask    <- fam_mat[, e] == BB1s
       th1_e   <- th1_mat[mask, e]; th2_e <- th2_mat[mask, e]
-      lam_rot <- t(mapply(bb1r180_par2tail, th1_e, th2_e))  # (λL_rot, λU_rot)
+      lam_rot <- t(mapply(bb1r180_par2tail, th1_e, th2_e))
       w_br    <- w_new[mask] / p_bb1r
       
       stats <- function(x) {
@@ -1239,7 +1437,6 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
                     theta_rot_q025 = s_th1r[3],  theta_rot_q975 = s_th1r[4],
                     mu_delta_rot   = s_th2r[1],  sd_delta_rot   = s_th2r[2],
                     delta_rot_q025 = s_th2r[3],  delta_rot_q975 = s_th2r[4]))
-      
       if (print_flag)
         cat(sprintf(
           "                BB1^180 : P=%.3f | λU(rot)=%.3f±%.3f CI=[%.3f,%.3f] | λL(rot)=%.3f±%.3f CI=[%.3f,%.3f] | θ=%.2f±%.2f | δ=%.2f±%.2f\n",
@@ -1250,7 +1447,7 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
           s_th2r[1],  s_th2r[2]))
     }
     
-    ## BB8^180 parameter stats (no tail map here)
+    # ---- BB8^180
     if (p_bb8r > 0) {
       mask   <- fam_mat[, e] == BB8s
       th1_e  <- th1_mat[mask, e]; th2_e <- th2_mat[mask, e]
@@ -1270,7 +1467,6 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
                     bb8r_theta_q025 = s_th1[3], bb8r_theta_q975 = s_th1[4],
                     mu_bb8r_delta = s_th2[1], sd_bb8r_delta = s_th2[2],
                     bb8r_delta_q025 = s_th2[3], bb8r_delta_q975 = s_th2[4]))
-      
       if (print_flag)
         cat(sprintf(
           "                BB8^180 : P=%.3f | θ=%.2f±%.2f CI=[%.2f,%.2f] | δ=%.2f±%.2f CI=[%.2f,%.2f]\n",
@@ -1279,7 +1475,7 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
           s_th2[1], s_th2[2], s_th2[3], s_th2[4]))
     }
     
-    ## BB7 (Joe–Clayton) parameter stats
+    # ---- BB7
     if (p_bb7 > 0) {
       mask  <- fam_mat[, e] == BB7
       th1_e <- th1_mat[mask, e]; th2_e <- th2_mat[mask, e]
@@ -1296,7 +1492,6 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
                     bb7_theta_q025 = s1[3], bb7_theta_q975 = s1[4],
                     mu_bb7_delta = s2[1], sd_bb7_delta = s2[2],
                     bb7_delta_q025 = s2[3], bb7_delta_q975 = s2[4]))
-      
       if (print_flag)
         cat(sprintf(
           "                BB7     : P=%.3f | θ=%.2f±%.2f CI=[%.2f,%.2f] | δ=%.2f±%.2f CI=[%.2f,%.2f]\n",
@@ -1306,7 +1501,7 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
         ))
     }
     
-    ## BB7^180 (rotated) parameter stats
+    # ---- BB7^180
     if (p_bb7r > 0) {
       mask  <- fam_mat[, e] == BB7s
       th1_e <- th1_mat[mask, e]; th2_e <- th2_mat[mask, e]
@@ -1323,7 +1518,6 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
                     bb7r_theta_q025 = s1[3], bb7r_theta_q975 = s1[4],
                     mu_bb7r_delta = s2[1], sd_bb7r_delta = s2[2],
                     bb7r_delta_q025 = s2[3], bb7r_delta_q975 = s2[4]))
-      
       if (print_flag)
         cat(sprintf(
           "                BB7^180 : P=%.3f | θ=%.2f±%.2f CI=[%.2f,%.2f] | δ=%.2f±%.2f CI=[%.2f,%.2f]\n",
@@ -1333,7 +1527,7 @@ diagnostic_report <- function(t, tr, U, particles, w_new,
         ))
     }
     
-    ## student parameter stats
+    # ---- Student-t
     if (p_t > 0) {
       mask <- fam_mat[, e] == TT
       rho_e <- th1_mat[mask, e]
@@ -1372,14 +1566,15 @@ compute_predictive_metrics <- function(u_obs, particles, skel,
                                        q_probs = c(0.025, 0.975)) {
   
   ## ---------- 1. predictive log-density -------------------------------
-  lik <- vapply(
-    particles,
-    function(p) {
-      vine_p <- fast_vine_from_particle(p, skel)
-      dvinecop(u_obs, vine_p)
-    },
-    numeric(1)
-  )
+  lik <- vapply(seq_len(M), function(i) {
+    vine_i <- .build_vine_from_vectors(
+      fam = particles$fam_mat[i, ],
+      th1 = particles$th1_mat[i, ],
+      th2 = particles$th2_mat[i, ],
+      skel    = skel
+    )
+    as.numeric(dvinecop(u_obs, vine_i))
+  }, numeric(1))
   log_pred_density <- log(sum(w_prev_for_prediction * lik) + 1e-30)
   
   list(
@@ -1435,92 +1630,6 @@ smc_predictive_sample <- function(particles,          # list of M particles
 }
 
 
-smc_predictive_sample_fast <- function(particles,  # list of M particles
-                                       skel,       # fixed structure
-                                       w,          # numeric(M), not necessarily normalized
-                                       L = 10000,  # total draws
-                                       cl = NULL,
-                                       nc = 1)  # optional cluster
-{
-  ## --- normalize weights robustly ---
-  w[!is.finite(w)] <- 0
-  w[w < 0] <- 0
-  sw <- sum(w)
-  if (sw <= 0) stop("All weights are zero/invalid.")
-  w <- w / sw
-  
-  M <- length(particles)
-  if (length(w) != M) stop("length(w) must equal number of particles.")
-  if (L < 1L) stop("L must be >= 1.")
-  
-  ## --- counts per particle (sum == L) ---
-  cnt  <- as.vector(rmultinom(1, size = L, prob = w))  # length M
-  used <- which(cnt > 0L)
-  if (length(used) == 0L) {
-    d0 <- ncol(skel$structure)
-    return(matrix(numeric(0), nrow = 0, ncol = d0))
-  }
-  
-  ## --- build each used vine ON MASTER (once) ---
-  vines_used <- lapply(used, function(i) fast_vine_from_particle(particles[[i]], skel))
-  
-  ## helper: reshape rvinecop() output to (ni x d_sim), with d_sim inferred from length(sim)/ni
-  coerce_block <- function(sim, ni) {
-    vec <- as.numeric(sim)                       # flatten deterministically
-    len <- length(vec)
-    if (len %% ni != 0L) {
-      stop(sprintf("rvinecop length mismatch: got %d, not divisible by ni=%d", len, ni))
-    }
-    d_sim <- as.integer(len / ni)
-    dim(vec) <- c(ni, d_sim)
-    vec
-  }
-  
-  ## --- SERIAL PATH ---
-  if (is.null(cl)) {
-    sims  <- vector("list", length(used))
-    d_ref <- NULL
-    for (k in seq_along(used)) {
-      ni  <- cnt[used[k]]
-      sim <- rvinecop(ni, vines_used[[k]])
-      blk <- coerce_block(sim, ni)
-      d_k <- ncol(blk)
-      if (is.null(d_ref)) d_ref <- d_k else if (d_k != d_ref)
-        stop(sprintf("Inconsistent simulated dimension across particles: %d vs %d", d_k, d_ref))
-      sims[[k]] <- blk
-    }
-    out <- do.call(rbind, sims)
-    dimnames(out) <- NULL
-    return(out)
-  }
-  
-  ## --- PARALLEL PATH (load-balanced) ---
-  # Pack only vine + ni (keep payload minimal)
-  work <- lapply(seq_along(used), function(k) {
-    list(vine = vines_used[[k]], ni = cnt[used[k]])
-  })
-  
-  
-  sims_list <- parallel::parLapplyLB(cl, work, function(task) {
-    sim <- rvinecop(task$ni, task$vine, cores = nc)
-    vec <- as.numeric(sim)
-    len <- length(vec)
-    if (len %% task$ni != 0L)
-      stop(sprintf("rvinecop length mismatch on worker: len=%d, ni=%d", len, task$ni))
-    d_sim <- as.integer(len / task$ni)
-    dim(vec) <- c(task$ni, d_sim)
-    vec
-  })
-  
-  ## check all blocks have same d, then rbind
-  d_vec <- vapply(sims_list, ncol, integer(1))
-  if (length(unique(d_vec)) != 1L)
-    stop(sprintf("Inconsistent simulated dimension across workers: %s",
-                 paste(unique(d_vec), collapse = ", ")))
-  out <- do.call(rbind, sims_list)
-  dimnames(out) <- NULL
-  out
-}
 
 
 
@@ -1594,14 +1703,25 @@ calculate_log_lik_tree_tr <- function(particle, skel_tr, u_row, t, tr, tr_prev, 
 
 
 
+residual_counts <- function(w, L) {
+  w <- pmax(w, 0); w <- w/sum(w)
+  base <- floor(L * w)
+  R <- L - sum(base)
+  if (R > 0) {
+    r <- L*w - base
+    if (sum(r) > 0) {
+      r <- r / sum(r)
+      base <- base + as.vector(rmultinom(1, size = R, prob = r))
+    }
+  }
+  base
+}
 
 
 
 
 
-
-
-smc_predictive_sample_fast2 <- function(particles, skel, w, L = 10000, cl = NULL) {
+smc_predictive_sample_fast2_scoped <- function(particles, skel, w, L = 10000, cl = NULL) {
   # --- normalize weights robustly ---
   w[!is.finite(w)] <- 0
   w[w < 0] <- 0
@@ -1609,12 +1729,15 @@ smc_predictive_sample_fast2 <- function(particles, skel, w, L = 10000, cl = NULL
   if (sw <= 0) stop("All weights are zero/invalid.")
   w <- w / sw
   
-  M <- length(particles)
-  if (length(w) != M) stop("length(w) must equal number of particles.")
+  # --- sanity & sizes ---
+  if (!is.matrix(particles$fam_mat) || !is.matrix(particles$th1_mat) || !is.matrix(particles$th2_mat))
+    stop("particles must contain fam_mat, th1_mat, th2_mat matrices.")
+  M <- nrow(particles$fam_mat)
+  if (length(w) != M) stop("length(w) must equal number of particles (nrow(fam_mat)).")
   if (L < 1L) stop("L must be >= 1.")
   
   # --- counts per particle (sum == L) ---
-  cnt  <- as.vector(rmultinom(1, size = L, prob = w))  # length M
+  cnt  <- residual_counts(w, L)
   used <- which(cnt > 0L)
   if (length(used) == 0L) {
     d0 <- ncol(skel$structure)
@@ -1622,11 +1745,17 @@ smc_predictive_sample_fast2 <- function(particles, skel, w, L = 10000, cl = NULL
   }
   
   # --- build each used vine ON MASTER (once) ---
-  vines_used <- lapply(used, function(i) fast_vine_from_particle(particles[[i]], skel))
+  vines_used <- lapply(used, function(i) {
+    .build_vine_from_vectors(
+      fam = as.integer(particles$fam_mat[i, ]),
+      th1 = as.numeric(particles$th1_mat[i, ]),
+      th2 = as.numeric(particles$th2_mat[i, ]),
+      skel = skel
+    )
+  })
   
-  # --- SERIAL fast path still available ---
+  # --- SERIAL PATH ---
   if (is.null(cl)) {
-    # single thread, one call per used particle
     d_ref <- NULL
     sims  <- vector("list", length(used))
     for (k in seq_along(used)) {
@@ -1647,157 +1776,22 @@ smc_predictive_sample_fast2 <- function(particles, skel, w, L = 10000, cl = NULL
   }
   
   ## ================= PARALLEL: export-once + batched indices =================
-  
-  # 0) set worker count sensibly (avoid oversubscription on big NUMA boxes)
   W <- length(cl)
-  # (often best: W <- min(W, parallel::detectCores(logical = FALSE)))
-  
-  # 1) Export the heavy list ONCE to workers; send only small indices later
-  parallel::clusterExport(cl, varlist = c("vines_used", "cnt"), envir = environment())
-  # also export the function we call (if not in package namespace)
-  # parallel::clusterExport(cl, varlist = c("rvinecop"), envir = environment())
-  
-  # 2) Kill any nested threading inside workers
-  parallel::clusterEvalQ(cl, {
-    Sys.setenv(OMP_NUM_THREADS = "1",
-               MKL_NUM_THREADS = "1",
-               OPENBLAS_NUM_THREADS = "1",
-               VECLIB_MAXIMUM_THREADS = "1",
-               GOTO_NUM_THREADS = "1")
-    NULL
-  })
-  
-  # 3) Make *batched* tasks: greedy bin packing by ni to balance load
-  ord  <- order(cnt[used], decreasing = TRUE)
-  idxs <- seq_along(used)[ord]
-  bins <- vector("list", W)
-  load <- integer(W)
-  for (j in idxs) {
-    k <- which.min(load)          # lightest bin
-    bins[[k]] <- c(bins[[k]], j)  # store INDEX INTO 'used' / 'vines_used'
-    load[k]  <- load[k] + cnt[used[j]]
-  }
-  
-  # 4) Workers receive only their index lists; vines are read from their local copy
-  sims_list <- parallel::parLapply(cl, bins, function(local_idx) {
-    if (length(local_idx) == 0L) return(NULL)
-    
-    # determine d on the first call to avoid repeated checks
-    first <- local_idx[[1]]
-    ni1   <- cnt[ used[first] ]
-    sim1  <- rvinecop(ni1, vines_used[[first]], cores = 1)
-    v1    <- as.numeric(sim1)
-    if (length(v1) %% ni1 != 0L)
-      stop(sprintf("rvinecop length mismatch on worker: len=%d, ni=%d", length(v1), ni1))
-    d     <- length(v1) / ni1
-    dim(v1) <- c(ni1, d)
-    out_parts <- list(v1)
-    
-    # loop remaining indices
-    if (length(local_idx) > 1L) {
-      for (t in local_idx[-1]) {
-        ni  <- cnt[ used[t] ]
-        sim <- rvinecop(ni, vines_used[[t]], cores = 1)
-        vv  <- as.numeric(sim)
-        if (length(vv) %% ni != 0L)
-          stop(sprintf("rvinecop length mismatch on worker: len=%d, ni=%d", length(vv), ni))
-        dim(vv) <- c(ni, d)  # d is fixed by first call
-        out_parts[[length(out_parts) + 1L]] <- vv
-      }
-    }
-    do.call(rbind, out_parts)
-  })
-  
-  # 5) Combine
-  sims_list <- Filter(Negate(is.null), sims_list)
-  d_vec <- vapply(sims_list, ncol, integer(1))
-  if (length(unique(d_vec)) != 1L)
-    stop(sprintf("Inconsistent simulated dimension across workers: %s",
-                 paste(unique(d_vec), collapse = ", ")))
-  out <- do.call(rbind, sims_list)
-  dimnames(out) <- NULL
-  out
-}
-
-
-
-smc_predictive_sample_fast2_scoped <- function(particles, skel, w, L = 10000, cl = NULL) {
-  # --- normalize weights robustly ---
-  w[!is.finite(w)] <- 0; w[w < 0] <- 0
-  sw <- sum(w); if (sw <= 0) stop("All weights are zero/invalid.")
-  w <- w / sw
-  
-  M <- length(particles)
-  if (length(w) != M) stop("length(w) must equal number of particles.")
-  if (L < 1L) stop("L must be >= 1.")
-  
-  # --- counts per particle (sum == L) ---
-  #cnt  <- as.vector(rmultinom(1, size = L, prob = w))
-  cnt <- residual_counts(w, L)
-  used <- which(cnt > 0L)
-  if (length(used) == 0L) {
-    d0 <- ncol(skel$structure)
-    return(matrix(numeric(0), nrow = 0, ncol = d0))
-  }
-  
-  # --- build each used vine ON MASTER (once) ---
-  vines_used <- lapply(used, function(i) fast_vine_from_particle(particles[[i]], skel))
-  
-  # --- SERIAL PATH ---
-  if (is.null(cl)) {
-    d_ref <- NULL
-    sims  <- vector("list", length(used))
-    for (k in seq_along(used)) {
-      ni  <- cnt[used[k]]
-      sim <- rvinecop(ni, vines_used[[k]], cores = 1)
-      vec <- as.numeric(sim)
-      if (length(vec) %% ni != 0L)
-        stop(sprintf("rvinecop length mismatch: len=%d, ni=%d", length(vec), ni))
-      d_k <- length(vec) / ni
-      dim(vec) <- c(ni, d_k)
-      if (is.null(d_ref)) d_ref <- d_k else if (d_k != d_ref)
-        stop(sprintf("Inconsistent simulated dimension: %d vs %d", d_k, d_ref))
-      sims[[k]] <- vec
-    }
-    out <- do.call(rbind, sims); dimnames(out) <- NULL; return(out)
-  }
-  
-  ## ================= PARALLEL: export-once + batched indices =================
-  W <- length(cl)
-  
-  # Export once (read-only on workers)
   parallel::clusterExport(cl, varlist = c("vines_used", "cnt", "used"), envir = environment())
   
-  # --------- bin packing (greedy by workload) ----------
+  # greedy bin packing by workload
   ord  <- order(cnt[used], decreasing = TRUE)
   idxs <- seq_along(used)[ord]
   bins <- vector("list", W)
   load <- integer(W)
   for (j in idxs) {
     k <- which.min(load)
-    bins[[k]] <- c(bins[[k]], j)          # position into 'used' / 'vines_used'
-    load[k]   <- load[k] + cnt[ used[j] ] # add this job's ni
+    bins[[k]] <- c(bins[[k]], j)           # index into 'used' / 'vines_used'
+    load[k]   <- load[k] + cnt[ used[j] ]
   }
-  # -----------------------------------------------------
   
-  # Worker function with *scoped* thread settings (no leakage)
   worker_sim <- function(local_idx) {
     if (length(local_idx) == 0L) return(NULL)
-    
-    # ---- scope single-threading to this task and auto-restore ----
-    VARS <- c("OMP_NUM_THREADS","MKL_NUM_THREADS","OPENBLAS_NUM_THREADS",
-              "VECLIB_MAXIMUM_THREADS","GOTO_NUM_THREADS")
-    old  <- Sys.getenv(VARS, unset = NA_character_)
-    on.exit({
-      for (i in seq_along(VARS)) {
-        if (is.na(old[[i]])) Sys.unsetenv(VARS[[i]])
-        else Sys.setenv(structure(old[[i]], names = VARS[[i]]))
-      }
-    }, add = TRUE)
-    Sys.setenv(OMP_NUM_THREADS="1", MKL_NUM_THREADS="1",
-               OPENBLAS_NUM_THREADS="1", VECLIB_MAXIMUM_THREADS="1",
-               GOTO_NUM_THREADS="1")
-    # ---------------------------------------------------------------
     
     # First job: infer d and init parts
     first <- local_idx[[1]]
@@ -1827,7 +1821,6 @@ smc_predictive_sample_fast2_scoped <- function(particles, skel, w, L = 10000, cl
   
   sims_list <- parallel::parLapply(cl, bins, worker_sim)
   
-  # Combine
   sims_list <- Filter(Negate(is.null), sims_list)
   d_vec <- vapply(sims_list, ncol, integer(1))
   if (length(unique(d_vec)) != 1L)
@@ -1839,18 +1832,280 @@ smc_predictive_sample_fast2_scoped <- function(particles, skel, w, L = 10000, cl
 }
 
 
-residual_counts <- function(w, L) {
-  w <- pmax(w, 0); w <- w/sum(w)
-  base <- floor(L * w)
-  R <- L - sum(base)
-  if (R > 0) {
-    r <- L*w - base
-    if (sum(r) > 0) {
-      r <- r / sum(r)
-      base <- base + as.vector(rmultinom(1, size = R, prob = r))
-    }
+
+
+
+
+smc_predictive_sample_fast2_scoped2 <- function(particles, skel, w, L = 10000, cl = NULL) {
+  # normalize weights
+  w[!is.finite(w)] <- 0; w[w < 0] <- 0
+  sw <- sum(w); if (sw <= 0) stop("All weights are zero/invalid.")
+  w <- w / sw
+  
+  # sanity
+  stopifnot(is.matrix(particles$fam_mat), is.matrix(particles$th1_mat), is.matrix(particles$th2_mat))
+  M <- nrow(particles$fam_mat)
+  if (length(w) != M) stop("length(w) must equal number of particles (nrow(fam_mat)).")
+  if (L < 1L) stop("L must be >= 1.")
+  
+  # counts per particle
+  cnt  <- residual_counts(w, L)
+  used <- which(cnt > 0L)
+  if (!length(used)) {
+    d0 <- ncol(skel$structure)
+    return(matrix(numeric(0), nrow = 0, ncol = d0))
   }
-  base
+  
+  # ---------- SERIAL PATH ----------
+  if (is.null(cl)) {
+    sims <- vector("list", length(used))
+    d_ref <- NULL
+    for (k in seq_along(used)) {
+      i   <- used[k]
+      ni  <- cnt[i]
+      vine_i <- .build_vine_from_vectors(
+        fam  = as.integer(particles$fam_mat[i, ]),
+        th1  = as.numeric(particles$th1_mat[i, ]),
+        th2  = as.numeric(particles$th2_mat[i, ]),
+        skel = skel
+      )
+      sim <- rvinecop(ni, vine_i, cores = 1)  # already ni × d
+      if (!is.matrix(sim)) sim <- as.matrix(sim)
+      if (is.null(d_ref)) d_ref <- ncol(sim)
+      else if (ncol(sim) != d_ref)
+        stop(sprintf("Inconsistent simulated dimension: %d vs %d", ncol(sim), d_ref))
+      sims[[k]] <- sim
+    }
+    out <- do.call(rbind, sims)
+    rownames(out) <- NULL
+    return(out)
+  }
+  
+  # ---------- PARALLEL PATH (export specs once; pass indices only) ----------
+  fam_mat <- particles$fam_mat
+  th1_mat <- particles$th1_mat
+  th2_mat <- particles$th2_mat
+  
+  parallel::clusterExport(
+    cl,
+    varlist = c("fam_mat","th1_mat","th2_mat","skel","used","cnt"),
+    envir   = environment()
+  )
+  
+  # greedy bin packing by workload
+  W <- length(cl)
+  ord  <- order(cnt[used], decreasing = TRUE)
+  idxs <- seq_along(used)[ord]
+  bins <- vector("list", W)
+  load <- integer(W)
+  for (j in idxs) {
+    k <- which.min(load)
+    bins[[k]] <- c(bins[[k]], j)      # index into 'used'
+    load[k]   <- load[k] + cnt[ used[j] ]
+  }
+  
+  worker_sim <- function(local_idx) {
+    if (!length(local_idx)) return(NULL)
+    parts <- vector("list", length(local_idx))
+    d_loc <- NULL
+    for (m in seq_along(local_idx)) {
+      u_pos <- used[ local_idx[m] ]   # actual particle row
+      ni    <- cnt[ u_pos ]
+      
+      vine_i <- .build_vine_from_vectors(
+        fam  = as.integer(fam_mat[u_pos, ]),
+        th1  = as.numeric(th1_mat[u_pos, ]),
+        th2  = as.numeric(th2_mat[u_pos, ]),
+        skel = skel
+      )
+      
+      sim <- rvinecop(ni, vine_i, cores = 1)
+      if (!is.matrix(sim)) sim <- as.matrix(sim)
+      if (is.null(d_loc)) d_loc <- ncol(sim)
+      else if (ncol(sim) != d_loc)
+        stop(sprintf("Worker dimension mismatch: %d vs %d", ncol(sim), d_loc))
+      parts[[m]] <- sim
+    }
+    do.call(rbind, parts)
+  }
+  
+  sims_list <- parallel::parLapply(cl, bins, worker_sim)
+  sims_list <- Filter(Negate(is.null), sims_list)
+  
+  # final consistency + combine
+  d_vec <- vapply(sims_list, ncol, integer(1))
+  if (length(unique(d_vec)) != 1L)
+    stop(sprintf("Inconsistent simulated dimension across workers: %s",
+                 paste(unique(d_vec), collapse = ", ")))
+  out <- do.call(rbind, sims_list)
+  rownames(out) <- NULL
+  out
+}
+
+
+smc_predictive_sample_fast2_grouped_epoch <- function(
+    w,                    # numeric length M (you can pass particles$w)
+    L = 10000,
+    cl,                   # PSOCK cluster (REQUIRED for this epoch version)
+    round_digits = 6,     # grouping granularity
+    top_k = NULL,         # optionally keep only top K groups by count
+    min_count = 0,        # optionally drop tiny groups
+    nc = 1                # threads per worker for rvinecop; keep small
+) {
+  # --- normalize weights robustly ---
+  w[!is.finite(w)] <- 0; w[w < 0] <- 0
+  sw <- sum(w); if (sw <= 0) stop("All weights are zero/invalid.")
+  w <- w / sw
+  
+  # discover M and d from workers (state must already be pushed)
+  Ms <- parallel::clusterEvalQ(cl, nrow(.vine_epoch$fam_mat))
+  if (!all(unlist(Ms) == Ms[[1]])) stop("Inconsistent M across workers.")
+  M <- Ms[[1]]
+  if (length(w) != M) stop("length(w) must equal number of particles.")
+  
+  # counts per particle
+  cnt  <- residual_counts(w, L)
+  used <- which(cnt > 0L)
+  if (!length(used)) {
+    d0 <- parallel::clusterEvalQ(cl, ncol(.vine_epoch$skel$structure))[[1]]
+    return(matrix(numeric(0), nrow = 0, ncol = d0))
+  }
+  
+  # compute grouping keys ON A WORKER (no big exports)
+  parallel::clusterExport(cl, c("used","round_digits"), envir = environment())
+  keys_list <- parallel::clusterEvalQ(cl, {
+    fm <- .vine_epoch$fam_mat; t1 <- .vine_epoch$th1_mat; t2 <- .vine_epoch$th2_mat
+    kfun <- function(i) paste(c(fm[i,], round(t1[i,], round_digits), round(t2[i,], round_digits)), collapse="|")
+    vapply(used, kfun, "", USE.NAMES = FALSE)
+  })
+  keys <- keys_list[[1]]                 # they’re identical on each worker
+  
+  ukeys <- unique(keys)
+  gix   <- match(keys, ukeys)
+  rep_row     <- as.integer(tapply(used, gix, function(ix) ix[1]))
+  group_count <- as.numeric(tapply(cnt[used], gix, sum))
+  
+  # optional pruning
+  if (!is.null(top_k)) {
+    ord <- order(group_count, decreasing = TRUE)
+    keep <- ord[seq_len(min(top_k, length(ord)))]
+    rep_row     <- rep_row[keep]
+    group_count <- group_count[keep]
+  }
+  if (min_count > 0) {
+    keep <- which(group_count >= min_count)
+    if (!length(keep)) {
+      d0 <- parallel::clusterEvalQ(cl, ncol(.vine_epoch$skel$structure))[[1]]
+      return(matrix(numeric(0), nrow = 0, ncol = d0))
+    }
+    rep_row     <- rep_row[keep]
+    group_count <- group_count[keep]
+  }
+  
+  # bin packing (balanced)
+  W <- length(cl)
+  ord <- order(group_count, decreasing = TRUE)
+  idxs <- seq_along(rep_row)[ord]
+  bins <- vector("list", W)
+  load <- numeric(W)
+  for (j in idxs) {
+    k <- which.min(load)
+    bins[[k]] <- c(bins[[k]], j)
+    load[k]   <- load[k] + group_count[j]
+  }
+  
+  # worker function: uses cached vines via .worker_get_vine()
+  worker_sim_epoch <- function(local_idx, rep_row, group_count, nc = 1) {
+    if (!length(local_idx)) return(NULL)
+    parts <- vector("list", length(local_idx))
+    d_loc <- NULL
+    for (m in seq_along(local_idx)) {
+      j  <- local_idx[m]
+      i  <- rep_row[j]
+      ni <- group_count[j]
+      vine_i <- .worker_get_vine(i)                 # <<— cached
+      sim <- rvinecop(ni, vine_i, cores = nc)
+      sim <- as.matrix(sim)
+      if (is.null(d_loc)) d_loc <- ncol(sim)
+      else if (ncol(sim) != d_loc) stop("Worker dimension mismatch")
+      parts[[m]] <- sim
+    }
+    do.call(rbind, parts)
+  }
+  
+  parallel::clusterExport(cl, c("worker_sim_epoch","rep_row","group_count","bins","nc"), envir = environment())
+  sims_list <- parallel::parLapplyLB(cl, bins, worker_sim_epoch, rep_row, group_count, nc)
+  sims_list <- Filter(Negate(is.null), sims_list)
+  d_vec <- vapply(sims_list, ncol, integer(1))
+  if (length(unique(d_vec)) != 1L) stop("Inconsistent simulated dimension across workers")
+  out <- do.call(rbind, sims_list)
+  rownames(out) <- NULL
+  out
+}
+
+
+
+# Push the big read-only state to workers ONCE per time step (epoch).
+push_epoch_state <- function(cl, particles, skel, epoch_id = NULL) {
+  stopifnot(!is.null(cl))
+  fam_mat <- particles$fam_mat
+  th1_mat <- particles$th1_mat
+  th2_mat <- particles$th2_mat
+  
+  parallel::clusterExport(cl, c("fam_mat","th1_mat","th2_mat","skel","epoch_id"), envir = environment())
+  
+  parallel::clusterEvalQ(cl, {
+    if (!exists(".vine_epoch", inherits = FALSE)) .vine_epoch <- new.env(parent = emptyenv())
+    .vine_epoch$fam_mat  <- fam_mat
+    .vine_epoch$th1_mat  <- th1_mat
+    .vine_epoch$th2_mat  <- th2_mat
+    .vine_epoch$skel     <- skel
+    .vine_epoch$epoch_id <- epoch_id
+    
+    # Simple per-epoch vine cache
+    if (!exists(".vine_cache", inherits = FALSE)) .vine_cache <- new.env(parent = emptyenv())
+    .vine_cache$epoch_id <- epoch_id
+    .vine_cache$vines    <- new.env(parent = emptyenv())
+    
+    rm(fam_mat, th1_mat, th2_mat, skel, epoch_id)
+    invisible(TRUE)
+  })
+}
+
+# Optional tidy-up when you are completely done (not needed each step)
+clear_epoch_state <- function(cl) {
+  parallel::clusterEvalQ(cl, { 
+    if (exists(".vine_epoch", inherits = FALSE)) rm(.vine_epoch, inherits = FALSE)
+    if (exists(".vine_cache", inherits = FALSE)) rm(.vine_cache, inherits = FALSE)
+    invisible(TRUE)
+  })
+}
+
+# Worker helper: build or fetch cached vine for particle row i
+.worker_get_vine <- function(i) {
+  env   <- .vine_epoch
+  cache <- .vine_cache
+  if (!identical(cache$epoch_id, env$epoch_id)) {  # epoch changed → reset cache
+    cache$vines    <- new.env(parent = emptyenv())
+    cache$epoch_id <- env$epoch_id
+  }
+  key <- as.character(i)
+  v <- get0(key, envir = cache$vines, inherits = FALSE)
+  if (!is.null(v)) return(v)
+  
+  v <- .build_vine_from_vectors(
+    fam  = as.integer(env$fam_mat[i, ]),
+    th1  = as.numeric(env$th1_mat[i, ]),
+    th2  = as.numeric(env$th2_mat[i, ]),
+    skel = env$skel
+  )
+  assign(key, v, envir = cache$vines)
+  v
+}
+
+# Register the worker helper once after you create the cluster
+register_worker_helpers <- function(cl) {
+  parallel::clusterExport(cl, c(".worker_get_vine"), envir = environment())
 }
 
 

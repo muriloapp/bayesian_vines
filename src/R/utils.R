@@ -1,5 +1,45 @@
 
-
+import_data <- function(path = "data", 
+                        n_days = NULL, 
+                        n_assets = NULL, 
+                        var = NULL, 
+                        drop_first_col = FALSE) {
+  
+  # helper: subset, drop date, and convert to matrix
+  subset_matrix <- function(obj, n_days, n_assets, drop_first_col) {
+    if (drop_first_col) {
+      obj <- obj[, -1, drop = FALSE]  # drop first column (e.g. date)
+    }
+    if (!is.null(n_days)) {
+      obj <- obj[1:n_days, , drop = FALSE]
+    }
+    if (!is.null(n_assets)) {
+      obj <- obj[, 1:n_assets, drop = FALSE]
+    }
+    as.matrix(obj)
+  }
+  
+  # load all datasets
+  datasets <- list(
+    U        = readRDS(file.path(path, "PIT.rds")),
+    mu_fc    = readRDS(file.path(path, "returns_mean_forecast.rds")),
+    sig_fc   = readRDS(file.path(path, "returns_vol_forecast.rds")),
+    df_fc    = readRDS(file.path(path, "df_fc.rds")),
+    shape_fc = readRDS(file.path(path, "shape_fc.rds")),
+    y_real   = readRDS(file.path(path, "returns_actual.rds"))
+  )
+  
+  # return only one if requested
+  if (!is.null(var)) {
+    if (!var %in% names(datasets)) {
+      stop("Invalid var Must be one of: ", paste(names(datasets), collapse = ", "))
+    }
+    return(subset_matrix(datasets[[var]], n_days, n_assets, drop_first_col))
+  }
+  
+  # otherwise return all as list of matrices
+  lapply(datasets, subset_matrix, n_days = n_days, n_assets = n_assets, drop_first_col = drop_first_col)
+}
 
 ## RW step
 
