@@ -94,14 +94,13 @@ extend_with_t <- function(vinecop_t1, structure_full) {
 n_assets <- 1:3
 n_days <- 1:2000
 
-data <- list(
-  U      = readRDS("data/PIT.rds")[1:length(n_days),n_assets],
-  mu_fc  = readRDS("data/returns_mean_forecast.rds")[n_days,n_assets+1, with=FALSE],# [,-1],  # drop date col
-  sig_fc = readRDS("data/returns_vol_forecast.rds")[n_days,n_assets+1, with=FALSE],  #[,-1],
-  df_fc = readRDS("data/df_fc.rds")[n_days,n_assets+1, with=FALSE],#[,-1]
-  shape_fc = readRDS("data/shape_fc.rds")[n_days,n_assets+1, with=FALSE]#[,-1]
-)
-y_real = readRDS("data/returns_actual.rds")[n_days,n_assets+1, with=FALSE]
+data <- import_data(drop_first_col = TRUE, n_assets = 3)
+
+mu_fc   <- data$mu_fc[(nrow(data$mu_fc)   - n_oos + 1):nrow(data$mu_fc), , drop = FALSE]
+sig_fc  <- data$sig_fc[(nrow(data$sig_fc) - n_oos + 1):nrow(data$sig_fc), , drop = FALSE]
+df_fc   <- data$df_fc[(nrow(data$df_fc)   - n_oos + 1):nrow(data$df_fc), , drop = FALSE]
+shape_fc<- data$shape_fc[(nrow(data$shape_fc) - n_oos + 1):nrow(data$shape_fc), , drop = FALSE]
+y_real  <- data$y_real[(nrow(data$y_real) - n_oos + 1):nrow(data$y_real), , drop = FALSE]
 
 
 # data <- list(
@@ -322,13 +321,6 @@ covar_hits_by_j <- function(r_p_real, y_real_oos, VaRj_oos, CoVaR_oos, alpha) {
 
 
 
-cfg = out$cfg
-
-out$port$VaR <- na.omit(out$port$VaR)
-out$CoVaR_tail <- na.omit(out$CoVaR_tail)
-
-
-y_real_oos = readRDS("data/returns_actual.rds")[,n_assets+1, with=FALSE]
 
 
 y_real_oos <- y_real
@@ -361,7 +353,7 @@ eval_asset_var <- do.call(rbind, lapply(seq_len(d), function(j) {
   do.call(rbind, lapply(alphas_eval, function(a) {
     k <- which.min(abs(cfg$alphas - a))
     qj <- out$risk$VaR[, j, k]
-    hj <- var_hits(y_real_oos[, j, with=FALSE], qj)
+    hj <- var_hits(y_real_oos[, j], qj)
     data.frame(
       asset = tickers[j], alpha = a,
       n = length(hj), hits = sum(hj), rate = mean(hj),
@@ -380,7 +372,7 @@ eval_covar <- do.call(rbind, lapply(alphas_eval, function(a) {
   lab <- if (a == 0.05) "a0.05" else "a0.10"
   k   <- which.min(abs(cfg$alphas - a))
   
-  VaRj_oos   <- out$risk$VaR[, , k, drop = FALSE][, , 1]   # n_oos×d
+  VaRj_oos   <- out$risk$VaR[, , k][, , 1]   # n_oos×d
   CoVaR_oos  <- out$CoVaR_tail[, , lab]                    # n_oos×d
   cond_hits  <- covar_hits_by_j(rp_real_oos, y_real_oos, VaRj_oos, CoVaR_oos, alpha = a)
   

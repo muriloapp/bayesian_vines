@@ -8,7 +8,7 @@ n_assets <- 1:3
 
 out <- readRDS("C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/empirical_results/test.rds")
 
-data <- import_data(drop_first_col = TRUE, n_assets = 3)
+data <- import_data(drop_first_col = FALSE, n_assets = 3)
 
 
 # Hits for VaR (unconditional): y <= q  (vectors of same length)
@@ -57,11 +57,12 @@ christoffersen_cc_test <- function(h, alpha) {
 # VaRj_oos:  n_oos×d asset VaR forecasts at alpha (same sign convention)
 # CoVaR_oos: n_oos×d CoVaR forecasts at alpha (from your array)
 covar_hits_by_j <- function(r_p_real, y_real_oos, VaRj_oos, CoVaR_oos, alpha) {
-  d <- ncol(y_real_oos)
+  #d <- ncol(y_real_oos)
+  d <- 3
   hits_list <- vector("list", d)
   n_list    <- integer(d)
   for (j in seq_len(d)) {
-    mask <- y_real_oos[, j] <= VaRj_oos[, j]  # days when j is distressed
+    mask <- y_real_oos[, j, with=FALSE] <= VaRj_oos[, j]  # days when j is distressed
     n_list[j] <- sum(mask)
     if (n_list[j] > 0) {
       hits_list[[j]] <- as.numeric(r_p_real[mask] <= CoVaR_oos[mask, j])
@@ -78,6 +79,9 @@ y_real_oos = data$y_real
 #y_real_oos = readRDS("data/returns_actual.rds")[,1:4, with=FALSE]
 
 y_real_oos <- y_real_oos[(dim(y_real_oos)[1] - nrow(out$port$VaR) + 1):nrow(y_real_oos),]
+dates <-  y_real_oos[,"Date"]
+y_real_oos <- y_real_oos[,-"Date"]
+
 rp_real_oos <- rowMeans(y_real_oos)
 
 
@@ -104,13 +108,13 @@ eval_port_var <- lapply(seq_along(alphas_eval), function(k) {
 # ==== B) Asset VaR backtests (per asset, chosen alphas e.g. 5% & 10%) ====
 alphas_eval <- c(0.10, 0.05, 0.025, 0.01)
 d <- length(n_assets)
-tickers <- colnames(data$U)
+tickers <- colnames(data$U[,2:4])
 
 eval_asset_var <- do.call(rbind, lapply(seq_len(d), function(j) {
   do.call(rbind, lapply(alphas_eval, function(a) {
     k <- which.min(abs(alphas_eval - a))
     qj <- out$risk$VaR[, j, k]
-    hj <- var_hits(y_real_oos[, j], qj)
+    hj <- var_hits(y_real_oos[, j, with=FALSE], qj)
     data.frame(
       asset = tickers[j], alpha = a,
       n = length(hj), hits = sum(hj), rate = mean(hj),
@@ -123,35 +127,7 @@ eval_asset_var <- do.call(rbind, lapply(seq_len(d), function(j) {
 }))
 
 
-alphas_eval <- c(0.10, 0.05)
-# ==== C) CoVaR backtests (per conditioning stock j, α = 5% and 10%) ====
-eval_covar <- do.call(rbind, lapply(alphas_eval, function(a) {
-  lab <- if (a == 0.05) "a0.05" else "a0.10"
-  k   <- which.min(abs(alphas_eval - a))
-  
-  VaRj_oos   <- out$risk$VaR[, , k, drop = FALSE][, , 1]   # n_oos×d
-  CoVaR_oos  <- out$CoVaR_tail[, , lab]                    # n_oos×d
-  cond_hits  <- covar_hits_by_j(rp_real_oos, y_real_oos, VaRj_oos, CoVaR_oos, alpha = a)
-  
-  do.call(rbind, lapply(seq_len(d), function(j) {
-    hj <- cond_hits$hits[[j]]
-    if (length(hj) == 0) {
-      data.frame(asset = tickers[j], alpha = a, T_event = 0,
-                 rate = NA, kupiec_p = NA, ind_p = NA, cc_p = NA, row.names = NULL)
-    } else {
-      data.frame(
-        asset    = tickers[j],
-        alpha    = a,
-        T_event  = length(hj),
-        rate     = mean(hj),
-        kupiec_p = kupiec_test(hj, a)$pval,
-        ind_p    = christoffersen_ind_test(hj)$pval,
-        cc_p     = christoffersen_cc_test(hj, a)$pval,
-        row.names = NULL
-      )
-    }
-  }))
-}))
+
 
 
 alphas_eval <- c(0.10, 0.05)  # order doesn't matter
@@ -215,7 +191,7 @@ eval_covar <- do.call(rbind, lapply(seq_len(nrow(grid_ab)), function(i) {
 
 
 a = 0.1
-j = 5
+j = 1
 
 k <- which.min(abs(alphas_eval - a))
 qj <- out$risk$VaR[, j, k]
@@ -225,7 +201,7 @@ VaRj_oos   <- out$risk$VaR[, , k, drop = FALSE][, , 1]   # n_oos×d
 #lab <- if (a == 0.05) "a0.05" else "a0.10"
 lab = "a0.1b0.1"
 CoVaR_oos  <- out$CoVaR_tail[, , lab]                    # n_oos×d
-cond_hits  <- covar_hits_by_j(rp_real_oos, as.matrix(y_real_oos), VaRj_oos, CoVaR_oos, alpha = a)
+cond_hits  <- covar_hits_by_j(rp_real_oos, (y_real_oos), VaRj_oos, CoVaR_oos, alpha = a)
 co_hj <- cond_hits$hits[[j]]
 
 
@@ -243,8 +219,8 @@ df$co_hj <- NA              # create empty column
 
 df$co_hj[df$hj == 1] <- co_hj
 
-df <- df[Date >= as.Date("2006-01-01")]
-#df <- df[Date <= as.Date("2010-01-01")]
+df <- df[Date >= as.Date("2003-01-01")]
+df <- df[Date <= as.Date("2022-01-01")]
 
 
 ## indices where co_hj is observed (0/1)

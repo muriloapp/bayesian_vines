@@ -5,21 +5,54 @@ import_data <- function(path = "data",
                         var = NULL, 
                         drop_first_col = FALSE) {
   
-  # helper: subset, drop date, and convert to matrix
-  subset_matrix <- function(obj, n_days, n_assets, drop_first_col) {
-    if (drop_first_col) {
-      obj <- obj[, -1, drop = FALSE]  # drop first column (e.g. date)
+  # subset one object; return matrix if drop_first_col=TRUE, else data.table
+  subset_data <- function(obj, n_days, n_assets, drop_first_col) {
+    if (inherits(obj, "data.table")) {
+      dt <- obj
+    } else if (is.matrix(obj)) {
+      dt <- data.table::as.data.table(obj)
+    } else {
+      dt <- data.table::as.data.table(obj)
     }
+    cn <- colnames(dt)
+    if (length(cn) == 0L) return(if (drop_first_col) as.matrix(dt) else dt)
+    
+    # detect if first column is a date column (by name OR class)
+    first_is_date <- identical(cn[1L], "Date") || inherits(dt[[1L]], "Date")
+    
+    # row subset
     if (!is.null(n_days)) {
-      obj <- obj[1:n_days, , drop = FALSE]
+      dt <- dt[seq_len(min(n_days, nrow(dt)))]
     }
+    
+    # figure asset names (exclude first if it's a date column)
+    asset_names <- if (first_is_date) cn[-1L] else cn
+    
+    # limit to n_assets if requested
     if (!is.null(n_assets)) {
-      obj <- obj[, 1:n_assets, drop = FALSE]
+      asset_names <- asset_names[seq_len(min(n_assets, length(asset_names)))]
     }
-    as.matrix(obj)
+    
+    # decide kept columns
+    if (drop_first_col) {
+      # drop the first date-like column if present; keep only assets
+      keep_names <- asset_names
+    } else {
+      # keep the date column (if present) + assets
+      keep_names <- if (first_is_date) c(cn[1L], asset_names) else asset_names
+    }
+    
+    # column subset (data.table-friendly)
+    dt <- dt[, ..keep_names]
+    
+    # return type to match your requirement:
+    if (drop_first_col) {
+      return(as.matrix(dt))   # pure numeric matrix (no date column)
+    } else {
+      return(dt)              # data.table with the date + assets
+    }
   }
   
-  # load all datasets
   datasets <- list(
     U        = readRDS(file.path(path, "PIT.rds")),
     mu_fc    = readRDS(file.path(path, "returns_mean_forecast.rds")),
@@ -29,17 +62,19 @@ import_data <- function(path = "data",
     y_real   = readRDS(file.path(path, "returns_actual.rds"))
   )
   
-  # return only one if requested
   if (!is.null(var)) {
     if (!var %in% names(datasets)) {
-      stop("Invalid var Must be one of: ", paste(names(datasets), collapse = ", "))
+      stop("Invalid var. Must be one of: ", paste(names(datasets), collapse = ", "))
     }
-    return(subset_matrix(datasets[[var]], n_days, n_assets, drop_first_col))
+    return(subset_data(datasets[[var]], n_days, n_assets, drop_first_col))
   }
   
-  # otherwise return all as list of matrices
-  lapply(datasets, subset_matrix, n_days = n_days, n_assets = n_assets, drop_first_col = drop_first_col)
+  lapply(datasets, subset_data, n_days = n_days, n_assets = n_assets, drop_first_col = drop_first_col)
 }
+
+
+
+
 
 ## RW step
 
