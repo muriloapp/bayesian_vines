@@ -126,7 +126,7 @@ align_and_filter <- function(out, data,
 
 # ---- single-model evaluator ---------------------------------------------------
 evaluate_model <- function(out, data,
-                           date_from = as.Date("2005-01-01"),
+                           date_from = as.Date("2003-01-01"),
                            date_to   = as.Date("2100-01-01"),
                            assets    = NULL,
                            alphas_var   = c(0.10, 0.05, 0.025, 0.01),
@@ -270,17 +270,17 @@ compare_models <- function(out_list_named,
 
 # ---- example usage ------------------------------------------------------------
 # Load data once
-data <- import_data(drop_first_col = FALSE, n_assets = 3)
+data <- import_data(drop_first_col = FALSE, n_assets = 5)
 
 # Load as many 'out' objects as you want and name them for comparison
 out_list <- list(
-  baseline   = readRDS("C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/empirical_results/test.rds"),
-   alt1   = readRDS("C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/empirical_results/out_naive_2_extend_t.rds")
+  baseline   = readRDS("C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/empirical_results/standard_tip_5d.rds"),
+   alt1   = readRDS("C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/empirical_results/out_naive_3_5d_extend_t.rds")
   # , alt2   = readRDS(".../empirical_results/standard_tip.rds")
 )
 
 # Choose period & assets by name (Date handling is centralized and consistent)
-date_from <- as.Date("2003-01-01")
+date_from <- as.Date("2004-01-01")
 date_to   <- as.Date("2025-01-01")
 assets_sel <- NULL            # or c("AIG","AXP","BAC") to force a set/order
 
@@ -309,7 +309,7 @@ cmp$covar     # columns: model, asset, alpha_j, alpha_port, T_event, rate, kupie
 
 # ===== Helper: build conditional CoVaR hit time series (base-R friendly) =====
 covar_hits_timeseries <- function(out, data, j, a = 0.10, b = 0.10,
-                                  date_from = as.Date("2005-01-01"),
+                                  date_from = as.Date("2003-01-01"),
                                   date_to   = as.Date("2100-01-01"),
                                   assets    = NULL) {
   al <- align_and_filter(out, data, date_from, date_to, keep_cols = assets)
@@ -378,8 +378,8 @@ covar_hits_timeseries <- function(out, data, j, a = 0.10, b = 0.10,
 #   alt1     = readRDS(".../out_naive_2_extend_t.rds")
 # )
 
-j <- 2
-a <- 0.10; b <- 0.10
+j <- 1
+a <- 0.1; b <- 0.05
 date_from <- as.Date("2003-01-01")
 date_to   <- as.Date("2025-01-01")
 
@@ -407,7 +407,7 @@ legend("right", inset = c(-0.02, 0), xpd = NA, bty = "n", lwd = 2, lty = c(1,2),
 # ---------- Plot 2: cumulative conditional proportion (step) ----------
 y1p <- ts_baseline$cum_prop
 y2p <- ts_alt1$cum_prop
-ylim2 <- c(0, 0.4)
+ylim2 <- c(0, 0.2)
 
 plot(x1, y1p, type = "s", lwd = 2, xlab = "Date",
      ylab = "Cumulative hit proportion (conditional)",
@@ -415,8 +415,24 @@ plot(x1, y1p, type = "s", lwd = 2, xlab = "Date",
      ylim = ylim2)
 lines(x2, y2p, type = "s", lwd = 2, lty = 2, col="red")
 abline(h = b, col = "gray60", lty = 3)  # benchmark proportion
-legend("right", inset = c(-0.02, 0), xpd = NA, bty = "n", lwd = 2, lty = c(1,2),
-       legend = c("baseline", "alt1"))
+
+
+
+idx_only_alt <- which(ts_alt1$hit == 1L & ts_baseline$hit == 0L)
+points(x1[idx_only_alt], y2p[idx_only_alt], pch = 24, bg = "red", col = "red")
+# vertical gap between baseline and alt1 at those times
+segments(x1[idx_only_alt], y1p[idx_only_alt],
+         x1[idx_only_alt], y2p[idx_only_alt],
+         col = "red", lty = 3)
+
+# subtle rug for quick scan
+rug(x1[idx_only_alt], side = 3, col = "red")
+
+legend("bottomright", inset = c(-0.02, 0), xpd = NA, bty = "n",
+       lwd = 2, lty = c(1,2), col = c("black","red"),
+       pch = c(NA, 24), pt.bg = c(NA, "red"),
+       legend = c("baseline", "alt1 (▲ = alt1-only hits)"))
+
 
 # ---------- Plot 3 (optional): events vs hits summary (barplot) ----------
 totals <- rbind(
@@ -504,7 +520,6 @@ for (e in 1:n_edges) {
 }
 
 par(op)
-
 
 
 

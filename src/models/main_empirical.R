@@ -130,9 +130,9 @@ for (t in 253:N) {
       y_real_t <- y_real[idx,]
       out$log_pred[idx] <- compute_predictive_metrics(u_t, particles, skeleton, w/sum(w), cfg)$log_pred_density
       
-      #system.time(
+      system.time(
       draws <- smc_predictive_sample_fast2_scoped(particles, skeleton, w, L = 20000, cl = cl)
-      #)
+      )
       # system.time(
       #   R_draws <- smc_predictive_sample_fast2_grouped_epoch(
       #     w   = particles$w,
@@ -144,8 +144,9 @@ for (t in 253:N) {
       #     nc = 1               # keep 1 unless W*nc <= physical cores
       #   )
       # )
-      #draws2 <- smc_predictive_sample_fast2_scoped2(particles, skeleton, w, L = 20000, cl = cl)
-      
+      system.time(
+      draws2 <- smc_predictive_sample_fast2_scoped2(particles, skeleton, w, L = 20000, cl = cl)
+      )
 
       Z_pred <- st_inv_fast(draws, shape_fc[idx, ], df_fc[idx, ])  
       R_t  <- sweep(Z_pred, 2, as.numeric(sig_fc[idx, ]), `*`) + as.numeric(mu_fc[idx, ])          # L × d
