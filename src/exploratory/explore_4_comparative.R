@@ -274,8 +274,10 @@ data <- import_data(drop_first_col = FALSE, n_assets = 5)
 
 # Load as many 'out' objects as you want and name them for comparison
 out_list <- list(
-  baseline   = readRDS("C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/empirical_results/standard_tip_5d.rds"),
+   smc   = readRDS("C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/empirical_results/standard_tip_5d.rds"),
    alt1   = readRDS("C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/empirical_results/out_naive_3_5d_extend_t.rds")
+  
+   #alt2   = readRDS("C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/empirical_results/naive_monthly_5d_gaussian.rds")
   # , alt2   = readRDS(".../empirical_results/standard_tip.rds")
 )
 
@@ -301,7 +303,7 @@ cmp <- compare_models(
 # Tidy results ready for tables/plots:
 # cmp$port_var  # columns: model, alpha, n, hits, rate, kupiec, ind, cc
 # cmp$asset_var # columns: model, asset, alpha, n, hits, rate, kupiec, ind, cc
-cmp$covar     # columns: model, asset, alpha_j, alpha_port, T_event, rate, kupiec, ind, cc
+cmp$covar[alpha_j == alpha_port]     # columns: model, asset, alpha_j, alpha_port, T_event, rate, kupiec, ind, cc
 
 
 
@@ -309,7 +311,7 @@ cmp$covar     # columns: model, asset, alpha_j, alpha_port, T_event, rate, kupie
 
 # ===== Helper: build conditional CoVaR hit time series (base-R friendly) =====
 covar_hits_timeseries <- function(out, data, j, a = 0.10, b = 0.10,
-                                  date_from = as.Date("2003-01-01"),
+                                  date_from = as.Date("2004-01-01"),
                                   date_to   = as.Date("2100-01-01"),
                                   assets    = NULL) {
   al <- align_and_filter(out, data, date_from, date_to, keep_cols = assets)
@@ -374,38 +376,38 @@ covar_hits_timeseries <- function(out, data, j, a = 0.10, b = 0.10,
 # ===== Example: compare two named models in out_list (base R plots) ===========
 # data <- import_data(drop_first_col = FALSE, n_assets = 3)
 # out_list <- list(
-#   baseline = readRDS(".../test.rds"),
+#   smc = readRDS(".../test.rds"),
 #   alt1     = readRDS(".../out_naive_2_extend_t.rds")
 # )
 
 j <- 1
-a <- 0.1; b <- 0.05
-date_from <- as.Date("2003-01-01")
+a <- 0.1; b <- 0.1
+date_from <- as.Date("2004-01-01")
 date_to   <- as.Date("2025-01-01")
 
-ts_baseline <- covar_hits_timeseries(out_list$baseline, data, j, a, b, date_from, date_to)
+ts_smc <- covar_hits_timeseries(out_list$smc, data, j, a, b, date_from, date_to)
 ts_alt1     <- covar_hits_timeseries(out_list$alt1,     data, j, a, b, date_from, date_to)
 
 # ---------- Plot 1: cumulative number of hits (step) ----------
 op <- par(no.readonly = TRUE); on.exit(par(op))
 par(mar = c(4,4,3,8), xaxs = "i")  # extra right margin for legend
 
-x1 <- ts_baseline$Date
-y1 <- ts_baseline$cum_hits
+x1 <- ts_smc$Date
+y1 <- ts_smc$cum_hits
 x2 <- ts_alt1$Date
 y2 <- ts_alt1$cum_hits
 
 ylim <- range(y1, y2, na.rm = TRUE); if (!is.finite(ylim[1])) ylim <- c(0,1)
 
 plot(x1, y1, type = "s", lwd = 2, xlab = "Date", ylab = "Cumulative hits",
-     main = sprintf("CoVaR cumulative hits | j=%s, a=%.2f, b=%.2f", ts_baseline$asset_j, a, b),
+     main = sprintf("CoVaR cumulative hits | j=%s, a=%.2f, b=%.2f", ts_smc$asset_j, a, b),
      ylim = ylim)
 lines(x2, y2, type = "s", lwd = 2, lty = 2)
 legend("right", inset = c(-0.02, 0), xpd = NA, bty = "n", lwd = 2, lty = c(1,2),
-       legend = c("baseline", "alt1"))
+       legend = c("smc", "alt1"))
 
 # ---------- Plot 2: cumulative conditional proportion (step) ----------
-y1p <- ts_baseline$cum_prop
+y1p <- ts_smc$cum_prop
 y2p <- ts_alt1$cum_prop
 ylim2 <- c(0, 0.2)
 
@@ -418,9 +420,9 @@ abline(h = b, col = "gray60", lty = 3)  # benchmark proportion
 
 
 
-idx_only_alt <- which(ts_alt1$hit == 1L & ts_baseline$hit == 0L)
+idx_only_alt <- which(ts_alt1$hit == 1L & ts_smc$hit == 0L)
 points(x1[idx_only_alt], y2p[idx_only_alt], pch = 24, bg = "red", col = "red")
-# vertical gap between baseline and alt1 at those times
+# vertical gap between smc and alt1 at those times
 segments(x1[idx_only_alt], y1p[idx_only_alt],
          x1[idx_only_alt], y2p[idx_only_alt],
          col = "red", lty = 3)
@@ -431,14 +433,14 @@ rug(x1[idx_only_alt], side = 3, col = "red")
 legend("bottomright", inset = c(-0.02, 0), xpd = NA, bty = "n",
        lwd = 2, lty = c(1,2), col = c("black","red"),
        pch = c(NA, 24), pt.bg = c(NA, "red"),
-       legend = c("baseline", "alt1 (▲ = alt1-only hits)"))
+       legend = c("smc", "alt1 (▲ = alt1-only hits)"))
 
 
 # ---------- Plot 3 (optional): events vs hits summary (barplot) ----------
 totals <- rbind(
-  data.frame(model = "baseline",
-             events = max(ts_baseline$cum_trials, na.rm = TRUE),
-             hits   = max(ts_baseline$cum_hits,   na.rm = TRUE)),
+  data.frame(model = "smc",
+             events = max(ts_smc$cum_trials, na.rm = TRUE),
+             hits   = max(ts_smc$cum_hits,   na.rm = TRUE)),
   data.frame(model = "alt1",
              events = max(ts_alt1$cum_trials, na.rm = TRUE),
              hits   = max(ts_alt1$cum_hits,   na.rm = TRUE))
@@ -458,12 +460,83 @@ axis(1, at = 1:ncol(mat), labels = totals$model, tick = FALSE, line = -0.5)
 
 
 
+#########################
+
+# Gruped plots
+
+# --- choose the three institutions you want to show ---------------------------
+j_set <- c(1, 3, 5)   # <- pick the 3 j you want (indices of institutions)
+a <- 0.1; b <- 0.1
+date_from <- as.Date("2004-01-01")
+date_to   <- as.Date("2025-01-01")
+tickers <- setdiff((colnames(data$U)  ), "date")
+
+
+png("covar_hits_j123.png", width = 1000, height = 800)
+
+op <- par(
+  mfrow = c(3, 1),
+  mar   = c(3.2, 4.2, 2.2, 1.2),
+  oma   = c(0, 0, 1.5, 0),
+  cex.axis = 1.5   # <- enlarge x and y tick labels
+)
+
+for (i in seq_along(j_set)) {
+  j <- j_set[i]
+  
+  ts_smc  <- covar_hits_timeseries(out_list$smc,  data, j, a, b, date_from, date_to)
+  ts_alt1 <- covar_hits_timeseries(out_list$alt1, data, j, a, b, date_from, date_to)
+  
+  x1  <- ts_smc$Date
+  x2  <- ts_alt1$Date
+  y1p <- ts_smc$cum_prop
+  y2p <- ts_alt1$cum_prop
+  ylim2 <- c(0, 0.2)
+  
+  main_lbl <- if (!is.null(tickers)) {
+    paste0("CoVaR cumulative conditional hit proportion — j = ", tickers[j])
+  } else paste0("CoVaR cumulative conditional hit proportion — j = ", j)
+  
+  plot(x1, y1p, type = "s", lwd = 3,
+       xlab = if (i == length(j_set)) "Date" else "",
+       ylab = "",
+       ylim = ylim2)
+  
+  lines(x2, y2p, type = "s", lwd = 3, lty = 2, col = "grey")
+  abline(h = b, col = "gray60", lty = 3)
+  
+  idx_only_alt <- which(ts_alt1$hit == 1L & ts_smc$hit == 0L)
+  if (length(idx_only_alt)) {
+    rug(x1[idx_only_alt], side = 1, col = "red", lwd = 3, cex = 1.5)
+  }
+  
+  if (i == 1) {
+    legend("bottom", xpd = NA, bty = "n",
+           lwd = 3, lty = c(1, 2), col = c("black", "grey"),
+           legend = c("smc", "alt1"),
+           cex = 1.8)  # make legend text larger
+  }
+}
+
+if (!is.null(tickers)) {
+  used_lbl <- paste(tickers[j_set], collapse = ", ")
+} else {
+  used_lbl <- paste("j =", paste(j_set, collapse = ", "))
+}
+
+
+mtext(paste("CoVaR cumulative conditional hit proportion - SMC vs ALT1. Tickers:", used_lbl), outer = TRUE, cex = 1.3)
+par(op)
+
+dev.off()
+
+
 
 
 ##########################
 
 data$U$date
-out = out_list$baseline
+out = out_list$smc
 # fam_hist: array [particles x time x edges]
 fh <- out$fam_hist
 dim(fh)
@@ -545,7 +618,7 @@ qs_LA <- function(y, q, alpha, ahat) {
 # --------- build conditional CoVaR evaluation sample ----------
 # Returns dates, mask of conditioning events, portfolio y, CoVaR threshold q
 covar_eval_sample <- function(out, data, j, a = 0.10, b = 0.10,
-                              date_from = as.Date("2005-01-01"),
+                              date_from = as.Date("2004-01-01"),
                               date_to   = as.Date("2100-01-01"),
                               assets    = NULL) {
   al <- align_and_filter(out, data, date_from, date_to, keep_cols = assets)
@@ -657,7 +730,7 @@ covar_scores_compare <- function(out_list_named, data, j, a = 0.10, b = 0.10,
   do.call(rbind, res)
 }
 
-# s1 <- covar_scores(out_list$baseline, data, j=2, a=0.10, b=0.10,
+# s1 <- covar_scores(out_list$smc, data, j=2, a=0.10, b=0.10,
 #                    date_from=as.Date("2020-01-01"), date_to=as.Date("2022-01-01"))
 # s2 <- covar_scores(out_list$alt1,     data, j=2, a=0.10, b=0.10,
 #                    date_from=as.Date("2020-01-01"), date_to=as.Date("2022-01-01"))
@@ -680,12 +753,12 @@ plot_scores_series <- function(s, main_tag="model") {
 
 # data <- import_data(drop_first_col = FALSE, n_assets = 3)
 # out_list <- list(
-#   baseline = readRDS(".../test.rds"),
+#   smc = readRDS(".../test.rds"),
 #   alt1     = readRDS(".../out_naive_2_extend_t.rds")
 # )
 
 # Single model, scores:
-s1 <- covar_scores(out_list$baseline, data, j=2, a=0.10, b=0.10,
+s1 <- covar_scores(out_list$smc, data, j=2, a=0.10, b=0.10,
                    date_from=as.Date("2003-01-01"), date_to=as.Date("2025-01-01"))
 str(s1$summary)
 
@@ -695,19 +768,90 @@ tbl <- covar_scores_compare(out_list, data, j=2, a=0.10, b=0.10,
 print(tbl)
 
 # Optional simple plots:
-# plot_scores_series(s1, main_tag="baseline")
+# plot_scores_series(s1, main_tag="smc")
 
 
 
 
 ##############################################
+# ========= cumulative LM/LA plots for ONE asset j, comparing smc vs alt1 ======
+# Settings ---------------------------------------------------------------------
+# ========= cumulative LM & LA in ONE figure for ONE asset j ===================
+# Settings ---------------------------------------------------------------------
+j_sel     <- 2                  # <-- pick the conditioning asset index
+a <- 0.10; b <- 0.10            # CoVaR^{b | j at level a}
+date_from <- as.Date("2004-01-01")
+date_to   <- as.Date("2025-01-01")
+assets_sel <- NULL              # or c("AIG","AXP","BAC", ...)
 
-#discordant plot
-## ================== CoVaR hits: baseline vs alt (minimal) ====================
-## Uses your existing covar_eval_sample(), and the objects:
+# Use your existing score builder ------------------------------------------------
+s_smc  <- covar_scores(out_list$smc,  data, j = j_sel, a = a, b = b,
+                       date_from = date_from, date_to = date_to, assets = assets_sel)
+s_alt1 <- covar_scores(out_list$alt1, data, j = j_sel, a = a, b = b,
+                       date_from = date_from, date_to = date_to, assets = assets_sel)
+
+# Align two date series and build cumulative sums (treat NA as 0 between events)
+build_cum <- function(dates1, x1, dates2, x2) {
+  DT <- data.table(Date = sort(unique(c(dates1, dates2))))
+  setkey(DT, Date)
+  DT[, smc  := NA_real_]
+  DT[, alt1 := NA_real_]
+  DT[.(dates1), smc  := x1]
+  DT[.(dates2), alt1 := x2]
+  DT[, cum_smc  := cumsum(replace(smc,  is.na(smc),  0))]
+  DT[, cum_alt1 := cumsum(replace(alt1, is.na(alt1), 0))]
+  DT[]
+}
+
+cum_LM <- build_cum(s_smc$dates, s_smc$LM, s_alt1$dates, s_alt1$LM)
+cum_LA <- build_cum(s_smc$dates, s_smc$LA, s_alt1$dates, s_alt1$LA)
+
+# Labels
+asset_name <- s_smc$meta$asset_j
+main_tag   <- sprintf("j = %s | a = %.2f, b = %.2f", asset_name, a, b)
+
+# ---------- ONE FIGURE with two stacked panels ---------------------------------
+png("covar_cum_LM_LA_smc_vs_alt1.png", width = 1200, height = 900)
+op <- par(no.readonly = TRUE)
+on.exit({par(op); dev.off()}, add = TRUE)
+
+par(mfrow = c(2, 1),
+    mar   = c(4.2, 5.2, 3.0, 10),  # extra right margin for legend on top panel
+    oma   = c(0, 0, 2.0, 0),
+    xaxs  = "i",
+    cex.axis = 1.5, cex.lab = 1.6)
+
+## Panel 1: cumulative LM
+with(cum_LM, {
+  ylim <- range(c(cum_smc, cum_alt1), na.rm = TRUE)
+  if (!is.finite(ylim[1])) ylim <- c(0, 1)
+  plot(Date, cum_smc, type = "s", lwd = 3,
+       xlab = "", ylab = "Cumulative LM",
+       main = paste("Cumulative LM —", main_tag),
+       ylim = ylim)
+  lines(Date, cum_alt1, type = "s", lwd = 3, lty = 2, col = "grey40")
+})
+legend("bottom", inset = c(-0.03, 0), xpd = NA, bty = "n",
+       lwd = 3, lty = c(1, 2), col = c("black", "grey40"),
+       legend = c("smc", "alt1"), cex = 1.5)
+
+## Panel 2: cumulative LA
+with(cum_LA, {
+  ylim <- range(c(cum_smc, cum_alt1), na.rm = TRUE)
+  if (!is.finite(ylim[1])) ylim <- c(0, 1)
+  plot(Date, cum_smc, type = "s", lwd = 3,
+       xlab = "", ylab = "Cumulative LA",
+       main = paste("Cumulative LA —", main_tag),
+       ylim = ylim)
+  lines(Date, cum_alt1, type = "s", lwd = 3, lty = 2, col = "grey40")
+})
+
+mtext("CoVaR conditional scoring - AXP",
+      outer = TRUE, cex = 1.8)
+# ------------------------------------------------------------------------------
 
 
-
+dev.off()
 
 
 

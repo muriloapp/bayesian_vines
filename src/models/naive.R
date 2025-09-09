@@ -91,10 +91,15 @@ extend_with_t <- function(vinecop_t1, structure_full) {
 
 
 
-n_assets <- 1:3
-n_days <- 1:2000
+n_assets <- 1:5
 
-data <- import_data(drop_first_col = TRUE, n_assets = 3)
+data <- import_data(drop_first_col = TRUE, n_assets = 5)
+
+
+U         <- data$U
+cfg <- build_cfg(d = ncol(U))
+N <- nrow(U); K <- cfg$K; tickers <- colnames(U); A <- length(cfg$alphas)
+n_oos <- N - cfg$W_predict; d <- cfg$d; t_train <- cfg$W_predict
 
 mu_fc   <- data$mu_fc[(nrow(data$mu_fc)   - n_oos + 1):nrow(data$mu_fc), , drop = FALSE]
 sig_fc  <- data$sig_fc[(nrow(data$sig_fc) - n_oos + 1):nrow(data$sig_fc), , drop = FALSE]
@@ -103,28 +108,13 @@ shape_fc<- data$shape_fc[(nrow(data$shape_fc) - n_oos + 1):nrow(data$shape_fc), 
 y_real  <- data$y_real[(nrow(data$y_real) - n_oos + 1):nrow(data$y_real), , drop = FALSE]
 
 
-# data <- list(
-#   U      = readRDS("data/PIT.rds")[,n_assets],
-#   mu_fc  = readRDS("data/returns_mean_forecast.rds")[,n_assets+1, with=FALSE],# [,-1],  # drop date col
-#   sig_fc = readRDS("data/returns_vol_forecast.rds")[,n_assets+1, with=FALSE],  #[,-1],
-#   df_fc = readRDS("data/df_fc.rds")[,n_assets+1, with=FALSE],#[,-1]
-#   shape_fc = readRDS("data/shape_fc.rds")[,n_assets+1, with=FALSE]#[,-1]
-# )
-# y_real = readRDS("data/returns_actual.rds")[,n_assets+1, with=FALSE]
-
-U         <- data$U
-cfg <- build_cfg(d = ncol(U))
-N <- nrow(U); K <- cfg$K; tickers <- colnames(U); A <- length(cfg$alphas)
-n_oos <- N - cfg$W_predict; d <- cfg$d; t_train <- cfg$W_predict
 
 
-
-
-mu_fc     <- data$mu_fc[(.N - n_oos + 1):.N]
-sig_fc    <- data$sig_fc[(.N - n_oos + 1):.N]
-df_fc     <- data$df_fc[(.N - n_oos + 1):.N]
-shape_fc     <- data$shape_fc[(.N - n_oos + 1):.N]
-y_real <- y_real[(.N - n_oos + 1):.N]
+# mu_fc     <- data$mu_fc[(.N - n_oos + 1):.N]
+# sig_fc    <- data$sig_fc[(.N - n_oos + 1):.N]
+# df_fc     <- data$df_fc[(.N - n_oos + 1):.N]
+# shape_fc     <- data$shape_fc[(.N - n_oos + 1):.N]
+# y_real <- y_real[(.N - n_oos + 1):.N]
 
 
 out <- list(
@@ -165,22 +155,24 @@ for (t in seq_len(n_oos)) {
   u_train <- U[(test_idx - t_train):(test_idx - 1), , drop = FALSE]
   y_real_t <- y_real[t,]
   
-  if (t == 1)  skel <- make_skeleton_CVM(u_train, trunc_tree = 2)
-  fit_t1 <- vinecop(u_train,
-                   family_set = c("bb1", "bb7", "t"),
+  if (t == 1)  skel <- make_skeleton_CVM(u_train, trunc_tree = 4)
+  #fit_t1
+  model <- vinecop(u_train,
+                   family_set = c('gaussian'),#c("bb1", "bb7", "t"),
                    structure   = skel$structure,
                    allow_rotations = TRUE,
-                   trunc_lvl       = 1)
+                   trunc_lvl       = 4)#1
   
   #template_vinecop  <- extend_with_gaussian(fit_t1, skel$structure)
-  template_vinecop  <- extend_with_gaussian(fit_t1, skel$structure)
-  
-  model <- vinecop(
-    u_train,
-    vinecop_object  = template_vinecop,  # <-- must be class 'vinecop'
-    par_method      = "mle",
-    allow_rotations = FALSE              # rotations irrelevant for Gaussian
-  )
+  # template_vinecop  <- extend_with_t(fit_t1, skel$structure)
+  # 
+  # model <- vinecop(
+  #   u_train,
+  #   vinecop_object  = template_vinecop,  # <-- must be class 'vinecop'
+  #   par_method      = "mle",
+  #   allow_rotations = FALSE              # rotations irrelevant for Gaussian
+  # )
+  # 
   
   out$fam_hist[t, ] <- map_families(unlist(get_all_families(model, trees = NA)))
   out$par1_hist[t, ] <- extract_params(model)$par1
@@ -220,9 +212,9 @@ for (t in seq_len(n_oos)) {
   
   
   
-  out$QL[t, , ]  <- pinball_matrix(as.matrix(y_real_t), rs$VaR, cfg$alphas) # Quantile loss per asset & alpha using the VaR you already computed
+  out$QL[t, , ]  <- pinball_matrix(t(as.matrix(y_real_t, drop=FALSE)), rs$VaR, cfg$alphas) # Quantile loss per asset & alpha using the VaR you already computed
   out$FZL[t, , ] <- fzl_pzc_matrix(y_real_t, rs$VaR, rs$ES, cfg$alphas) # FZL joint loss for (VaR, ES)
-  out$wCRPS[t, ] <- wcrps_gr_matrix(R_t, as.matrix(y_real_t)) # Weighted CRPS from predictive draws 'R_t' and realization
+  out$wCRPS[t, ] <- wcrps_gr_matrix(R_t, t(as.matrix(y_real_t, drop=FALSE))) # Weighted CRPS from predictive draws 'R_t' and realization
   
   
   # CoVaR
@@ -248,7 +240,7 @@ for (t in seq_len(n_oos)) {
   
 out$cfg <- cfg
   
-saveRDS(out, file = file.path("empirical_results", "test.rds"))
+saveRDS(out, file = file.path("empirical_results", "naive_monthly_5d_gaussian.rds"))
 
 
 
