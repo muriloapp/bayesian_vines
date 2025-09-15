@@ -129,7 +129,7 @@ safe_sample <- function(x, size, replace = FALSE, prob = NULL) {
 
 
 
-# returns a single particle as 1×K row matrices (so you can rbind into big mats)
+# returns a single particle as 1×K row matrices (so can rbind into big mats)
 new_particle_row_mat <- function(cfg, U_init = NULL) {
   K   <- cfg$K
   fam <- integer(K); th1 <- numeric(K); th2 <- numeric(K)
@@ -153,11 +153,12 @@ new_particle_row_mat <- function(cfg, U_init = NULL) {
       mL   <- as.numeric(emps["L"]);  mU <- as.numeric(emps["U"])
       tail_strength <- max(mL, mU)
       
-      tail_codes <- c(FAM_BB1, FAM_BB1R180, FAM_BB7, FAM_BB7R180, FAM_BB8R180, FAM_T)
-      base_w     <- rep(1.0, nrow(fam_tbl))
-      is_tailfam <- fam_tbl$code %in% tail_codes
-      w          <- base_w * ifelse(is_tailfam, 1 + 3*tail_strength, pmax(1 - 0.9*tail_strength, 0.1))
-      w          <- w / sum(w)
+      #tail_codes <- c(FAM_BB1, FAM_BB1R180, FAM_BB7, FAM_BB7R180, FAM_BB8R180, FAM_T)
+      #base_w     <- rep(1.0, nrow(fam_tbl))
+      #is_tailfam <- fam_tbl$code %in% tail_codes
+      #w          <- base_w * ifelse(is_tailfam, 1 + 3*tail_strength, pmax(1 - 0.9*tail_strength, 0.1))
+      #w          <- w / sum(w)
+      w          <- rep(1 / length(cfg$families_first), length(cfg$families_first))
       
       code_k  <- sample(fam_tbl$code, 1L, prob = w)
       fam[k]  <- code_k
@@ -241,10 +242,7 @@ new_particle_row_mat <- function(cfg, U_init = NULL) {
 
 # Build M particles and stack row-wise: fast to serialize, easy to slice by row
 new_particles_mats <- function(cfg, U_init = NULL) {
-  stopifnot(is.list(cfg), length(cfg$M) == 1L, cfg$M >= 1L, length(cfg$K) == 1L, cfg$K >= 1L)
-  
   M <- as.integer(cfg$M)
-  
   rows <- vector("list", M)
   for (m in seq_len(M)) {
     rows[[m]] <- new_particle_row_mat(cfg, U_init)  # must return 1×K matrices
@@ -693,7 +691,6 @@ resample_move_old <- function(particles, newAncestors,
   
   # ----- 1) RESAMPLE (row reindex) -----
   M <- nrow(particles$fam_mat)
-  stopifnot(length(newAncestors) == M)
   particles$fam_mat <- particles$fam_mat[newAncestors, , drop = FALSE]
   particles$th1_mat <- particles$th1_mat[newAncestors, , drop = FALSE]
   particles$th2_mat <- particles$th2_mat[newAncestors, , drop = FALSE]
@@ -982,7 +979,7 @@ emp_tails_FRAPO <- function(uv, method = "EmpTC", k = NULL) {
 ## --- Seeding new family params from empirical tails (Tree 1) ---------------
 seed_family_from_emp <- function(new_code, mL, mU, cur_delta, step_sd, tip_sd_logit) {
   r_lam <- function(m) {
-    z <- rnorm(1, mean = logit(clamp01(m)), sd = tip_sd_logit)
+    z <- rnorm(1, mean = logit(clamp01(m)), sd = step_sd) #tip_sd_logit
     ilogit(z)
   }
   if (new_code == FAM_INDEP)  return(c(0, 0))
@@ -1005,14 +1002,14 @@ seed_family_from_emp <- function(new_code, mL, mU, cur_delta, step_sd, tip_sd_lo
     lamLr <- r_lam(mU); lamUr <- r_lam(mL)
     th    <- bb7r180_tail2par(lamLr, lamUr); th <- sanitize_bb7(th[1], th[2]); return(th)
   }
-  if (new_code == FAM_BB8R180) {
-    lamLr <- r_lam(mL)  # choose L as anchor
-    delta <- pmin(pmax(cur_delta + rnorm(1, 0, step_sd), 0.05), 7.0)
-    th    <- bb8r180_tail2par(lamLr, delta); th <- sanitize_bb8(th[1], th[2]); return(th)
-  }
+  #if (new_code == FAM_BB8R180) {
+  #  lamLr <- r_lam(mL)  # choose L as anchor
+  #  delta <- pmin(pmax(cur_delta + rnorm(1, 0, step_sd), 0.05), 7.0)
+  #  th    <- bb8r180_tail2par(lamLr, delta); th <- sanitize_bb8(th[1], th[2]); return(th)
+  #}
   if (new_code == FAM_T) {
     lam <- {
-      z <- rnorm(1, mean = logit(clamp01(max(mL, mU))), sd = tip_sd_logit)
+      z <- rnorm(1, mean = logit(clamp01(max(mL, mU))), sd = step_sd) #tip_sd_logit
       ilogit(z)
     }
     nu  <- exp(runif(1, 0, log(30)))

@@ -16,14 +16,15 @@ load_packages <- function() {
 
 build_cfg <- function(d,
                       lambda         = 1,
-                      step_sd        = 0.05,
+                      step_sd        = 0.025,
                       q_flip         = NULL,                 # <- default now computed later
                       K              = NULL,                 # <- ignored if truncation given
                       families       = c("bb1","bb1r180","bb7","bb7r180","t"),
                       families_first = c("bb1","bb1r180","bb7","bb7r180","t"),
                       families_deep  = c("t"),
                       adapt_step_sd  = TRUE,
-                      trunc_tree     = NULL) {
+                      trunc_tree     = NULL,
+                      W              = 252L) {
   
   d <- as.integer(d)
   K_full <- as.integer(d * (d - 1L) / 2L)
@@ -44,7 +45,7 @@ build_cfg <- function(d,
     trunc_tree   = trunc_tree,
     M            = 2000L,                   # DO SENSITIVITY ANALYSIS
     ess_thr      = 0.50,                    # Standard in the literature
-    W            = 252L,                    # DO SENSITIVITY ANALYSIS
+    W            = W,                    # DO SENSITIVITY ANALYSIS
     k_step       = 1L,                      # Print diag every k_step
     n_mh         = 3L,
     W_predict    = 756L,                    # Start predict 

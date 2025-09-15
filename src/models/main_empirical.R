@@ -115,7 +115,7 @@ smc_full <- function(data, cfg) {
   out$ancestorIndices[,1] <- seq_len(M)
   
 
-for (t in 253:N) {
+for (t in (cfg$W+1):N) {
 
     u_t_1 <- U[t-1,,drop=FALSE]
     u_t <- U[t,,drop=FALSE]
