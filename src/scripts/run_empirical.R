@@ -30,7 +30,7 @@ run_empirical <- function() {
     list(label = "tip_w504",  use_tail_informed_prior = TRUE, tip_k = NULL, w = 504L)
   )
   
-  #v=cfg_variants[[1]]
+ # v=cfg_variants[[1]]
   for (v in cfg_variants) {
     cfg <- modifyList(build_cfg(ncol(dat$U)), v[ setdiff(names(v),"label") ])
     cfg$label <- v$label %||% "cfg"
@@ -38,6 +38,7 @@ run_empirical <- function() {
     
     data = dat
     res <- smc_full(dat, cfg)
+    res$cfg <- cfg
     res$alg <- if (isTRUE(cfg$use_weighted_ll)) "tail_weighted" else "standard"
     save_result(res, here("empirical_results"))
   }

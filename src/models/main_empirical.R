@@ -130,9 +130,9 @@ for (t in (cfg$W+1):N) {
       y_real_t <- y_real[idx,]
       out$log_pred[idx] <- compute_predictive_metrics(u_t, particles, skeleton, w/sum(w), cfg)$log_pred_density
       
-      system.time(
-      draws <- smc_predictive_sample_fast2_scoped(particles, skeleton, w, L = 20000, cl = cl)
-      )
+      #system.time(
+      #draws <- smc_predictive_sample_fast2_scoped(particles, skeleton, w, L = 20000, cl = cl[1:8])
+      #)
       # system.time(
       #   R_draws <- smc_predictive_sample_fast2_grouped_epoch(
       #     w   = particles$w,
@@ -144,9 +144,9 @@ for (t in (cfg$W+1):N) {
       #     nc = 1               # keep 1 unless W*nc <= physical cores
       #   )
       # )
-      system.time(
-      draws2 <- smc_predictive_sample_fast2_scoped2(particles, skeleton, w, L = 20000, cl = cl)
-      )
+      #system.time(
+      draws <- smc_predictive_sample_fast2_scoped2(particles, skeleton, w, L = 20000, cl = cl[1:12])
+      #)
 
       Z_pred <- st_inv_fast(draws, shape_fc[idx, ], df_fc[idx, ])  
       R_t  <- sweep(Z_pred, 2, as.numeric(sig_fc[idx, ]), `*`) + as.numeric(mu_fc[idx, ])          # L × d
@@ -206,10 +206,10 @@ for (t in (cfg$W+1):N) {
     if (ESS(w) < cfg$ess_thr * M && t < N) {
       newAncestors <- stratified_resample(w)
       data_up_to_t <- U[max(1, t - cfg$W + 1):(t-1), , drop = FALSE]
- 
-      move_out <- resample_move_old(particles, newAncestors, data_up_to_t, cl,
+      system.time(
+      move_out <- resample_move_old(particles, newAncestors, data_up_to_t, cl[1:30],
                                     cfg$type, cfg, skeleton = skeleton)
-      
+      )
       particles <- move_out$particles
       out$mh_acc_pct[t] <- move_out$acc_pct
       if (cfg$adapt_step_sd) {
