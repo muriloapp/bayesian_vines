@@ -23,33 +23,32 @@ build_cfg <- function(d,
                       families_first = c("bb1","bb1r180","bb7","bb7r180","t"),
                       families_deep  = c("t"),
                       adapt_step_sd  = TRUE,
-                      trunc_tree     = 2L) {
+                      trunc_tree     = NULL) {
   
   d <- as.integer(d)
   K_full <- as.integer(d * (d - 1L) / 2L)
   
-  # sanitize truncation and compute truncated K
-  trunc_tree <- max(1L, min(as.integer(trunc_tree), d - 1L))
+  trunc_tree <- ifelse(!is.null(trunc_tree), trunc_tree, d - 1L)
   K_trunc <- K_from_trunc(d, trunc_tree)
   
   # edge-to-tree mapping consistent with truncation (length == K_trunc)
   edge_tree <- edge_tree_map(d, trunc_tree)
   
   # default q_flip uses *truncated* K (prob. of proposing a family flip vs. stay)
-  if (is.null(q_flip)) q_flip <- 1 / (K_trunc + 1)
+  if (is.null(q_flip)) q_flip <- 1 / (d - 1L)
   
   cfg <- list(
     d            = d,
     K            = K_trunc,                 # <- truncated K used everywhere downstream
     K_full       = K_full,                  # <- for reference if needed
     trunc_tree   = trunc_tree,
-    M            = 1000L,
-    ess_thr      = 0.50,
-    W            = 252L,
-    k_step       = 1L,
+    M            = 2000L,                   # DO SENSITIVITY ANALYSIS
+    ess_thr      = 0.50,                    # Standard in the literature
+    W            = 252L,                    # DO SENSITIVITY ANALYSIS
+    k_step       = 1L,                      # Print diag every k_step
     n_mh         = 3L,
-    W_predict    = 756L,
-    q_flip       = q_flip,
+    W_predict    = 756L,                    # Start predict 
+    q_flip       = q_flip,                  # DO SENSITIVITY ANALYSIS
     step_sd      = step_sd,
     lambda       = lambda,
     families     = families,
@@ -64,9 +63,9 @@ build_cfg <- function(d,
     alphas       = c(0.1, 0.05, 0.025, 0.01),
     # --- tail-weighted likelihood knobs ---
     use_weighted_ll = FALSE,
-    tauL      = 0.1,   # per-margin lower-quantile threshold for "tail"
-    joint_k   = 2L,     # how many margins must be in the lower tail in a row
-    tail_eps  = 0.30,   # weight for non-tail rows (0<eps<=1)
+    tauL      = 0.1,                        # per-margin lower-quantile threshold for "tail"
+    joint_k   = 2L,                         # how many margins must be in the lower tail in a row
+    tail_eps  = 0.30,                       # weight for non-tail rows (0<eps<=1)
     ## --- Tail-informed prior (TIP), recomputed at each t ---
     use_tail_informed_prior = FALSE,  # turn on strong tail-centered priors
     tip_method   = "EmpTC",          # FRAPO::tdc method: "EmpTC" or "EVT"

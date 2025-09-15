@@ -15,18 +15,17 @@ run_empirical <- function() {
   # 
   # )
   
-  dat <- import_data(drop_first_col = TRUE, n_assets = 3)
+  dat <- import_data(drop_first_col = TRUE, n_assets = 5)
   
   
   #cfg_variants <- list(list(label = "test"))   
   cfg_variants <- list(
-    list(label = "std", q_flip = 0.2),
-    list(label = "tailW_tauL0.2_taileps0.5",  use_weighted_ll = TRUE,
-         tauL = 0.2, joint_k = 2L, tail_eps = 0.50, q_flip = 0.2),
-    list(label = "tailW_tauL0.1_taileps0.3",  use_weighted_ll = TRUE,
-         tauL = 0.1, joint_k = 2L, tail_eps = 0.30, q_flip = 0.2),
-    list(label = "tip",  use_tail_informed_prior = TRUE, tip_method = "EmpTC",          
-         tip_k = 25, tip_sd_logit = 0.025, q_flip = 0.2)
+    #list(label = "std", q_flip = 0.2),
+    #list(label = "tailW_tauL0.2_taileps0.5",  use_weighted_ll = TRUE,
+    #     tauL = 0.2, joint_k = 2L, tail_eps = 0.50, q_flip = 0.2),
+    #list(label = "tailW_tauL0.1_taileps0.3",  use_weighted_ll = TRUE,
+    #     tauL = 0.1, joint_k = 2L, tail_eps = 0.30, q_flip = 0.2),
+    list(label = "tip",  use_tail_informed_prior = TRUE, tip_k = NULL, tip_sd_logit = 0.025)#, q_flip = 0.2)
   )
   
   v=cfg_variants[[1]]
