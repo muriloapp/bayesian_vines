@@ -1563,7 +1563,7 @@ compute_predictive_metrics <- function(u_obs, particles, skel,
                                        q_probs = c(0.025, 0.975)) {
   
   ## ---------- 1. predictive log-density -------------------------------
-  lik <- vapply(seq_len(M), function(i) {
+  lik <- vapply(seq_len(cfg$M), function(i) {
     vine_i <- .build_vine_from_vectors(
       fam = particles$fam_mat[i, ],
       th1 = particles$th1_mat[i, ],
