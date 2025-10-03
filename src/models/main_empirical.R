@@ -78,6 +78,8 @@ smc_full <- function(data, cfg) {
 
   out <- list(
     log_pred    = numeric(n_oos),
+    pit_joint = numeric(n_oos),
+    pit_rosen = matrix(NA_real_, n_oos, d, dimnames = list(NULL, tickers)),
     diag_log    = data.table(t = integer(N), ESS = numeric(N), unique = integer(N), euc = numeric(N), sparsity = numeric(N)),
     mh_acc_pct  = rep(NA_real_, N),
     step_sd_hist= rep(NA_real_, N),
@@ -106,7 +108,7 @@ smc_full <- function(data, cfg) {
                   ),
     
     CoVaR_tail = array(NA_real_, c(n_oos, d, 4), dimnames = list(NULL, tickers, c("a0.05b0.05","a0.05b0.1","a0.1b0.1","a0.1b0.05")))
-  )
+    )
 
   
   # init particles
@@ -129,7 +131,7 @@ for (t in (cfg$W+1):N) {
       
       y_real_t <- y_real[idx,]
       out$log_pred[idx] <- compute_predictive_metrics(u_t, particles, skeleton, w/sum(w), cfg)$log_pred_density
-      
+
       #system.time(
       #draws <- smc_predictive_sample_fast2_scoped(particles, skeleton, w, L = 20000, cl = cl[1:8])
       #)
@@ -147,6 +149,12 @@ for (t in (cfg$W+1):N) {
       #system.time(
       draws <- smc_predictive_sample_fast2_scoped2(particles, skeleton, w, L = 20000, cl = cl[1:12])
       #)
+      cmp  <- sweep(draws, 2, as.numeric(u_t), FUN = "<=")  # L x d logical
+      pitV <- matrixStats::rowAlls(cmp)   
+      out$pit_joint[idx] <- mean(pitV)   
+      
+      out$pit_rosen[idx, ] <- empirical_rosenblatt_from_draws(as.numeric(u_t), draws, K = floor(sqrt(nrow(draws))))
+      
 
       Z_pred <- st_inv_fast(draws, shape_fc[idx, ], df_fc[idx, ])  
       R_t  <- sweep(Z_pred, 2, as.numeric(sig_fc[idx, ]), `*`) + as.numeric(mu_fc[idx, ])          # L × d
@@ -230,8 +238,9 @@ for (t in (cfg$W+1):N) {
     out$par1_hist[, t,]  <- particles$th1_mat
     out$par2_hist[, t,]  <- particles$th2_mat
 
-  }
+}
   
+  out$cfg <- cfg
   out$particles_final    <- particles
   out$log_model_evidence <- sum(out$log_pred, na.rm = TRUE)
   out

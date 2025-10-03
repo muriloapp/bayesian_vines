@@ -25,9 +25,17 @@ run_empirical <- function() {
     #     tauL = 0.2, joint_k = 2L, tail_eps = 0.50, q_flip = 0.2),
     #list(label = "tailW_tauL0.1_taileps0.3",  use_weighted_ll = TRUE,
     #     tauL = 0.1, joint_k = 2L, tail_eps = 0.30, q_flip = 0.2),
-    list(label = "tip_w252",  use_tail_informed_prior = TRUE, tip_k = NULL, W = 756L),#, q_flip = 0.2)
-    list(label = "tip_w126",  use_tail_informed_prior = TRUE, tip_k = NULL, W = 126L),
-    list(label = "tip_w504",  use_tail_informed_prior = TRUE, tip_k = NULL, W = 504L)
+    list(label = "tip_w252_M2000_tipk10",  use_tail_informed_prior = TRUE, W = 252L, M=2000L, tip_k=25),#, q_flip = 0.2)
+    list(label = "tip_w252_M2000_tipk5",  use_tail_informed_prior = TRUE, W = 252L, M=2000L, tip_k=13),
+    list(label = "tip_w252_M2000_tipk15",  use_tail_informed_prior = TRUE, W = 252L, M=2000L, tip_k=38),
+    
+    list(label = "tip_w126_M2000_tipk10",  use_tail_informed_prior = TRUE, W = 126L, M=2000L, tip_k=13),#, q_flip = 0.2)
+    list(label = "tip_w126_M2000_tipk5",  use_tail_informed_prior = TRUE,  W = 126L, M=2000L, tip_k=6),
+    list(label = "tip_w126_M2000_tipk15",  use_tail_informed_prior = TRUE, W = 126L, M=2000L, tip_k=19),
+    
+    list(label = "tip_w504_M2000_tipk10",  use_tail_informed_prior = TRUE, W = 504L, M=2000L, tip_k=50),#, q_flip = 0.2)
+    list(label = "tip_w504_M2000_tipk5",  use_tail_informed_prior = TRUE, W = 504L, M=2000L, tip_k=25),
+    list(label = "tip_w504_M2000_tipk15",  use_tail_informed_prior = TRUE, W = 504L, M=2000L, tip_k=76)
   )
   
  # v=cfg_variants[[1]]

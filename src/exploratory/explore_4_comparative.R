@@ -274,11 +274,16 @@ data <- import_data(drop_first_col = FALSE, n_assets = 5)
 
 # Load as many 'out' objects as you want and name them for comparison
 out_list <- list(
-   smc   = readRDS("C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/empirical_results/standard_tip_5d.rds"),
-   alt1   = readRDS("C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/empirical_results/out_naive_3_5d_extend_t.rds")
-  
-   #alt2   = readRDS("C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/empirical_results/naive_monthly_5d_gaussian.rds")
-  # , alt2   = readRDS(".../empirical_results/standard_tip.rds")
+   # smc252_5   = readRDS("empirical_results/standard_tip_w252_M2000_tipk13.rds"),
+   smc252_10   = readRDS("empirical_results/standard_tip_w252_M2000_tipk10.rds"),
+   # smc252_15   = readRDS("empirical_results/standard_tip_w252_M2000_tipk38.rds"),
+   # smc126_5   = readRDS("empirical_results/standard_tip_w126_M2000_tipk6.rds"),
+   # smc126_10   = readRDS("empirical_results/standard_tip_w126_M2000_tipk13.rds"),
+   # smc126_15   = readRDS("empirical_results/standard_tip_w126_M2000_tipk19.rds"),
+   # smc504_5   = readRDS("empirical_results/standard_tip_w504_M2000_tipk25.rds"),
+   # smc504_10   = readRDS("empirical_results/standard_tip_w504_M2000_tipk50.rds"),
+   # smc504_15   = readRDS("empirical_results/standard_tip_w504_M2000_tipk76.rds")
+    alt2   = readRDS("empirical_results/standard_tip.rds")
 )
 
 # Choose period & assets by name (Date handling is centralized and consistent)
@@ -300,10 +305,15 @@ cmp <- compare_models(
   alphas_covar   = c(0.10, 0.05)
 )
 
+
+out_list$alt2$cfg
+out_list$smc252_10$cfg
+
+
 # Tidy results ready for tables/plots:
 # cmp$port_var  # columns: model, alpha, n, hits, rate, kupiec, ind, cc
 # cmp$asset_var # columns: model, asset, alpha, n, hits, rate, kupiec, ind, cc
-cmp$covar[alpha_j == alpha_port]     # columns: model, asset, alpha_j, alpha_port, T_event, rate, kupiec, ind, cc
+cmp$covar[(alpha_j == 0.05)&(alpha_port  == 0.05)&(asset  == "AIG")]     # columns: model, asset, alpha_j, alpha_port, T_event, rate, kupiec, ind, cc
 
 
 

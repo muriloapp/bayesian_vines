@@ -17,7 +17,7 @@ load_packages <- function() {
 build_cfg <- function(d,
                       lambda         = 1,
                       step_sd        = 0.025,
-                      q_flip         = NULL,                 # <- default now computed later
+                      q_flip         = 0.2,                 # <- default now computed later
                       K              = NULL,                 # <- ignored if truncation given
                       families       = c("bb1","bb1r180","bb7","bb7r180","t"),
                       families_first = c("bb1","bb1r180","bb7","bb7r180","t"),

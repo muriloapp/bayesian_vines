@@ -1579,6 +1579,104 @@ compute_predictive_metrics <- function(u_obs, particles, skel,
   )
 }
 
+# Empirical Rosenblatt PIT from predictive copula draws (mixture)
+# u: numeric length d (observed copula row at time t)
+# U_draws: L x d matrix of mixture draws in copula space
+# K: number of neighbors used for conditional CDFs (default ~ sqrt(L))
+# Fast empirical Rosenblatt using mixture draws
+# u: numeric length d (observed copula row)
+# U_draws: L x d numeric matrix (mixture draws)
+# K: neighbors (default ~ sqrt(L), min 30)
+empirical_rosenblatt_from_draws <- function(u, U_draws, K = NULL) {
+  # --- defensive coercions ---
+  if (is.matrix(u)) u <- as.numeric(u[1, ])
+  u <- as.numeric(u)
+  U_draws <- as.matrix(U_draws)
+  storage.mode(U_draws) <- "double"
+  
+  L <- nrow(U_draws); d <- ncol(U_draws)
+  stopifnot(length(u) == d, L >= 1, d >= 1)
+  
+  if (is.null(K)) K <- max(30L, floor(sqrt(L)))
+  K <- as.integer(min(K, L))
+  
+  z <- numeric(d)
+  
+  # Z1: marginal empirical CDF (with add-1 smoothing)
+  c1 <- sum(U_draws[, 1] <= u[1])
+  z[1] <- (c1 + 1) / (L + 2)
+  
+  if (d == 1L) return(z)
+  
+  # We’ll grow the conditioning space incrementally
+  Xprev <- U_draws[, 1, drop = FALSE]
+  u_prev <- u[1]
+  
+  use_fnn <- requireNamespace("FNN", quietly = TRUE)
+  
+  for (j in 2:d) {
+    if (use_fnn) {
+      # Fast kNN indices in (j-1)-dim space
+      idx <- FNN::get.knnx(Xprev, t(as.matrix(u_prev)), k = K)$nn.index[1, ]
+    } else {
+      # Fallback: full sort (robust across R versions)
+      if (ncol(Xprev) == 1L) {
+        dist2 <- abs(Xprev[, 1] - u_prev)
+      } else {
+        diff  <- sweep(Xprev, 2, u_prev, FUN = "-")
+        dist2 <- sqrt(rowSums(diff * diff))
+      }
+      idx <- head(order(as.numeric(dist2)), K)
+    }
+    
+    # Conditional CDF estimate with add-1 smoothing
+    cj <- sum(U_draws[idx, j] <= u[j])
+    z[j] <- (cj + 1) / (K + 2)
+    
+    # Expand conditioning set for next step
+    if (j < d) {
+      Xprev <- cbind(Xprev, U_draws[, j, drop = FALSE])
+      u_prev <- c(u_prev, u[j])
+    }
+  }
+  z
+}
+
+
+
+
+# compute_predictive_metrics <- function(u_obs, particles, skel,
+#                                        w_prev_for_prediction, cfg,
+#                                        q_probs = c(0.025, 0.975)) {
+#   
+# M <- nrow(particles$fam_mat)
+# d <- ncol(skel$structure)
+# vines <- lapply(seq_len(M), function(i) {
+#   .build_vine_from_vectors(
+#     fam = particles$fam_mat[i, ],
+#     th1 = particles$th1_mat[i, ],
+#     th2 = particles$th2_mat[i, ],
+#     skel    = skel
+#   )
+# })
+#   
+# 
+# lik <- vapply(seq_len(cfg$M), function(i) {
+#   as.numeric(dvinecop(u_obs, vines[[i]]))
+#   }, numeric(1))
+# log_pred_density <- log(sum(w_prev_for_prediction * lik) + 1e-30)
+# 
+# Ci <- vapply(seq_len(cfg$M), function(i) {
+#   as.numeric(pvinecop(u_obs, vines[[i]]))
+# }, numeric(1))
+# pit_joint <- sum(w_prev_for_prediction * Ci)
+# 
+# list(
+#   log_pred_density = log_pred_density,
+#   pit_joint = pit_joint
+# )
+# }
+
 
 smc_predictive_sample <- function(particles,          # list of M particles
                                   skel,               # fixed structure
