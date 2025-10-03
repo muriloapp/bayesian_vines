@@ -17,7 +17,7 @@ load_packages <- function() {
 build_cfg <- function(d,
                       lambda         = 1,
                       step_sd        = 0.025,
-                      q_flip         = 0.2,                 # <- default now computed later
+                      q_flip         = NULL,                 # <- default now computed later
                       K              = NULL,                 # <- ignored if truncation given
                       families       = c("bb1","bb1r180","bb7","bb7r180","t"),
                       families_first = c("bb1","bb1r180","bb7","bb7r180","t"),
@@ -43,7 +43,7 @@ build_cfg <- function(d,
     K            = K_trunc,                 # <- truncated K used everywhere downstream
     K_full       = K_full,                  # <- for reference if needed
     trunc_tree   = trunc_tree,
-    M            = 1000L,                   # DO SENSITIVITY ANALYSIS
+    M            = 2000L,                   # DO SENSITIVITY ANALYSIS
     ess_thr      = 0.50,                    # Standard in the literature
     W            = W,                    # DO SENSITIVITY ANALYSIS
     k_step       = 21L,                      # Print diag every k_step
@@ -71,7 +71,7 @@ build_cfg <- function(d,
     use_tail_informed_prior = FALSE,  # turn on strong tail-centered priors
     tip_method   = "EmpTC",          # FRAPO::tdc method: "EmpTC" or "EVT"
     tip_k        = NULL,             # if NULL, FRAPO’s default k=floor(sqrt(n))
-    tip_sd_logit = 0.20,             # SMALL sd => STRONG prior around empirical λ
+    tip_sd_logit = 0.025,             # SMALL sd => STRONG prior around empirical λ
 
     ## Tree 1 edge map (E1 x 2), in the SAME order as edges where edge_tree==1L
     ## If you already have it, keep using yours.
