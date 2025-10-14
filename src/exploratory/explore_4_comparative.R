@@ -274,16 +274,19 @@ data <- import_data(drop_first_col = FALSE, n_assets = 5)
 
 # Load as many 'out' objects as you want and name them for comparison
 out_list <- list(
-   # smc252_5   = readRDS("empirical_results/standard_tip_w252_M2000_tipk13.rds"),
+  #smc126_5   = readRDS("empirical_results/standard_tip_w126_M2000_tipk5.rds"),
+  #smc126_10   = readRDS("empirical_results/standard_tip_w126_M2000_tipk10.rds"),
+  #smc126_15   = readRDS("empirical_results/standard_tip_w126_M2000_tipk15.rds"),
+   #smc252_5   = readRDS("empirical_results/standard_tip_w252_M2000_tipk5.rds"),
    smc252_10   = readRDS("empirical_results/standard_tip_w252_M2000_tipk10.rds"),
-   # smc252_15   = readRDS("empirical_results/standard_tip_w252_M2000_tipk38.rds"),
-   # smc126_5   = readRDS("empirical_results/standard_tip_w126_M2000_tipk6.rds"),
-   # smc126_10   = readRDS("empirical_results/standard_tip_w126_M2000_tipk13.rds"),
-   # smc126_15   = readRDS("empirical_results/standard_tip_w126_M2000_tipk19.rds"),
-   # smc504_5   = readRDS("empirical_results/standard_tip_w504_M2000_tipk25.rds"),
-   # smc504_10   = readRDS("empirical_results/standard_tip_w504_M2000_tipk50.rds"),
-   # smc504_15   = readRDS("empirical_results/standard_tip_w504_M2000_tipk76.rds")
-    alt2   = readRDS("empirical_results/standard_tip.rds")
+   #smc252_15   = readRDS("empirical_results/standard_tip_w252_M2000_tipk15.rds"),
+   #smc504_5   = readRDS("empirical_results/standard_tip_w504_M2000_tipk5.rds"),
+   #smc504_10   = readRDS("empirical_results/standard_tip_w504_M2000_tipk10.rds"),
+   #smc504_15   = readRDS("empirical_results/standard_tip_w504_M2000_tipk15.rds")
+   
+   smc252_10_flat   = readRDS("empirical_results/standard_5d_flat.rds"),
+   alt_gaussian   = readRDS("empirical_results/naive_5d_gaussian.rds"),
+   alt   = readRDS("empirical_results/out_naive_3_5d_extend_t.rds")
 )
 
 # Choose period & assets by name (Date handling is centralized and consistent)
@@ -305,17 +308,168 @@ cmp <- compare_models(
   alphas_covar   = c(0.10, 0.05)
 )
 
-
-out_list$alt2$cfg
-out_list$smc252_10$cfg
-
+cmp$covar[(alpha_j == 0.05)&(alpha_port  == 0.05)]
 
 # Tidy results ready for tables/plots:
 # cmp$port_var  # columns: model, alpha, n, hits, rate, kupiec, ind, cc
 # cmp$asset_var # columns: model, asset, alpha, n, hits, rate, kupiec, ind, cc
-cmp$covar[(alpha_j == 0.05)&(alpha_port  == 0.05)&(asset  == "AIG")]     # columns: model, asset, alpha_j, alpha_port, T_event, rate, kupiec, ind, cc
+df <- (cmp$covar[(alpha_j == 0.05)&(alpha_port  == 0.05)&(asset  == "AIG")][,c("model", "rate","kupiec","cc")])    # columns: model, asset, alpha_j, alpha_port, T_event, rate, kupiec, ind, cc
+df$rate <- round(df$rate, 3)
+df$kupiec <- round(df$kupiec, 3)
+df$cc <- round(df$cc, 3)
+df
+
+df2 <- (cmp$covar[(alpha_j == 0.1)&(alpha_port  == 0.1)&(asset  == "AIG")][,c("model", "rate","kupiec","cc")])     # columns: model, asset, alpha_j, alpha_port, T_event, rate, kupiec, ind, cc
+df2$rate <- round(df2$rate, 3)
+df2$kupiec <- round(df2$kupiec, 3)
+df2$cc <- round(df2$cc, 3)
+df2
+
+merged_df <- cbind(df[,2:4],df2[,2:4])
+# Create the new data.frame
+new_df <- data.frame(
+  W = c(rep(126, 3), rep(252, 3), rep(504, 3)),
+  k = c(5, 10, 15, 5, 10, 15, 5, 10, 15)
+)
+# Combine (new_df first)
+merged_df <- cbind(new_df, merged_df)
+aig <- merged_df
 
 
+
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+
+aig <- aig[, -c(3, 4, 5)]
+axp <- axp[, -c(3, 4, 5)]
+bac <- bac[, -c(3, 4, 5)]
+c <- c[, -c(3, 4, 5)]
+cof <- cof[, -c(3, 4, 5)]
+
+
+aig <- aig[, 1:5]
+axp <- axp[, 1:5]
+bac <- bac[, 1:5]
+c <- c[, 1:5]
+cof <- cof[, 1:5]
+
+
+# --- Combine all data frames and label each asset
+df_all <- rbind(
+  cbind(asset = "AIG", aig[, c("W", "k", "rate")]),
+  cbind(asset = "AXP", axp[, c("W", "k", "rate")]),
+  cbind(asset = "BAC", bac[, c("W", "k", "rate")]),
+  cbind(asset = "C",   c[,   c("W", "k", "rate")]),
+  cbind(asset = "COF", cof[, c("W", "k", "rate")])
+)
+
+# Ensure correct types
+df_all$asset <- factor(df_all$asset, levels = c("AIG", "AXP", "BAC", "C", "COF"))
+df_all$W <- factor(df_all$W)  # treat W as categorical for plotting
+
+library(ggplot2)
+
+# Heatmap
+p_heatmap <- ggplot(df_all, aes(x = factor(k), y = factor(W), fill = rate)) +
+  geom_tile(color = "white") +
+  facet_wrap(~ asset) +
+  scale_fill_gradient(low = "white", high = "steelblue") +
+  labs(
+    title = expression(paste("Sensitivity of Rate to W and k (", alpha, " = ", beta, " = 0.05)")),
+    x = "k",
+    y = "Look-back window (W)",
+    fill = "Violation rate"
+  ) +
+  theme_minimal(base_size = 13)
+
+# Line plot
+p_line <- ggplot(df_all, aes(x = k, y = rate, color = factor(W), group = W)) +
+  geom_line(size = 1.1) +
+  geom_point(size = 2) +
+  facet_wrap(~ asset) +
+  labs(
+    title = expression(paste("Effect of W and k on Rate (", alpha, " = ", beta, " = 0.05)")),
+    x = "k",
+    y = "Violation rate",
+    color = "W"
+  ) +
+  theme_minimal(base_size = 13)
+
+# Save the heatmap
+ggsave(
+  filename = "rate_sensitivity_heatmap_10.png",
+  plot = p_heatmap,
+  width = 8,
+  height = 6,
+  dpi = 300
+)
+
+# Save the line plot
+ggsave(
+  filename = "rate_sensitivity_lineplot_10.png",
+  plot = p_line,
+  width = 8,
+  height = 6,
+  dpi = 300
+)
+
+# --- Combine all data frames and label each asset
+df_all <- rbind(
+  cbind(asset = "AIG", aig),
+  cbind(asset = "AXP", axp),
+  cbind(asset = "BAC", bac),
+  cbind(asset = "C",   c),
+  cbind(asset = "COF", cof)
+)
+
+
+alpha <- 0.1
+df_all <- df_all %>%
+  mutate(reject_kupiec = kupiec < 0.1)
+df_all %>%
+  filter(reject_kupiec)
+df_all %>%
+  group_by(asset) %>%
+  summarise(rejections = sum(reject_kupiec),
+            total = n(),
+            rejection_rate = mean(reject_kupiec))
+ggplot(df_all, aes(x = factor(k), y = factor(W), fill = reject_kupiec)) +
+  geom_tile(color = "white") +
+  facet_wrap(~ asset) +
+  scale_fill_manual(values = c("TRUE" = "firebrick", "FALSE" = "white")) +
+  labs(
+    title = "Kupiec Test Rejections (α = 0.1)",
+    x = "k", y = "W (look-back window)",
+    fill = "Reject?"
+  ) +
+  theme_minimal(base_size = 13)
+
+
+p_heatmap <- ggplot(df_all, aes(x = factor(k), y = factor(W), fill = rate)) +
+  geom_tile(color = "white") +
+  geom_text(
+    data = subset(df_all, reject_kupiec),
+    aes(label = "✗"),        # symbol shown when rejected
+    color = "red", size = 6
+  ) +
+  facet_wrap(~ asset) +
+  scale_fill_gradient(low = "white", high = "steelblue") +
+  labs(
+    title = expression(paste("Sensitivity of Rate to W and k (", alpha, " = ", beta, " = 0.05)")),
+    x = "k",
+    y = "Look-back window (W)",
+    fill = "Violation rate"
+  ) +
+  theme_minimal(base_size = 13)
+
+ggsave(
+  filename = "rate_sensitivity_heatmap_10.png",
+  plot = p_heatmap,
+  width = 8,
+  height = 6,
+  dpi = 300
+)
 
 
 
@@ -865,3 +1019,81 @@ dev.off()
 
 
 
+
+
+
+
+############################################################
+# test rosenblatt transformations
+
+library(dplyr)
+library(tidyr)
+
+# --- helper: run uniformity tests on one numeric vector
+have_goftest <- requireNamespace("goftest", quietly = TRUE)
+
+test_uniform <- function(x) {
+  x <- x[is.finite(x)]
+  p_ks <- tryCatch(stats::ks.test(x, "punif")$p.value, error = function(e) NA_real_)
+  p_ad <- if (have_goftest) {
+    tryCatch(goftest::ad.test(x, null = "punif")$p.value, error = function(e) NA_real_)
+  } else NA_real_
+  c(p_ks = p_ks, p_ad = p_ad)
+}
+
+# --- loop over (W, k) combos and build one tidy table
+results <- list()
+for (W in c(126, 252, 504)) {
+  for (k in c(5, 10, 15)) {
+    key <- paste0("smc", W, "_", k)
+    mat <- out_list[[key]]$pit_rose               # matrix with 5 columns (assets)
+    
+    # set fallback asset names if none
+    if (is.null(colnames(mat))) {
+      colnames(mat) <- paste0("Asset", seq_len(ncol(mat)))
+    }
+    
+    tmp <- apply(mat, 2, test_uniform)            # 2 = over columns
+    df  <- as.data.frame(t(tmp))
+    df$asset <- rownames(df)
+    rownames(df) <- NULL
+    df$W <- W; df$k <- k
+    results[[key]] <- df
+  }
+}
+
+pvals_long <- bind_rows(results) %>%
+  relocate(W, k, asset, p_ks, p_ad) %>%
+  mutate(reject_ks = p_ks < 0.05,
+         reject_ad = ifelse(is.na(p_ad), NA, p_ad < 0.05))
+
+# --- Wide tables (one row per (W,k), columns = assets)
+pvals_ks <- pvals_long %>%
+  select(W, k, asset, p_ks) %>%
+  mutate(p_ks = round(p_ks, 3)) %>%
+  tidyr::pivot_wider(names_from = asset, values_from = p_ks) %>%
+  arrange(W, k)
+
+pvals_ad <- pvals_long %>%
+  select(W, k, asset, p_ad) %>%
+  mutate(p_ad = round(p_ad, 3)) %>%
+  tidyr::pivot_wider(names_from = asset, values_from = p_ad) %>%
+  arrange(W, k)
+
+# --- Print the main KS table (common choice for PIT uniformity)
+print(pvals_ks)
+
+# --- If you want LaTeX tables (optional):
+# knitr::kable(pvals_ks, format = "latex", booktabs = TRUE,
+#              caption = "PIT Uniformity p-values (KS) by W and k")
+# knitr::kable(pvals_ad, format = "latex", booktabs = TRUE,
+#              caption = "PIT Uniformity p-values (AD) by W and k")
+
+# --- Quick rejection heatmap (optional)
+# ggplot(pvals_long, aes(x = factor(k), y = factor(W), fill = reject_ks)) +
+#   geom_tile(color = "white") +
+#   facet_wrap(~ asset) +
+#   scale_fill_manual(values = c("TRUE" = "firebrick", "FALSE" = "grey90", "NA"="grey70")) +
+#   labs(title = "KS Rejections of PIT Uniformity (alpha = 0.05)",
+#        x = "k", y = "W", fill = "Reject?") +
+#   theme_minimal(base_size = 13)
