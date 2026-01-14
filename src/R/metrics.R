@@ -183,3 +183,8 @@ covar_tail_vec <- function(R_draws, r_p, VaRj, port_alpha = 0.05, minN = 200) {
   }
   out
 }
+
+
+
+
+

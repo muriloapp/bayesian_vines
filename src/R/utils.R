@@ -310,7 +310,17 @@ save_result <- function(res, dir_out) {
 #   skeleton
 # }
 
-make_skeleton_CVM <- function(U_train, trunc_tree = 2) {            # NEW arg
+make_skeleton_CVM <- function(U_train, trunc_tree = 2, structure = NULL) {            # NEW arg
+  if (!is.null(structure)) {
+    skeleton <- vinecop(
+      U_train,
+      family_set = "gaussian",
+      structure  = structure,      # use the provided structure
+      trunc_lvl  = trunc_tree
+    )
+    return(skeleton)
+  }
+  
   CVM <- RVineStructureSelect(
     U_train, familyset = c(1), type = 1,
     indeptest = TRUE, level = 0.1,

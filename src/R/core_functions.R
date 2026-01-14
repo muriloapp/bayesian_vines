@@ -130,7 +130,7 @@ safe_sample <- function(x, size, replace = FALSE, prob = NULL) {
 
 
 # returns a single particle as 1×K row matrices (so can rbind into big mats)
-new_particle_row_mat <- function(cfg, U_init = NULL) {
+new_particle_row_mat <- function(cfg, U_init = NULL, true_bases=NULL) {
   K   <- cfg$K
   fam <- integer(K); th1 <- numeric(K); th2 <- numeric(K)
   
@@ -142,6 +142,19 @@ new_particle_row_mat <- function(cfg, U_init = NULL) {
     tr_k <- cfg$edge_tree[k]
     allowed_names <- if (tr_k == 1L) cfg$families_first else cfg$families_deep
     fam_tbl <- FAM_INFO[FAM_INFO$name %in% allowed_names, , drop = FALSE]
+    
+    # --- NEW: remove the "true" family for this edge (if provided) ---
+    if (!is.null(true_bases)) {
+      true_name  <- true_bases[k]  # assumes aligned with edge order k = 1..K
+      true_code  <- FAM_INFO$code[match(true_name, FAM_INFO$name)]
+      if (!is.na(true_code)) {
+        fam_tbl <- fam_tbl[fam_tbl$code != true_code, , drop = FALSE]
+      }
+      # safety: if you removed everything, fall back to original allowed set
+      if (nrow(fam_tbl) == 0L) {
+        fam_tbl <- FAM_INFO[FAM_INFO$name %in% allowed_names, , drop = FALSE]
+      }
+    }
     
     if (tip_on && tr_k == 1L) {
       # ---- TIP-aware family selection on Tree 1 ----
@@ -158,7 +171,7 @@ new_particle_row_mat <- function(cfg, U_init = NULL) {
       #is_tailfam <- fam_tbl$code %in% tail_codes
       #w          <- base_w * ifelse(is_tailfam, 1 + 3*tail_strength, pmax(1 - 0.9*tail_strength, 0.1))
       #w          <- w / sum(w)
-      w          <- rep(1 / length(cfg$families_first), length(cfg$families_first))
+      w          <- rep(1 / nrow(fam_tbl), nrow(fam_tbl))
       
       code_k  <- sample(fam_tbl$code, 1L, prob = w)
       fam[k]  <- code_k
@@ -241,11 +254,11 @@ new_particle_row_mat <- function(cfg, U_init = NULL) {
 }
 
 # Build M particles and stack row-wise: fast to serialize, easy to slice by row
-new_particles_mats <- function(cfg, U_init = NULL) {
+new_particles_mats <- function(cfg, U_init = NULL, true_bases = NULL) {
   M <- as.integer(cfg$M)
   rows <- vector("list", M)
   for (m in seq_len(M)) {
-    rows[[m]] <- new_particle_row_mat(cfg, U_init)  # must return 1×K matrices
+    rows[[m]] <- new_particle_row_mat(cfg, U_init, true_bases = true_bases)  # must return 1×K matrices
   }
   
   fam_mat <- do.call(rbind, lapply(rows, `[[`, "fam"))
@@ -687,7 +700,7 @@ init_from_tails <- function(new_code, tails) {
 
 resample_move_old <- function(particles, newAncestors,
                               data_up_to_t, cl, type, cfg,
-                              skeleton = NULL, tr = NULL, temp_skel = NULL) {
+                              skeleton = NULL, tr = NULL, temp_skel = NULL, true_bases=NULL) {
   
   # ----- 1) RESAMPLE (row reindex) -----
   M <- nrow(particles$fam_mat)
@@ -721,7 +734,7 @@ resample_move_old <- function(particles, newAncestors,
         acc_local <- 0L
         for (k in seq_len(cfg$n_mh)) {
           res <- mh_step(fam, th1, th2, data_up_to_t, skeleton, cfg,
-                             tip_means_cache = tip_cache, wobs = wobs)
+                             tip_means_cache = tip_cache, wobs = wobs, true_bases=true_bases)
           fam <- res$fam; th1 <- res$th1; th2 <- res$th2
           if (isTRUE(res$last_accept)) acc_local <- acc_local + 1L
         }
@@ -754,7 +767,7 @@ resample_move_old <- function(particles, newAncestors,
 mh_step <- function(fam, th1, th2,
                         data_up_to_t, skeleton, cfg,
                         tip_means_cache = NULL,   # list length K, each NULL or c(mL=..,mU=..)
-                        wobs = NULL) {           # optional obs weights
+                        wobs = NULL, true_bases=NULL) {           # optional obs weights
   K <- length(fam)
   
   # --- propose ---
@@ -764,6 +777,8 @@ mh_step <- function(fam, th1, th2,
   
   ## (a) Family flips — Tree 1 only (tail-seeded init if TIP)
   end_first_tr <- sum(cfg$edge_tree == 1L)
+  end_second_tr <- sum(cfg$edge_tree == 2L)  # Add this line for the second tree
+  
   if (end_first_tr > 0L) {
     flip_mask <- runif(end_first_tr) < cfg$q_flip
     if (any(flip_mask)) {
@@ -775,6 +790,13 @@ mh_step <- function(fam, th1, th2,
         old_code <- fam_p[idx]
         allowed_names <- if (tr_idx == 1L) cfg$families_first else cfg$families_deep
         allowed_codes <- setdiff(FAM_INFO$code[FAM_INFO$name %in% allowed_names], old_code)
+        
+        #Make sure the true family is NOT in allowed_codes
+        if (!is.null(true_bases)){
+          true_family_names <- true_bases[idx]  # True families
+          true_family_codes <- FAM_INFO$code[FAM_INFO$name %in% true_family_names]
+          allowed_codes <- setdiff(allowed_codes, true_family_codes)
+        }
         if (!length(allowed_codes)) next
         
         new_code <- safe_sample(allowed_codes, 1L)
@@ -799,12 +821,43 @@ mh_step <- function(fam, th1, th2,
           }
         } else {
           tails_old <- get_tails(old_code, th1_p[idx], th2_p[idx])
-          tp_new    <- init_from_tails(new_code, tails_old)
+          tp_new    <- init_from_tails(new_code, tails_old) ## NEED TO CHANGE COLUMN NAMES
           th1_p[idx] <- tp_new[1]; th2_p[idx] <- tp_new[2]
         }
       }
     }
   }
+  
+  # Second tree flip (add this part for the second tree)
+  # HARD CODED
+  # if (end_second_tr > 0L) {
+  #   flip_mask <- runif(end_second_tr) < cfg$q_flip
+  #   if (any(flip_mask)) {
+  #       tr_idx <- cfg$edge_tree[3] 
+  #       if (tr_idx != 2L) next  # Apply only to the second tree
+  #       
+  #       old_code <- fam_p[3]
+  #       allowed_names <- if (tr_idx == 2L) cfg$families_deep 
+  #       
+  #       # Exclude the true family for this edge from the allowed families
+  #       allowed_codes <- setdiff(FAM_INFO$code[FAM_INFO$name %in% allowed_names], old_code)
+  #       
+  #       if (!is.null(true_bases)){
+  #         true_family_names <- true_bases[3]
+  #         true_family_codes <- FAM_INFO$code[FAM_INFO$name %in% true_family_names]
+  #         allowed_codes <- setdiff(allowed_codes, true_family_codes)
+  #       }
+  #       if (!length(allowed_codes)) next
+  #       new_code <- safe_sample(allowed_codes, 1L)
+  #       fam_p[3] <- new_code
+  #       
+  #       # NO TIP here: just use tails of old param set
+  #       tails_old <- get_tails(old_code, th1_p[3], th2_p[3])
+  #       tp_new    <- init_from_tails(new_code, tails_old)
+  #       th1_p[3] <- tp_new[1]; th2_p[3] <- tp_new[2]
+  #     }
+  #   }
+  
   
   ## (b) Random-walk in tail space, map back, sanitize
   # Gaussian

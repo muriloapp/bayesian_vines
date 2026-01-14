@@ -21,7 +21,7 @@ build_cfg <- function(d,
                       K              = NULL,                 # <- ignored if truncation given
                       families       = c("bb1","bb1r180","bb7","bb7r180","t"),
                       families_first = c("bb1","bb1r180","bb7","bb7r180","t"),
-                      families_deep  = c("t"),
+                      families_deep  = c("bb1","bb1r180","bb7","bb7r180","t"),
                       adapt_step_sd  = TRUE,
                       trunc_tree     = NULL,
                       W              = 252L) {
@@ -46,7 +46,7 @@ build_cfg <- function(d,
     M            = 2000L,                   # DO SENSITIVITY ANALYSIS
     ess_thr      = 0.50,                    # Standard in the literature
     W            = W,                    # DO SENSITIVITY ANALYSIS
-    k_step       = 21L,                      # Print diag every k_step
+    k_step       = 350L,                      # Print diag every k_step
     n_mh         = 3L,
     W_predict    = 756L,                    # Start predict 
     q_flip       = q_flip,                  # DO SENSITIVITY ANALYSIS
@@ -59,7 +59,7 @@ build_cfg <- function(d,
     seed         = 42L,
     G            = 2L,
     edge_tree    = edge_tree,               # <- length == K
-    nc           = 30, #max(parallel::detectCores() - 1L, 1L),
+    nc           = 7, #max(parallel::detectCores() - 1L, 1L),
     type         = "standard",
     alphas       = c(0.1, 0.05, 0.025, 0.01),
     # --- tail-weighted likelihood knobs ---
@@ -92,6 +92,8 @@ source(here("src/models", "smc_stand_vine.R"))
 source(here("src/R", "results_helpers.R"))
 source(here("src/models", "main_empirical.R"))
 source(here("src/R", "metrics.R"))
+source(here("src/simulation", "main_simulation.R"))
+
 
 
 
