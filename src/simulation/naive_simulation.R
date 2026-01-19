@@ -432,12 +432,201 @@ naive_simul_d2 <- function(data, cfg, dgp) {
     
   }
   
-  out$cfg <- 
-  out$rmse <- 
   out
 }
 
 
+
+
+
+
+
+###########################################################
+
+naive_simul_d2_regimes <- function(data, cfg, dgp) {
+  
+  U <- data$U
+  M <- cfg$M; K <- cfg$K; N <- nrow(U); d <- cfg$d
+  n_oos <- N - cfg$W_predict
+  t_train <- cfg$W_predict
+  A <- length(cfg$alphas)
+  
+  tickers <- colnames(U)
+  if (is.null(tickers)) tickers <- paste0("V", seq_len(d))
+  
+  # OOS slices (as in your original)
+  mu_fc    <- data$mu_fc[(nrow(data$mu_fc)       - n_oos + 1):nrow(data$mu_fc), , drop = FALSE]
+  sig_fc   <- data$sig_fc[(nrow(data$sig_fc)     - n_oos + 1):nrow(data$sig_fc), , drop = FALSE]
+  df_fc    <- data$df_fc[(nrow(data$df_fc)       - n_oos + 1):nrow(data$df_fc), , drop = FALSE]
+  shape_fc <- data$shape_fc[(nrow(data$shape_fc) - n_oos + 1):nrow(data$shape_fc), , drop = FALSE]
+  y_real   <- data$y_real[(nrow(data$y_real)     - n_oos + 1):nrow(data$y_real), , drop = FALSE]
+  
+  # --- require time-varying truth from the piecewise DGP ---
+  # dgp$true_base_t must be length N (same index as rows of U)
+  if (is.null(dgp$true_base_t) || length(dgp$true_base_t) != N) {
+    stop("naive_simul_d2: dgp$true_base_t must exist and have length nrow(data$U).")
+  }
+  has_regime <- !is.null(dgp$regime_id) && length(dgp$regime_id) == N
+  
+  # Exclusion rule: "window" (default) excludes all true bases present in the training window;
+  #                "current" excludes only the current true base at test_idx.
+  #exclude_rule <- if (is.null(cfg$exclude_rule)) "window" else cfg$exclude_rule
+  exclude_rule <- "current"
+  refit_every  <- if (is.null(cfg$refit_every)) 252L else as.integer(cfg$refit_every)
+  
+  out <- list(
+    log_pred       = numeric(n_oos),
+    fam_hist       = matrix(NA_integer_, n_oos, 1),
+    par1_hist      = matrix(NA_real_,    n_oos, 1),
+    par2_hist      = matrix(NA_real_,    n_oos, 1),
+    rotation_hist  = matrix(NA_integer_, n_oos, 1),
+    
+    # helpful bookkeeping for later analysis
+    true_base_hist    = character(n_oos),
+    regime_hist       = if (has_regime) integer(n_oos) else NULL,
+    blocked_bases_hist= vector("list", n_oos),
+    
+    risk = list(
+      dates = integer(n_oos),
+      VaR   = array(NA_real_, c(n_oos, d, A), dimnames = list(NULL, tickers, paste0("a", cfg$alphas))),
+      ES    = array(NA_real_, c(n_oos, d, A), dimnames = list(NULL, tickers, paste0("a", cfg$alphas)))
+    ),
+    
+    QL    = array(NA_real_, c(n_oos, d, A), dimnames = list(NULL, tickers, paste0("a", cfg$alphas))),
+    FZL   = array(NA_real_, c(n_oos, d, A), dimnames = list(NULL, tickers, paste0("a", cfg$alphas))),
+    wCRPS = matrix(NA_real_, n_oos, d, dimnames = list(NULL, tickers)),
+    
+    port = list(
+      dates = integer(n_oos),
+      VaR   = matrix(NA_real_, n_oos, A, dimnames = list(NULL, paste0("a", cfg$alphas))),
+      ES    = matrix(NA_real_, n_oos, A, dimnames = list(NULL, paste0("a", cfg$alphas))),
+      QL    = matrix(NA_real_, n_oos, A, dimnames = list(NULL, paste0("a", cfg$alphas))),
+      FZL   = matrix(NA_real_, n_oos, A, dimnames = list(NULL, paste0("a", cfg$alphas))),
+      wCRPS = numeric(n_oos)
+    ),
+    
+    CoVaR_tail = array(
+      NA_real_, c(n_oos, d, 4),
+      dimnames = list(NULL, tickers, c("a0.05b0.05","a0.05b0.1","a0.1b0.1","a0.1b0.05"))
+    )
+  )
+  
+  model <- NULL
+  
+  for (t in seq_len(n_oos)) {
+    test_idx <- t_train + t
+    idx_train <- (test_idx - t_train):(test_idx - 1)
+    
+    u_train  <- U[idx_train, , drop = FALSE]
+    y_real_t <- y_real[t, ]
+    
+    # bookkeeping truth at this time
+    out$true_base_hist[t] <- dgp$true_base_t[test_idx]
+    if (has_regime) out$regime_hist[t] <- dgp$regime_id[test_idx]
+    
+    # (re)fit every refit_every steps (same idea as your original 50)
+    if (t == 1 || (t %% refit_every) == 0) {
+      
+      allowed_names <- cfg$families_first
+      
+      # blocked bases according to rule
+      blocked_bases <- if (exclude_rule == "current") {
+        dgp$true_base_t[test_idx]
+      } else {
+        unique(dgp$true_base_t[idx_train])
+      }
+      blocked_bases <- blocked_bases[!is.na(blocked_bases)]
+      out$blocked_bases_hist[[t]] <- blocked_bases
+      
+      allowed_names_masked <- setdiff(allowed_names, blocked_bases)
+      
+      # safety: if you accidentally block everything, fall back to unmasked set
+      if (length(allowed_names_masked) == 0L) {
+        allowed_names_masked <- allowed_names
+      }
+      
+      allowed_codes <- unname(name_to_code[allowed_names_masked])
+      
+      fit12_vc <- BiCopSelect(
+        u1 = u_train[, 1], u2 = u_train[, 2],
+        familyset     = allowed_codes,
+        selectioncrit = "AIC",
+        rotations     = FALSE
+      )
+      
+      fit12 <- vc_to_rvl(fit12_vc)
+      model <- fit12$dist
+    }
+    
+    out$fam_hist[t]      <- name_to_code[model$family][1]
+    out$par1_hist[t]     <- model$parameters[1]
+    out$par2_hist[t]     <- ifelse(length(model$parameters) >= 2, model$parameters[2], NA_real_)
+    out$rotation_hist[t] <- model$rotation
+    
+    u_test <- U[test_idx, 1:2, drop = FALSE]
+    
+    # density on copula scale
+    out$log_pred[t] <- log(dbicop(u_test, model))
+    
+    # predictive draws on copula scale
+    draws <- rbicop(2000, model)
+    
+    # transform + build returns
+    Z_pred <- st_inv_fast(draws, shape_fc[t, ], df_fc[t, ])
+    R_t <- sweep(Z_pred, 2, as.numeric(sqrt(sig_fc[t, ])), `*`) + as.numeric(mu_fc[t, ])
+    
+    # Risk metrics
+    rs <- risk_stats_full(R_t, cfg$alphas)
+    
+    out$risk$dates[t]     <- t
+    out$risk$VaR [t, , ]  <- rs$VaR
+    out$risk$ES  [t, , ]  <- rs$ES
+    
+    # EW-portfolio metrics
+    r_p <- rowMeans(R_t)
+    ps  <- port_stats(r_p, cfg$alphas)
+    
+    out$port$dates[t]    <- t
+    out$port$VaR [t, ]   <- ps$VaR
+    out$port$ES  [t, ]   <- ps$ES
+    
+    r_p_real <- mean(as.numeric(y_real_t))
+    out$port$QL[t, ]     <- vapply(seq_along(cfg$alphas), function(k) pinball_loss(r_p_real, ps$VaR[k], cfg$alphas[k]), numeric(1))
+    out$port$FZL[t, ]    <- vapply(seq_along(cfg$alphas), function(k) fzl_pzc_scalar(r_p_real, ps$VaR[k], ps$ES[k], cfg$alphas[k]), numeric(1))
+    out$port$wCRPS[t]    <- wcrps_gr_scalar(r_p, r_p_real)
+    
+    out$QL[t, , ]        <- pinball_matrix(t(as.matrix(y_real_t, drop = FALSE)), rs$VaR, cfg$alphas)
+    out$FZL[t, , ]       <- fzl_pzc_matrix(y_real_t, rs$VaR, rs$ES, cfg$alphas)
+    out$wCRPS[t, ]       <- wcrps_gr_matrix(R_t, t(as.matrix(y_real_t, drop = FALSE)))
+    
+    # CoVaR
+    k5  <- which.min(abs(cfg$alphas - 0.05))
+    k10 <- which.min(abs(cfg$alphas - 0.10))
+    
+    VaRj_5  <- rs$VaR[, k5]
+    VaRj_10 <- rs$VaR[, k10]
+    
+    covar5     <- covar_tail_vec(R_t, r_p, VaRj_5,  port_alpha = 0.05, minN = 50)
+    covar5b10  <- covar_tail_vec(R_t, r_p, VaRj_5,  port_alpha = 0.10, minN = 50)
+    covar10    <- covar_tail_vec(R_t, r_p, VaRj_10, port_alpha = 0.10, minN = 50)
+    covar10b5  <- covar_tail_vec(R_t, r_p, VaRj_10, port_alpha = 0.05, minN = 50)
+    
+    out$CoVaR_tail[t, , "a0.05b0.05"] <- covar5
+    out$CoVaR_tail[t, , "a0.05b0.1"]  <- covar5b10
+    out$CoVaR_tail[t, , "a0.1b0.1"]   <- covar10
+    out$CoVaR_tail[t, , "a0.1b0.05"]  <- covar10b5
+    
+    print(t)
+  }
+  
+  out
+}
+
+
+
+
+
+##########################################################
 
 # Hits for VaR (unconditional): y <= q  (vectors of same length)
 var_hits <- function(y, q) as.numeric(y <= q)
@@ -811,6 +1000,28 @@ true_model_simul <- function(data, cfg, dgp) {
   out
 }
   
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   
 
 
