@@ -5,10 +5,10 @@ library(here)
 library(fGarch)
 source(here("src/R", "config.R"))   
 
-n_sim   <- 50
+n_sim   <- 3
 d       <- 2
 n_train <- 252
-n_test  <- 3000
+n_test  <- 250
 n       <- n_train+n_test
 
 fam_names <- c("bb1", "bb1r180", "bb7", "bb7r180", "t")
@@ -409,14 +409,15 @@ wCRPS_list <- vector("list", n_sim)
 rmse_mae_from_covar_list <- vector("list", n_sim)
 
 
-alphas_covar <- c(0.05, 0.10)
-betas_covar  <- c(0.05, 0.10)
+alphas_covar <- c(0.025, 0.05, 0.10)
+betas_covar  <- c(0.025, 0.05, 0.10)
+
 
 
 ################################################################################
 # Regimes
 
-for (s in 1:(5)) { #################
+for (s in 1:(n_sim)) { #################
   set.seed(1111 + s)
   
   Ttot <- n_train + n_test
@@ -479,10 +480,10 @@ for (s in 1:(5)) { #################
   )
   
   
+  cols <- colnames(u_star_t)
   for (g in dgp$regimes) {
-    u_star_t[g$idx, colnames(u_star_t)] <- g$u_star[colnames(u_star_t)]
+    u_star_t[g$idx, cols] <- matrix(g$u_star[cols], nrow  = length(g$idx), ncol  = length(cols), byrow = TRUE)
   }
-  
   
   q_beta <- setNames(q_sstd(betas_covar), paste0("b", betas_covar))
   q_u_t <- apply(u_star_t, 2, q_sstd)
@@ -506,8 +507,9 @@ for (s in 1:(5)) { #################
     u_star_t     = u_star_t,
     alphas_covar = alphas_covar,
     betas_covar  = betas_covar,
-    var_true_10  = sqrt(data$sig_fc) * q_beta[2],
-    var_true_5   = sqrt(data$sig_fc) * q_beta[1],
+    var_true_10  = sqrt(data$sig_fc) * q_beta[3],
+    var_true_5   = sqrt(data$sig_fc) * q_beta[2],
+    var_true_025   = sqrt(data$sig_fc) * q_beta[1],
     
     covar_true_a05b05 = covar_true_a05b05,
     covar_true_a05b10 = covar_true_a05b10,
@@ -601,10 +603,6 @@ for (s in 1:(5)) { #################
 ################################################################################
 # REGIMES PARALLED
 
-
-#############################################################
-#REGIMES PARALLED
-
 library(here)
 library(fGarch)
 library(future.apply)
@@ -612,7 +610,7 @@ library(future.apply)
 run_one_sim <- function(s,
                         n_train, n_test, d,
                         L_switch = 100L,
-                        out_dir = "simul_results/2d_2") {
+                        out_dir = "simul_results/2d_smc") {
 
   set.seed(1111 + s)
 
@@ -670,15 +668,20 @@ run_one_sim <- function(s,
   )
 
   # --- Truth u_star_t over time ---
-  u_star_t <- matrix(NA_real_, nrow = Ttot, ncol = 4,
-                     dimnames = list(NULL, c("a0.05b0.05","a0.05b0.10","a0.10b0.10","a0.10b0.05")))
+  u_star_t <- matrix(
+    NA_real_,
+    nrow = Ttot,
+    ncol = length(SCEN_COVAR),
+    dimnames = list(NULL, SCEN_COVAR)
+  )
 
+  cols <- colnames(u_star_t)
   for (g in dgp$regimes) {
-    u_star_t[g$idx, ] <- g$u_star[colnames(u_star_t)]
+    u_star_t[g$idx, cols] <- matrix(g$u_star[cols], nrow  = length(g$idx), ncol  = length(cols), byrow = TRUE)
   }
 
-  alphas_covar <- c(0.05, 0.10)
-  betas_covar  <- c(0.05, 0.10)
+  alphas_covar <- c(0.025, 0.05, 0.10)
+  betas_covar  <- c(0.025, 0.05, 0.10)
 
   q_sstd <- function(u) qsstd(u, mean = 0, sd = 1, nu = 3, xi = 0.9)
   scale_by_time <- function(mat, v) mat * matrix(v, nrow = nrow(mat), ncol = ncol(mat))
@@ -686,9 +689,11 @@ run_one_sim <- function(s,
   q_u_t <- apply(u_star_t, 2, q_sstd)
 
   covar_true_a05b05 <- scale_by_time(sqrt(data$sig_fc), q_u_t[, "a0.05b0.05"])
-  covar_true_a05b10 <- scale_by_time(sqrt(data$sig_fc), q_u_t[, "a0.05b0.10"])
-  covar_true_a10b10 <- scale_by_time(sqrt(data$sig_fc), q_u_t[, "a0.10b0.10"])
-  covar_true_a10b05 <- scale_by_time(sqrt(data$sig_fc), q_u_t[, "a0.10b0.05"])
+  covar_true_a05b10 <- scale_by_time(sqrt(data$sig_fc), q_u_t[, "a0.05b0.1"])
+  covar_true_a10b10 <- scale_by_time(sqrt(data$sig_fc), q_u_t[, "a0.1b0.1"])
+  covar_true_a10b05 <- scale_by_time(sqrt(data$sig_fc), q_u_t[, "a0.1b0.05"])
+  covar_true_a05b0025 <- scale_by_time(sqrt(data$sig_fc), q_u_t[, "a0.05b0.025"])
+  covar_true_a0025b05 <- scale_by_time(sqrt(data$sig_fc), q_u_t[, "a0.025b0.05"])
 
   q_beta <- setNames(q_sstd(betas_covar), paste0("b", betas_covar))
 
@@ -696,15 +701,18 @@ run_one_sim <- function(s,
     u_star_t     = u_star_t,
     alphas_covar = alphas_covar,
     betas_covar  = betas_covar,
-    var_true_10  = sqrt(data$sig_fc) * q_beta[2],
-    var_true_5   = sqrt(data$sig_fc) * q_beta[1],
+    var_true_10  = sqrt(data$sig_fc) * q_beta[3],
+    var_true_5   = sqrt(data$sig_fc) * q_beta[2],
+    var_true_025   = sqrt(data$sig_fc) * q_beta[1],
     covar_true_a05b05 = covar_true_a05b05,
     covar_true_a05b10 = covar_true_a05b10,
     covar_true_a10b10 = covar_true_a10b10,
-    covar_true_a10b05 = covar_true_a10b05
+    covar_true_a10b05 = covar_true_a10b05,
+    covar_true_a05b0025 = covar_true_a05b0025,
+    covar_true_a0025b05 = covar_true_a0025b05
   )
 
-  cfg <- modifyList(build_cfg(d = 2), list(M = 500, label = "M500"))
+  cfg <- modifyList(build_cfg(d = 2), list(M = 500, label = "M500", use_tail_informed_prior = TRUE))
 
   # --- Run your method ---
   out <- naive_simul_d2_regimes(data, cfg, dgp)
@@ -714,12 +722,21 @@ run_one_sim <- function(s,
   rp_real_oos <- rowMeans(y_real_oos)
 
   eval_var <- port_var_backtest_df(out, rp_real_oos, cfg$alphas)
+  grid_ab_use <- rbind(
+    data.frame(alpha_j=0.10,  alpha_port=0.10),
+    data.frame(alpha_j=0.10,  alpha_port=0.05),
+    data.frame(alpha_j=0.05,  alpha_port=0.10),
+    data.frame(alpha_j=0.05,  alpha_port=0.05),
+    data.frame(alpha_j=0.05,  alpha_port=0.025),  # NEW
+    data.frame(alpha_j=0.025, alpha_port=0.05)    # NEW
+  )
+  
   eval_covar <- covar_backtest_grid(
     out         = out,
     y_real_oos  = y_real_oos,
     rp_real_oos = rp_real_oos,
     cfg_alphas  = cfg$alphas,
-    alphas_eval = c(0.10, 0.05),
+    grid_ab     = grid_ab_use,
     d           = d
   )
 
@@ -739,7 +756,7 @@ run_one_sim <- function(s,
   )
 
   dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
-  saveRDS(result, file.path(out_dir, sprintf("results_naive_regimes_refit252_2_s%03d.rds", s)))
+  saveRDS(result, file.path(out_dir, sprintf("results_naive_regimes_tip_s%03d.rds", s)))
 
   return(result)
 }
@@ -756,7 +773,7 @@ res_list <- future_lapply(
   n_test  = n_test,
   d       = d,
   L_switch = 100L,
-  out_dir  = "simul_results/2d_2",
+  out_dir  = "simul_results/2d_smc",
   future.seed = TRUE     # IMPORTANT: reproducible RNG across workers
 )
 
@@ -765,6 +782,9 @@ res_list <- future_lapply(
 eval_var_all   <- do.call(rbind, lapply(res_list, `[[`, "eval_var"))
 eval_covar_all <- do.call(rbind, lapply(res_list, `[[`, "eval_covar"))
 rmse_all       <- do.call(rbind, lapply(res_list, `[[`, "rmse_mae_from_covar"))
+
+
+
 
 mean_rate <- with(eval_var_all, mean(rate[alpha == 0.01], na.rm = TRUE))
 mean_rate
@@ -776,6 +796,7 @@ mean_rate
 
 
 ################################################################################
+# NO REGIMES
 
 for (s in 1:(n_sim)) {
   set.seed(1111 + s)
@@ -1036,11 +1057,6 @@ for (s in seq_len(s)) {
   x[s] <- res$QL_list
 
 }
-
-
-
-out_file <- file.path(out_dir, sprintf("results_naive_s%03d.rds", s))
-res <- readRDS(out_file)data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABIAAAASCAYAAABWzo5XAAAAbElEQVR4Xs2RQQrAMAgEfZgf7W9LAguybljJpR3wEse5JOL3ZObDb4x1loDhHbBOFU6i2Ddnw2KNiXcdAXygJlwE8OFVBHDgKrLgSInN4WMe9iXiqIVsTMjH7z/GhNTEibOxQswcYIWYOR/zAjBJfiXh3jZ6AAAAAElFTkSuQmCC
 
 
 
