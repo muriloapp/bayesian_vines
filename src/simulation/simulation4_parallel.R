@@ -68,36 +68,36 @@ draw_bicop <- function() {
   f <- sample(fam_names, 1)
   if (f == "t") {
     # target moderate |tau|; map to rho; pick df
-    tau <- runif(1, 0.2, 0.6) * 1#sample(c(-1, 1), 1)
+    tau <- runif(1, 0.2, 0.8) * 1#sample(c(-1, 1), 1)
     rho <- sin(pi * tau / 2)
     nu  <- runif(1, 2, 7)
     list(name_base = "t",
          bic       = bicop_dist("t", 0, c(rho, nu)))
   } else if (f %in% c("bb1")) {
     # BB1: theta>0, delta>=1  (keep in stable ranges)
-    theta <- runif(1, 0.6, 3.0)
-    delta <- runif(1, 1.1, 2.5)
+    theta <- runif(1, 0, 7)
+    delta <- runif(1, 1, 7)
     rot   <- 0
     list(name_base = "bb1",
          bic       = bicop_dist("bb1", rot, c(theta, delta)))  
   } else if (f %in% c("bb1r180")) {
     # BB1: theta>0, delta>=1  (keep in stable ranges)
-    theta <- runif(1, 0.6, 3.0)
-    delta <- runif(1, 1.1, 2.5)
+    theta <- runif(1, 7, 3.0)
+    delta <- runif(1, 7, 2.5)
     rot   <- ifelse(f == "bb1r180", 180, 0)
     list(name_base = "bb1r180",
          bic       = bicop_dist("bb1", rot, c(theta, delta)))
   } else if (f %in% c("bb7")) {
     # BB7: theta>=1, delta>0
-    theta <- runif(1, 1.1, 3.0)
-    delta <- runif(1, 0.6, 2.5)
+    theta <- runif(1, 1, 6.0)
+    delta <- runif(1, 0.01, 25)
     rot   <- 0
     list(name_base = "bb7",
          bic       = bicop_dist("bb7", rot, c(theta, delta)))
   } else if (f %in% c("bb7r180")) {
     # BB7: theta>=1, delta>0
-    theta <- runif(1, 1.1, 3.0)
-    delta <- runif(1, 0.6, 2.5)
+    theta <- runif(1, 1, 6.0)
+    delta <- runif(1, 0.01, 25)
     rot   <- ifelse(f == "bb7r180", 180, 0)
     list(name_base = "bb7r180",
          bic       = bicop_dist("bb7", rot, c(theta, delta)))
@@ -753,11 +753,11 @@ eval_var_all   <- do.call(rbind, lapply(res_list, `[[`, "eval_var"))
 eval_covar_all <- do.call(rbind, lapply(res_list, `[[`, "eval_covar"))
 rmse_all       <- do.call(rbind, lapply(res_list, `[[`, "rmse_mae_from_covar"))
 
+mean_rate <- with(eval_var_all, mean(rate[alpha == 0.01], na.rm = TRUE))
+mean_rate
 
-
-
-
-
+mean_rate <- with(eval_covar_all, mean(rate[asset == 1 & alpha_j == 0.05 & alpha_port == 0.05], na.rm = TRUE))
+mean_rate
 ################################################################################
 
 for (s in 1:(n_sim)) {
