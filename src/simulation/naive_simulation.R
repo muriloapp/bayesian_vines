@@ -167,7 +167,10 @@ naive_simul <- function(data, cfg, dgp) {
       wCRPS = numeric(n_oos)
     ),
     
-    CoVaR_tail = array(NA_real_, c(n_oos, d, 4), dimnames = list(NULL, tickers, c("a0.05b0.05","a0.05b0.1","a0.1b0.1","a0.1b0.05")))
+    CoVaR_tail = array(
+      NA_real_, c(n_oos, d, length(SCEN_COVAR)),
+      dimnames = list(NULL, tickers, SCEN_COVAR)
+    )
   )
   
   
@@ -269,18 +272,25 @@ naive_simul <- function(data, cfg, dgp) {
     # CoVaR
     k5  <- which.min(abs(cfg$alphas - 0.05))
     k10 <- which.min(abs(cfg$alphas - 0.10))
+    k025 <- which.min(abs(cfg$alphas - 0.025))
+    
     
     VaRj_5  <- rs$VaR[, k5]   # d-vector
     VaRj_10 <- rs$VaR[, k10]
+    VaRj_025 <- rs$VaR[, k025]
     covar5  <- covar_tail_vec(R_t, r_p, VaRj_5,  port_alpha = 0.05, minN = 50)
     covar5b10  <- covar_tail_vec(R_t, r_p, VaRj_5,  port_alpha = 0.1, minN = 50)
     covar10 <- covar_tail_vec(R_t, r_p, VaRj_10, port_alpha = 0.10, minN = 50)
     covar10b5 <- covar_tail_vec(R_t, r_p, VaRj_10, port_alpha = 0.05, minN = 50)
+    covar5b0025 <- covar_tail_vec(R_t, r_p, VaRj_5,   port_alpha = 0.025, minN = 50)
+    covar025b5  <- covar_tail_vec(R_t, r_p, VaRj_025, port_alpha = 0.05,  minN = 50)
     
     out$CoVaR_tail[t, , "a0.05b0.05"] <- covar5
     out$CoVaR_tail[t, , "a0.05b0.1"] <- covar5b10
     out$CoVaR_tail[t, , "a0.1b0.1"] <- covar10
     out$CoVaR_tail[t, , "a0.1b0.05"] <- covar10b5
+    out$CoVaR_tail[t_or_idx, , "a0.05b0.025"]  <- covar5b0025
+    out$CoVaR_tail[t_or_idx, , "a0.025b0.05"]  <- covar025b5
     
     
     print(t)
@@ -506,8 +516,8 @@ naive_simul_d2_regimes <- function(data, cfg, dgp) {
     ),
     
     CoVaR_tail = array(
-      NA_real_, c(n_oos, d, 4),
-      dimnames = list(NULL, tickers, c("a0.05b0.05","a0.05b0.1","a0.1b0.1","a0.1b0.05"))
+      NA_real_, c(n_oos, d, length(SCEN_COVAR)),
+      dimnames = list(NULL, tickers, SCEN_COVAR)
     )
   )
   
@@ -602,7 +612,9 @@ naive_simul_d2_regimes <- function(data, cfg, dgp) {
     # CoVaR
     k5  <- which.min(abs(cfg$alphas - 0.05))
     k10 <- which.min(abs(cfg$alphas - 0.10))
+    k025 <- which.min(abs(cfg$alphas - 0.025))
     
+    VaRj_025 <- rs$VaR[, k025]
     VaRj_5  <- rs$VaR[, k5]
     VaRj_10 <- rs$VaR[, k10]
     
@@ -610,11 +622,15 @@ naive_simul_d2_regimes <- function(data, cfg, dgp) {
     covar5b10  <- covar_tail_vec(R_t, r_p, VaRj_5,  port_alpha = 0.10, minN = 50)
     covar10    <- covar_tail_vec(R_t, r_p, VaRj_10, port_alpha = 0.10, minN = 50)
     covar10b5  <- covar_tail_vec(R_t, r_p, VaRj_10, port_alpha = 0.05, minN = 50)
+    covar5b0025 <- covar_tail_vec(R_t, r_p, VaRj_5,   port_alpha = 0.025, minN = 50)
+    covar025b5  <- covar_tail_vec(R_t, r_p, VaRj_025, port_alpha = 0.05,  minN = 50)
     
     out$CoVaR_tail[t, , "a0.05b0.05"] <- covar5
     out$CoVaR_tail[t, , "a0.05b0.1"]  <- covar5b10
     out$CoVaR_tail[t, , "a0.1b0.1"]   <- covar10
     out$CoVaR_tail[t, , "a0.1b0.05"]  <- covar10b5
+    out$CoVaR_tail[t, , "a0.05b0.025"]  <- covar5b0025
+    out$CoVaR_tail[t, , "a0.025b0.05"]  <- covar025b5
     
     print(t)
   }
@@ -793,16 +809,23 @@ covar_backtest_grid <- function(out,
                                 cfg_alphas,
                                 alphas_eval = c(0.10, 0.05),
                                 d = ncol(y_real_oos),
+                                grid_ab=NULL,
                                 tickers = NULL) {
   
   # label formatter to match dimnames like "a0.05b0.1"
-  fmt_ab <- function(x) ifelse(abs(x - 0.05) < 1e-12, "0.05",
-                               ifelse(abs(x - 0.10) < 1e-12, "0.1", as.character(x)))
+  fmt_ab <- function(x) {
+    if (abs(x - 0.025) < 1e-12) return("0.025")
+    if (abs(x - 0.05)  < 1e-12) return("0.05")
+    if (abs(x - 0.10)  < 1e-12) return("0.1")
+    as.character(x)
+  }
   
-  grid_ab <- expand.grid(alpha_j = alphas_eval,
-                         alpha_port = alphas_eval,
-                         KEEP.OUT.ATTRS = FALSE,
-                         stringsAsFactors = FALSE)
+  if (is.null(grid_ab)) {
+    grid_ab <- expand.grid(alpha_j = alphas_eval,
+                           alpha_port = alphas_eval,
+                           KEEP.OUT.ATTRS = FALSE,
+                           stringsAsFactors = FALSE)
+  }
   
   eval_covar <- do.call(rbind, lapply(seq_len(nrow(grid_ab)), function(i) {
     a <- grid_ab$alpha_j[i]      # VaR level for conditioning asset j

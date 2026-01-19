@@ -13,6 +13,11 @@ n       <- n_train+n_test
 
 fam_names <- c("bb1", "bb1r180", "bb7", "bb7r180", "t")
 
+SCEN_COVAR <- c(
+  "a0.05b0.05", "a0.05b0.1", "a0.1b0.1", "a0.1b0.05",
+  "a0.05b0.025", "a0.025b0.05"
+)
+
 cvine_struct <- function(d) cvine_structure(order = 1:d)  # C-vine 1-2-3
 
 
@@ -37,10 +42,15 @@ make_piecewise_dgp_d2 <- function(T, L_switch, draw_fun) {
     
     # store regime-specific truth you will need later
     u_star_r <- c(
-      a0.05b0.05 = solve_u_star(dgp_r$vc, alpha = 0.05, beta = 0.05),
-      a0.05b0.10 = solve_u_star(dgp_r$vc, alpha = 0.05, beta = 0.10),
-      a0.10b0.10 = solve_u_star(dgp_r$vc, alpha = 0.10, beta = 0.10),
-      a0.10b0.05 = solve_u_star(dgp_r$vc, alpha = 0.10, beta = 0.05)
+      # a = conditioning beta (U1 distress), b = target alpha (U2 tail)
+      a0.05b0.05   = solve_u_star(dgp_r$vc, alpha = 0.05,  beta = 0.05),
+      a0.05b0.1    = solve_u_star(dgp_r$vc, alpha = 0.10,  beta = 0.05),
+      a0.1b0.1     = solve_u_star(dgp_r$vc, alpha = 0.10,  beta = 0.10),
+      a0.1b0.05    = solve_u_star(dgp_r$vc, alpha = 0.05,  beta = 0.10),
+      
+      # NEW
+      a0.05b0.025  = solve_u_star(dgp_r$vc, alpha = 0.025, beta = 0.05),
+      a0.025b0.05  = solve_u_star(dgp_r$vc, alpha = 0.05,  beta = 0.025)
     )
     
     regimes[[r]] <- list(
@@ -63,6 +73,8 @@ make_piecewise_dgp_d2 <- function(T, L_switch, draw_fun) {
   list(U = U, regimes = regimes, regime_id = regime_id, true_base_t = true_base_t)
 }
 
+
+
 # draw one bicop_dist from the allowed set
 draw_bicop <- function() {
   f <- sample(fam_names, 1)
@@ -79,11 +91,11 @@ draw_bicop <- function() {
     delta <- runif(1, 1, 7)
     rot   <- 0
     list(name_base = "bb1",
-         bic       = bicop_dist("bb1", rot, c(theta, delta)))  
+         bic       = bicop_dist("bb1", rot, c(theta, delta)))
   } else if (f %in% c("bb1r180")) {
     # BB1: theta>0, delta>=1  (keep in stable ranges)
-    theta <- runif(1, 7, 3.0)
-    delta <- runif(1, 7, 2.5)
+    theta <- runif(1, 0, 7)
+    delta <- runif(1, 1, 7)
     rot   <- ifelse(f == "bb1r180", 180, 0)
     list(name_base = "bb1r180",
          bic       = bicop_dist("bb1", rot, c(theta, delta)))
@@ -104,24 +116,6 @@ draw_bicop <- function() {
   } else stop("unknown family requested")
 }
 
-
-# build a 3D C-vine with random edge families/params
-draw_vine_d3 <- function() {
-  e12   <- draw_bicop()
-  e13   <- draw_bicop()
-  e23_1 <- draw_bicop()
-  list(
-    vc = vinecop_dist(
-      pair_copulas = list(
-        list(e12$bic, e13$bic),  # tree 1
-        list(e23_1$bic)          # tree 2
-      ),
-      structure = cvine_structure(3:1)  # <-- full C-vine for d=3
-    ),
-    true_bases = c(e12$name_base, e13$name_base, e23_1$name_base),
-    pair_list  = list(e12=e12, e13=e13, e23_1=e23_1)
-  )
-}
 
 # clamp01_2 <- function(x, eps = 1e-6) pmin(pmax(x, eps), 1 - eps)
 # 
@@ -334,10 +328,14 @@ covar_rmse_mae_all <- function(out, dgp,
   # dgp$truth$covar_true_a05b05, covar_true_a05b10, covar_true_a10b10, covar_true_a10b05
   if (is.null(map)) {
     map <- list(
-      a0.05b0.05 = "covar_true_a05b05",
-      a0.05b0.1  = "covar_true_a05b10",
-      a0.1b0.1   = "covar_true_a10b10",
-      a0.1b0.05  = "covar_true_a10b05"
+      a0.05b0.05  = "covar_true_a05b05",
+      a0.05b0.1   = "covar_true_a05b10",
+      a0.1b0.1    = "covar_true_a10b10",
+      a0.1b0.05   = "covar_true_a10b05",
+      
+      # NEW
+      a0.05b0.025 = "covar_true_a05b0025",
+      a0.025b0.05 = "covar_true_a0025b05"
     )
   }
   
@@ -473,15 +471,16 @@ for (s in 1:(5)) { #################
   
   # --- Build time-aligned truth (piecewise by regime) ---
   # u_star changes with the true copula, so we store u_star_t over time
-  u_star_t <- matrix(NA_real_, nrow = Ttot, ncol = 4,
-                     dimnames = list(NULL, c("a0.05b0.05","a0.05b0.10","a0.10b0.10","a0.10b0.05")))
+  u_star_t <- matrix(
+    NA_real_,
+    nrow = Ttot,
+    ncol = length(SCEN_COVAR),
+    dimnames = list(NULL, SCEN_COVAR)
+  )
   
   
   for (g in dgp$regimes) {
-    u_star_t[g$idx, "a0.05b0.05"] <- g$u_star["a0.05b0.05"]
-    u_star_t[g$idx, "a0.05b0.10"] <- g$u_star["a0.05b0.10"]
-    u_star_t[g$idx, "a0.10b0.10"] <- g$u_star["a0.10b0.10"]
-    u_star_t[g$idx, "a0.10b0.05"] <- g$u_star["a0.10b0.05"]
+    u_star_t[g$idx, colnames(u_star_t)] <- g$u_star[colnames(u_star_t)]
   }
   
   
@@ -489,9 +488,11 @@ for (s in 1:(5)) { #################
   q_u_t <- apply(u_star_t, 2, q_sstd)
   
   covar_true_a05b05 <- scale_by_time(sqrt(data$sig_fc), q_u_t[, "a0.05b0.05"])
-  covar_true_a05b10 <- scale_by_time(sqrt(data$sig_fc), q_u_t[, "a0.05b0.10"])
-  covar_true_a10b10 <- scale_by_time(sqrt(data$sig_fc), q_u_t[, "a0.10b0.10"])
-  covar_true_a10b05 <- scale_by_time(sqrt(data$sig_fc), q_u_t[, "a0.10b0.05"])
+  covar_true_a05b10 <- scale_by_time(sqrt(data$sig_fc), q_u_t[, "a0.05b0.1"])
+  covar_true_a10b10 <- scale_by_time(sqrt(data$sig_fc), q_u_t[, "a0.1b0.1"])
+  covar_true_a10b05 <- scale_by_time(sqrt(data$sig_fc), q_u_t[, "a0.1b0.05"])
+  covar_true_a05b0025 <- scale_by_time(sqrt(data$sig_fc), q_u_t[, "a0.05b0.025"])
+  covar_true_a0025b05 <- scale_by_time(sqrt(data$sig_fc), q_u_t[, "a0.025b0.05"])
   
   
   dgp$truth <- list(
@@ -511,7 +512,10 @@ for (s in 1:(5)) { #################
     covar_true_a05b05 = covar_true_a05b05,
     covar_true_a05b10 = covar_true_a05b10,
     covar_true_a10b10 = covar_true_a10b10,
-    covar_true_a10b05 = covar_true_a10b05
+    covar_true_a10b05 = covar_true_a10b05,
+    # NEW
+    covar_true_a05b0025 = covar_true_a05b0025,
+    covar_true_a0025b05 = covar_true_a0025b05
   )
   
   
@@ -544,13 +548,22 @@ for (s in 1:(5)) { #################
   rp_real_oos <- rowMeans(y_real_oos)
 
   eval_var <- port_var_backtest_df(out, rp_real_oos, cfg$alphas)
+  grid_ab_use <- rbind(
+    data.frame(alpha_j=0.10,  alpha_port=0.10),
+    data.frame(alpha_j=0.10,  alpha_port=0.05),
+    data.frame(alpha_j=0.05,  alpha_port=0.10),
+    data.frame(alpha_j=0.05,  alpha_port=0.05),
+    data.frame(alpha_j=0.05,  alpha_port=0.025),  # NEW
+    data.frame(alpha_j=0.025, alpha_port=0.05)    # NEW
+  )
+  
   eval_covar <- covar_backtest_grid(
     out         = out,
     y_real_oos  = y_real_oos,
     rp_real_oos = rp_real_oos,
     cfg_alphas  = cfg$alphas,
-    alphas_eval = c(0.10, 0.05),
-    d           = d,
+    grid_ab     = grid_ab_use,
+    d           = d
   )
 
   rmse_mae_from_covar <- covar_rmse_mae_all(out, dgp)
@@ -758,6 +771,10 @@ mean_rate
 
 mean_rate <- with(eval_covar_all, mean(rate[asset == 1 & alpha_j == 0.05 & alpha_port == 0.05], na.rm = TRUE))
 mean_rate
+
+
+
+
 ################################################################################
 
 for (s in 1:(n_sim)) {
