@@ -106,7 +106,7 @@ ci_covar_boot_both_moutn <- function(R, alpha=0.05, beta=0.05, B=100, level=0.95
 
 
 
-smc_simul <- function(data, cfg, dgp) {
+smc_simul_serial <- function(data, cfg, dgp) {
   
   true_bases <- dgp$true_bases
   U      <- data$U
@@ -122,70 +122,44 @@ smc_simul <- function(data, cfg, dgp) {
   
   skeleton <- make_skeleton_CVM(U[1:t_train, ], trunc_tree = cfg$trunc_tree, structure = dgp$vc$structure)
   cfg <- add_first_tree_map(cfg, skeleton)
-  
-  exports <- c(
-    # constants & templates 
-    "FAM_INFO", "FAM_INDEP", "FAM_GAUSS", "FAM_BB1", "FAM_BB1R180",
-    "T_INDEP",  "T_GAUSS",   "T_BB1", "T_BB1R180", "FAM_BB8R180",
-    "FAM_BB7","FAM_BB7R180","T_BB8R180","T_BB7","T_BB7R180", "FAM_T","T_T",
-    # helper functions 
-    "active_fams", "sanitize_bb1", "mh_worker_standard", "mh_worker_block",
-    "bb1r180_tail2par", "bb1r180_par2tail", "bb1r180_log_jacobian",
-    "bb7_tail2par","bb7_par2tail","bb7_log_jacobian","bb7r180_tail2par","bb7r180_par2tail",
-    "bb7r180_log_jacobian","bb8r180_tail2par","bb8r180_par2tail","bb8r180_log_jacobian_1d",
-    "sanitize_bb7","sanitize_bb8",
-    "t_par2tail","t_tail2rho","t_log_jacobian","sanitize_t",
-    # core SMC kernels 
-    "mh_step", "mh_step_in_tree",
-    "update_weights", "ESS", "systematic_resample",
-    # log-target & proposals 
-    "log_prior", "bb1_tail2par", "bb1_par2tail", "bb1_log_jacobian",
-    "rtnorm_vec", "log_prior_edge",
-    # likelihood helpers 
-    "bicop_dist", "vinecop_dist", "dvinecop",
-    "rvinecop","bicop",
-    # shared data objects 
-    "skeleton", "cfg",
-    # diagnostics & prediction 
-    "diagnostic_report", "compute_predictive_metrics",
-    "compute_log_incr",
-    # small utilities    
-    "w_mean", "w_var", "mc_se", "w_quantile", "fillna_neg", "fam_spec","get_tails","clamp01","init_from_tails",
-    "tail_weights", "safe_logdens",
-    "logit","ilogit","dlogitnorm",
-    "emp_tails_FRAPO","seed_family_from_emp",
-    "log_prior_edge_strong",".tip_means_for_edge_t","log_prior_with_tip_time","log_prior_with_tip_cached",
-    ".safe_logdens1","fast_vine_from_row",".build_vine_from_vectors",
-    ".as_particle_vectors","K_of_skeleton","safe_sample",
-    "true_bases", "dgp"
-  )
-  cl <- make_cluster(cfg$nc, cfg$seed, exports)
-  on.exit({
-    try(parallel::stopCluster(cl), silent = TRUE)
-  }, add = TRUE)
-  parallel::clusterEvalQ(cl, {
-    ## 1) Pin native threads on each worker (prevents oversubscription)
-    Sys.setenv(
-      OMP_NUM_THREADS        = "1",
-      MKL_NUM_THREADS        = "1",
-      OPENBLAS_NUM_THREADS   = "1",
-      VECLIB_MAXIMUM_THREADS = "1",
-      GOTO_NUM_THREADS       = "1"
-    )
-    if (requireNamespace("RhpcBLASctl", quietly = TRUE)) {
-      RhpcBLASctl::blas_set_num_threads(1)
-      RhpcBLASctl::omp_set_num_threads(1)
-    }
-    
-    ## 2) Load your libs
-    library(rvinecopulib)
-    library(FRAPO)
-    
-    NULL
-  })
-  
-  #register_worker_helpers(cl)
-  
+  # 
+  # exports <- c(
+  #   # constants & templates 
+  #   "FAM_INFO", "FAM_INDEP", "FAM_GAUSS", "FAM_BB1", "FAM_BB1R180",
+  #   "T_INDEP",  "T_GAUSS",   "T_BB1", "T_BB1R180", "FAM_BB8R180",
+  #   "FAM_BB7","FAM_BB7R180","T_BB8R180","T_BB7","T_BB7R180", "FAM_T","T_T",
+  #   # helper functions 
+  #   "active_fams", "sanitize_bb1", "mh_worker_standard", "mh_worker_block",
+  #   "bb1r180_tail2par", "bb1r180_par2tail", "bb1r180_log_jacobian",
+  #   "bb7_tail2par","bb7_par2tail","bb7_log_jacobian","bb7r180_tail2par","bb7r180_par2tail",
+  #   "bb7r180_log_jacobian","bb8r180_tail2par","bb8r180_par2tail","bb8r180_log_jacobian_1d",
+  #   "sanitize_bb7","sanitize_bb8",
+  #   "t_par2tail","t_tail2rho","t_log_jacobian","sanitize_t",
+  #   # core SMC kernels 
+  #   "mh_step", "mh_step_in_tree",
+  #   "update_weights", "ESS", "systematic_resample",
+  #   # log-target & proposals 
+  #   "log_prior", "bb1_tail2par", "bb1_par2tail", "bb1_log_jacobian",
+  #   "rtnorm_vec", "log_prior_edge",
+  #   # likelihood helpers 
+  #   "bicop_dist", "vinecop_dist", "dvinecop",
+  #   "rvinecop","bicop",
+  #   # shared data objects 
+  #   "skeleton", "cfg",
+  #   # diagnostics & prediction 
+  #   "diagnostic_report", "compute_predictive_metrics",
+  #   "compute_log_incr",
+  #   # small utilities    
+  #   "w_mean", "w_var", "mc_se", "w_quantile", "fillna_neg", "fam_spec","get_tails","clamp01","init_from_tails",
+  #   "tail_weights", "safe_logdens",
+  #   "logit","ilogit","dlogitnorm",
+  #   "emp_tails_FRAPO","seed_family_from_emp",
+  #   "log_prior_edge_strong",".tip_means_for_edge_t","log_prior_with_tip_time","log_prior_with_tip_cached",
+  #   ".safe_logdens1","fast_vine_from_row",".build_vine_from_vectors",
+  #   ".as_particle_vectors","K_of_skeleton","safe_sample",
+  #   "true_bases", "dgp"
+  # )
+
 
   out <- list(
     log_pred    = numeric(n_oos),
@@ -224,31 +198,12 @@ smc_simul <- function(data, cfg, dgp) {
     )
     )
   
-  # out$cover <- list(
-  #   VaR_in_CI = array(NA_integer_, dim = c(n_oos, d, 2),
-  #                     dimnames = list(NULL, tickers, c("a0.05","a0.10"))),
-  #   CoVaR_in_CI = array(NA_integer_, dim = c(n_oos, 2, 4),
-  #                       dimnames = list(NULL, c("2|1","1|2"),
-  #                                       c("a0.05b0.05","a0.05b0.1","a0.1b0.1","a0.1b0.05")))
-  # )
-
   
   # init particles
   U_init <- U[1:(cfg$W-1), , drop = FALSE]
   particles <- new_particles_mats(cfg, U_init, true_bases = true_bases) # TRUE BASES
   out$ancestorIndices[,1] <- seq_len(M)
   
-  # dgp$pair_list
-  # particles$fam_mat[,1] <- 13
-  # particles$fam_mat[,2] <- 7
-  # particles$fam_mat[,3] <- 7
-  # particles$th1_mat[,1] <- 1.62
-  # particles$th1_mat[,2] <- 2.53
-  # particles$th1_mat[,3] <- 2.57
-  # particles$th2_mat[,1] <- 1.58
-  # particles$th2_mat[,2] <- 1.36
-  # particles$th2_mat[,3] <- 1.64
-  # 
   
 
 for (t in (cfg$W+1):N) {
@@ -280,7 +235,7 @@ for (t in (cfg$W+1):N) {
       #   )
       # )
       #system.time(
-      draws <- smc_predictive_sample_fast2_scoped2(particles, skeleton, w, L = 5000, cl = cl[1:7])
+      draws <- smc_predictive_sample_fast2_scoped2_serial(particles, skeleton, w, L = 2000)
       #)
       #cmp  <- sweep(draws, 2, as.numeric(u_t), FUN = "<=")  # L x d logical
       #pitV <- matrixStats::rowAlls(cmp)   
@@ -336,67 +291,10 @@ for (t in (cfg$W+1):N) {
       out$CoVaR_tail[idx, , "a0.05b0.1"] <- covar5b10
       out$CoVaR_tail[idx, , "a0.1b0.1"] <- covar10
       out$CoVaR_tail[idx, , "a0.1b0.05"] <- covar10b5
-      out$CoVaR_tail[t_or_idx, , "a0.05b0.025"]  <- covar5b0025
-      out$CoVaR_tail[t_or_idx, , "a0.025b0.05"]  <- covar025b5
+      out$CoVaR_tail[idx, , "a0.05b0.025"]  <- covar5b0025
+      out$CoVaR_tail[idx, , "a0.025b0.05"]  <- covar025b5
       
-      # COVERAGE
       
-      # print_every <- 30L   # change or remove
-      # 
-      # # --- VaR CIs for a=0.05 and a=0.10 (column-wise) ---
-      # CI_var_05 <- ci_quantile_boot(R_t, a = 0.05, B = 100, level = 0.95)  # 2x2: lower/upper x asset
-      # CI_var_10 <- ci_quantile_boot(R_t, a = 0.10, B = 100, level = 0.95)
-      # 
-      # # point forecasts from your code (already computed)
-      # VaR_hat_05 <- rs$VaR[, k5]    # length d
-      # VaR_hat_10 <- rs$VaR[, k10]
-      # 
-      # # store "inside CI" indicators
-      # out$cover$VaR_in_CI[idx, , "a0.05"] <- as.integer(VaR_hat_05 >= CI_var_05["lower", ] & VaR_hat_05 <= CI_var_05["upper", ])
-      # out$cover$VaR_in_CI[idx, , "a0.10"] <- as.integer(VaR_hat_10 >= CI_var_10["lower", ] & VaR_hat_10 <= CI_var_10["upper", ])
-      # 
-      # # --- CoVaR (both directions) CIs for the four (alpha,beta) combos ---
-      # combos <- list(
-      #   "a0.05b0.05" = c(alpha = 0.05, beta = 0.05),
-      #   "a0.1b0.1"   = c(alpha = 0.10, beta = 0.10)
-      # )
-      # 
-      # for (nm in names(combos)) {
-      #   aa <- combos[[nm]]["alpha"]
-      #   bb <- combos[[nm]]["beta"]
-      #   
-      #   CIc <- ci_covar_boot_both_moutn(R_t, alpha = aa, beta = bb, B = 100, level = 0.95)
-      #   
-      #   # point CoVaR forecasts you already store:
-      #   # out$CoVaR_tail[idx, j, nm] is "port | asset j distress"
-      #   # For bivariate CoVaR you want:
-      #   # 2|1  -> quantile of X2 given X1 distress  => corresponds to j=1 (conditioning var), output is X2
-      #   # 1|2  -> quantile of X1 given X2 distress  => corresponds to j=2, output is X1
-      #   #
-      #   # So we compute point estimates directly from R_t for consistency:
-      #   # (If you already have point forecasts elsewhere, plug them here)
-      #   thr1 <- as.numeric(quantile(R_t[,1], probs = bb, type = 8))
-      #   thr2 <- as.numeric(quantile(R_t[,2], probs = bb, type = 8))
-      #   covar_2_given_1_hat <- as.numeric(quantile(R_t[R_t[,1] <= thr1, 2], probs = aa, type = 8))
-      #   covar_1_given_2_hat <- as.numeric(quantile(R_t[R_t[,2] <= thr2, 1], probs = aa, type = 8))
-      #   
-      #   out$cover$CoVaR_in_CI[idx, "2|1", nm] <- as.integer(covar_2_given_1_hat >= CIc$CoVaR_2_given_1["lower"] &&
-      #                                                         covar_2_given_1_hat <= CIc$CoVaR_2_given_1["upper"])
-      #   out$cover$CoVaR_in_CI[idx, "1|2", nm] <- as.integer(covar_1_given_2_hat >= CIc$CoVaR_1_given_2["lower"] &&
-      #                                                         covar_1_given_2_hat <= CIc$CoVaR_1_given_2["upper"])
-      # }
-      # 
-      # # --- print a quick trace ---
-      # if (idx %% 1 == 0L) {
-      #   cat(sprintf("t=%d idx=%d | VaR05: [%.4f %.4f] inCI=(%d,%d) | CoVaR(2|1,a05b05)=%.4f CI=[%.4f,%.4f] inCI=%d\n",
-      #               t, idx,
-      #               VaR_hat_05[1], VaR_hat_05[2],
-      #               out$cover$VaR_in_CI[idx, 1, "a0.05"], out$cover$VaR_in_CI[idx, 2, "a0.05"],
-      #               covar_2_given_1_hat,
-      #               CIc$CoVaR_2_given_1["lower"], CIc$CoVaR_2_given_1["upper"],
-      #               out$cover$CoVaR_in_CI[idx, "2|1", "a0.05b0.05"]))
-      # }
-      # 
     }
     
     # diagnostics
@@ -414,7 +312,7 @@ for (t in (cfg$W+1):N) {
       newAncestors <- stratified_resample(w)
       data_up_to_t <- U[max(1, t - cfg$W + 1):(t-1), , drop = FALSE]
       
-      move_out <- resample_move_old(particles, newAncestors, data_up_to_t, cl[1:7],
+      move_out <- resample_move_old_serial(particles, newAncestors, data_up_to_t, NULL,
                                     cfg$type, cfg, skeleton = skeleton, true_bases=true_bases) #true_bases
       
       particles <- move_out$particles

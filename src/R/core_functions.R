@@ -693,8 +693,93 @@ init_from_tails <- function(new_code, tails) {
 # }
 # 
 
-
-
+resample_move_old_serial <- function(particles, newAncestors,
+                              data_up_to_t, cl = NULL, type, cfg,
+                              skeleton = NULL, tr = NULL, temp_skel = NULL,
+                              true_bases = NULL) {
+  
+  # ----- 1) RESAMPLE (row reindex) -----
+  M <- nrow(particles$fam_mat)
+  particles$fam_mat <- particles$fam_mat[newAncestors, , drop = FALSE]
+  particles$th1_mat <- particles$th1_mat[newAncestors, , drop = FALSE]
+  particles$th2_mat <- particles$th2_mat[newAncestors, , drop = FALSE]
+  particles$w       <- rep(1 / M, M)
+  if (!is.null(particles$last_accept)) particles$last_accept[] <- FALSE
+  
+  # ----- 2) PRECOMPUTE (once) -----
+  tip_cache <- if (isTRUE(cfg$use_tail_informed_prior))
+    precompute_tip_means(data_up_to_t, cfg) else NULL
+  
+  wobs <- if (isTRUE(cfg$use_weighted_ll))
+    tail_weights(data_up_to_t, tau = cfg$tauL,
+                 k = cfg$joint_k, eps = cfg$tail_eps) else NULL
+  
+  mh_n_prop <- M * cfg$n_mh
+  tictoc::tic("MH move")
+  
+  if (!identical(type, "standard")) {
+    stop("Only type='standard' is implemented for the matrix-based path.")
+  }
+  
+  # snapshot matrices (avoid closures capturing 'particles' by reference weirdly)
+  fam_mat <- particles$fam_mat
+  th1_mat <- particles$th1_mat
+  th2_mat <- particles$th2_mat
+  n_mh    <- cfg$n_mh
+  
+  mh_one <- function(i, fam_mat, th1_mat, th2_mat, data_up_to_t, skeleton, cfg, tip_cache, wobs, true_bases, n_mh) {
+    fam <- as.integer(fam_mat[i, ])
+    th1 <- as.numeric(th1_mat[i, ])
+    th2 <- as.numeric(th2_mat[i, ])
+    
+    acc_local <- 0L
+    for (k in seq_len(n_mh)) {
+      res <- mh_step(
+        fam, th1, th2,
+        data_up_to_t, skeleton, cfg,
+        tip_means_cache = tip_cache,
+        wobs            = wobs,
+        true_bases      = true_bases
+      )
+      fam <- res$fam; th1 <- res$th1; th2 <- res$th2
+      if (isTRUE(res$last_accept)) acc_local <- acc_local + 1L
+    }
+    list(fam = fam, th1 = th1, th2 = th2, acc = acc_local)
+  }
+  
+  # ----- 2.5) RUN (SERIAL BY DEFAULT) -----
+  # If you truly want NO inner parallelism, keep cl = NULL everywhere.
+  mh_results <- lapply(
+    seq_len(M),
+    mh_one,
+    fam_mat      = fam_mat,
+    th1_mat      = th1_mat,
+    th2_mat      = th2_mat,
+    data_up_to_t = data_up_to_t,
+    skeleton     = skeleton,
+    cfg          = cfg,
+    tip_cache    = tip_cache,
+    wobs         = wobs,
+    true_bases   = true_bases,
+    n_mh         = n_mh
+  )
+  
+  tictoc::toc()
+  
+  # ----- 3) COLLECT -----
+  mh_n_acc <- sum(vapply(mh_results, `[[`, integer(1), "acc"))
+  for (i in seq_len(M)) {
+    particles$fam_mat[i, ] <- as.integer(mh_results[[i]]$fam)
+    particles$th1_mat[i, ] <- mh_results[[i]]$th1
+    particles$th2_mat[i, ] <- mh_results[[i]]$th2
+  }
+  
+  acc_pct <- 100 * mh_n_acc / mh_n_prop
+  cat(sprintf("MH acceptance = %4d / %4d  =  %.2f%%\n\n",
+              mh_n_acc, mh_n_prop, acc_pct))
+  
+  list(particles = particles, acc_pct = acc_pct)
+}
 
 
 
@@ -1980,6 +2065,64 @@ smc_predictive_sample_fast2_scoped <- function(particles, skel, w, L = 10000, cl
 }
 
 
+
+smc_predictive_sample_fast2_scoped2_serial <- function(particles, skel, w, L = 10000) {
+  # normalize weights
+  w[!is.finite(w)] <- 0
+  w[w < 0] <- 0
+  sw <- sum(w)
+  if (sw <= 0) stop("All weights are zero/invalid.")
+  w <- w / sw
+  
+  # sanity
+  stopifnot(is.matrix(particles$fam_mat), is.matrix(particles$th1_mat),
+            is.matrix(particles$th2_mat))
+  M <- nrow(particles$fam_mat)
+  if (length(w) != M) stop("length(w) must equal number of particles (nrow(fam_mat)).")
+  if (L < 1L) stop("L must be >= 1.")
+  
+  # counts per particle
+  cnt  <- residual_counts(w, L)
+  used <- which(cnt > 0L)
+  
+  d0 <- ncol(skel$structure)
+  if (!length(used)) return(matrix(numeric(0), nrow = 0, ncol = d0))
+  
+  sims <- vector("list", length(used))
+  d_ref <- NULL
+  
+  for (k in seq_along(used)) {
+    i  <- used[k]
+    ni <- cnt[i]
+    
+    vine_i <- .build_vine_from_vectors(
+      fam  = as.integer(particles$fam_mat[i, ]),
+      th1  = as.numeric(particles$th1_mat[i, ]),
+      th2  = as.numeric(particles$th2_mat[i, ]),
+      skel = skel
+    )
+    
+    sim <- rvinecop(ni, vine_i, cores = 1)   # keep cores=1 always here
+    if (!is.matrix(sim)) sim <- as.matrix(sim)
+    
+    if (is.null(d_ref)) d_ref <- ncol(sim)
+    else if (ncol(sim) != d_ref)
+      stop(sprintf("Inconsistent simulated dimension: %d vs %d", ncol(sim), d_ref))
+    
+    sims[[k]] <- sim
+  }
+  
+  out <- do.call(rbind, sims)
+  rownames(out) <- NULL
+  
+  # safety: ensure exactly L rows (residual_counts should already guarantee this)
+  if (nrow(out) != L) {
+    # in case your residual_counts has rounding edge cases:
+    out <- out[seq_len(min(nrow(out), L)), , drop = FALSE]
+  }
+  
+  out
+}
 
 
 

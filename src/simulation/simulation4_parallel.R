@@ -7,8 +7,8 @@ source(here("src/R", "config.R"))
 
 n_sim   <- 3
 d       <- 2
-n_train <- 252
-n_test  <- 250
+n_train <- 756
+n_test  <- 3000
 n       <- n_train+n_test
 
 fam_names <- c("bb1", "bb1r180", "bb7", "bb7r180", "t")
@@ -417,6 +417,10 @@ betas_covar  <- c(0.025, 0.05, 0.10)
 ################################################################################
 # Regimes
 
+source(here("src/R", "config.R"))
+source(here("src/simulation/naive_simulation.R"))
+source(here("src/simulation/main_simulation_nonparallel.R"))
+
 for (s in 1:(n_sim)) { #################
   set.seed(1111 + s)
   
@@ -525,7 +529,7 @@ for (s in 1:(n_sim)) { #################
   # cfg$L_switch <- L_switch  # optional, if you want it accessible inside smc_simul()
   
   # --- SMC (unchanged call signature) ---
-  # out <- smc_simul(data, cfg, dgp)
+  out <- smc_simul_serial(data, cfg, dgp)
   # 
   # n_oos <- nrow(data$U) - cfg$W_predict
   # y_real_oos  <- data$y_real[(nrow(data$y_real) - n_oos + 1):nrow(data$y_real), , drop = FALSE]
@@ -600,6 +604,12 @@ for (s in 1:(n_sim)) { #################
 }
 
 
+
+
+
+
+
+
 ################################################################################
 # REGIMES PARALLED
 
@@ -616,7 +626,8 @@ run_one_sim <- function(s,
 
   # if your functions come from config.R, load them inside workers too
   source(here("src/R", "config.R"))
-  source(here("src/simulation", "naive_simulation.R"))
+  source(here("src/simulation/naive_simulation.R"))
+  source(here("src/simulation/main_simulation_nonparallel.R"))
 
   Ttot <- n_train + n_test
 
@@ -712,10 +723,11 @@ run_one_sim <- function(s,
     covar_true_a0025b05 = covar_true_a0025b05
   )
 
-  cfg <- modifyList(build_cfg(d = 2), list(M = 500, label = "M500", use_tail_informed_prior = TRUE))
+  cfg <- modifyList(build_cfg(d = 2), list(M = 500, label = "M500", use_tail_informed_prior = TRUE, W=126L))
 
   # --- Run your method ---
-  out <- naive_simul_d2_regimes(data, cfg, dgp)
+  #out <- naive_simul_d2_regimes(data, cfg, dgp)
+  out <- smc_simul_serial(data, cfg, dgp)
 
   n_oos <- nrow(data$U) - cfg$W_predict
   y_real_oos  <- data$y_real[(nrow(data$y_real) - n_oos + 1):nrow(data$y_real), , drop = FALSE]
@@ -756,7 +768,7 @@ run_one_sim <- function(s,
   )
 
   dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
-  saveRDS(result, file.path(out_dir, sprintf("results_naive_regimes_tip_s%03d.rds", s)))
+  saveRDS(result, file.path(out_dir, sprintf("results_smc_regimes_tip_s%03d.rds", s)))
 
   return(result)
 }

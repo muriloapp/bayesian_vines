@@ -92,7 +92,8 @@ source(here("src/models", "smc_stand_vine.R"))
 source(here("src/R", "results_helpers.R"))
 source(here("src/models", "main_empirical.R"))
 source(here("src/R", "metrics.R"))
-source(here("src/simulation", "main_simulation.R"))
+source(here("src/simulation", "main_simulation_nonparallel.R"))
+
 
 
 
