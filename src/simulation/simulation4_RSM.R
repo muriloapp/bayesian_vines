@@ -8,7 +8,7 @@ source(here("src/R", "config.R"))
 n_sim   <- 3
 d       <- 2
 n_train <- 756
-n_test  <- 3000
+n_test  <- 1000
 n       <- n_train+n_test
 
 fam_names <- c("bb1", "bb1r180", "bb7", "bb7r180", "t")
@@ -26,41 +26,215 @@ scale_by_time <- function(mat, v) {
   mat * matrix(v, nrow = nrow(mat), ncol = ncol(mat))
 }
 
+
+# ---- schedule of regime durations with target mean, and EXTREME time share ----
+
+draw_regime_lengths <- function(T, mean_len = 100L, min_len = 10L, max_len = 500L) {
+  p <- 1 / mean_len  # geometric => E[L] = 1/p
+  lens <- integer(0)
+  tot <- 0L
+  while (tot < T) {
+    L <- rgeom(1, prob = p) + 1L
+    L <- max(min_len, min(L, max_len))
+    lens <- c(lens, as.integer(L))
+    tot <- tot + L
+  }
+  if (tot > T) lens[length(lens)] <- lens[length(lens)] - (tot - T)
+  lens
+}
+
+assign_states_by_time <- function(lens, p_extreme = 0.20) {
+  T <- sum(lens)
+  target <- round(p_extreme * T)
+  
+  n_reg <- length(lens)
+  states <- rep("NORMAL", n_reg)
+  
+  ord <- sample.int(n_reg, n_reg)
+  ext_time <- 0L
+  for (k in ord) {
+    if (ext_time < target) {
+      states[k] <- "EXTREME"
+      ext_time <- ext_time + lens[k]
+    }
+  }
+  
+  list(states = states,
+       frac_extreme_time = sum(lens[states == "EXTREME"]) / T)
+}
+
+make_regime_schedule <- function(T, mean_len = 100L, p_extreme = 0.20,
+                                 min_len = 10L, max_len = 500L) {
+  lens <- draw_regime_lengths(T, mean_len = mean_len, min_len = min_len, max_len = max_len)
+  st   <- assign_states_by_time(lens, p_extreme = p_extreme)
+  list(
+    lens = lens,
+    states = st$states,
+    mean_len_real = mean(lens),
+    frac_extreme_time_real = st$frac_extreme_time
+  )
+}
+
+# ---- draw a bivariate copula with EXTREME lower tail regimes ----
+draw_bicop_regime <- function(state, fam_names) {
+  
+  f <- sample(fam_names, 1)
+  
+  is_t   <- (f == "t")
+  is_bb1 <- (f %in% c("bb1", "bb1r180"))
+  is_bb7 <- (f %in% c("bb7", "bb7r180"))
+  
+  if (!is_t && !is_bb1 && !is_bb7) stop("Unknown family in fam_names.")
+  
+  rot <- if (grepl("r180$", f)) 180L else 0L
+  fam_base <- if (is_bb1) "bb1" else if (is_bb7) "bb7" else "t"
+  
+  # 1) sample resulting lower-tail dependence (your rule)
+  if (state == "EXTREME") {
+    lamL_target <- runif(1, 0.70, 0.9)
+  } else { 
+    # NORMAL: keep feasible per family (important!)
+    if (is_bb1) lamL_target <- runif(1, 0.50, 0.70) else lamL_target <- runif(1, 0.00, 0.70)
+  }
+  
+  # 2) sample resulting upper-tail dependence according to the family
+  if (is_t) {
+    lamU_target <- lamL_target
+  } else {
+    lamU_target <- runif(1, 0.00, 0.50)
+  }
+  
+  # 3) map resulting (lamL_target, lamU_target) -> base (lamL_base, lamU_base) depending on rotation
+  # rotation 180 swaps lower and upper tails
+  if (rot == 0L) {
+    lamL_base <- lamL_target
+    lamU_base <- lamU_target
+  } else {
+    lamL_base <- lamU_target
+    lamU_base <- lamL_target
+  }
+  
+  # 4) invert tails -> parameters
+  if (is_t) {
+    nu  <- runif(1, 2, 30)
+    rho <- t_tail2rho(lamL_target, nu)   # lamL=lamU for t
+    par <- c(rho, nu)
+    bic <- bicop_dist("t", 0L, par)      # rotation irrelevant for symmetric t
+    return(list(
+      name_base = "t",
+      bic = bic,
+      state = state,
+      lambdaL = lamL_target,
+      lambdaU = lamU_target,
+      par = par,
+      rot = 0L
+    ))
+  }
+  
+  if (is_bb1) {
+    par <- bb1_tail2par(lamL_base, lamU_base)
+    # BB1 requires delta>=1; ensure numerically safe
+    par[2] <- max(par[2], 1 + 1e-8)
+    bic <- bicop_dist("bb1", rot, par)
+    return(list(
+      name_base = f,  # keep bb1 vs bb1r180 in truth labels
+      bic = bic,
+      state = state,
+      lambdaL = lamL_target,
+      lambdaU = lamU_target,
+      par = par,
+      rot = rot
+    ))
+  }
+  
+  if (is_bb7) {
+    par <- bb7_tail2par(lamL_base, lamU_base)
+    bic <- bicop_dist("bb7", rot, par)
+    return(list(
+      name_base = f,  # keep bb7 vs bb7r180
+      bic = bic,
+      state = state,
+      lambdaL = lamL_target,
+      lambdaU = lamU_target,
+      par = par,
+      rot = rot
+    ))
+  }
+  
+  stop("Unreachable.")
+}
+
+draw_vine_d2_regime <- function(state) {
+  e12 <- draw_bicop_regime(state, fam_names = fam_names)
+  
+  list(
+    vc = vinecop_dist(
+      pair_copulas = list(list(e12$bic)),
+      structure    = cvine_structure(2:1)
+    ),
+    true_bases = c(e12$name_base),
+    pair_list  = list(e12 = e12),
+    state      = state
+  )
+}
+
+
 make_piecewise_dgp_d2 <- function(T, L_switch, draw_fun) {
-  n_reg <- ceiling(T / L_switch)
+  
+  # --- schedule parsing (backward compatible) ---
+  if (is.list(L_switch) && !is.null(L_switch$lens) && !is.null(L_switch$states)) {
+    lens   <- as.integer(L_switch$lens)
+    states <- as.character(L_switch$states)
+    if (sum(lens) != T) stop("Schedule lens must sum to T.")
+    if (length(states) != length(lens)) stop("Schedule states must have same length as lens.")
+  } else {
+    L_fixed <- as.integer(L_switch)
+    n_reg <- ceiling(T / L_fixed)
+    lens <- rep(L_fixed, n_reg)
+    lens[length(lens)] <- T - sum(lens[-length(lens)])
+    states <- rep("NORMAL", length(lens))
+  }
+  
+  n_reg <- length(lens)
   
   U <- matrix(NA_real_, nrow = T, ncol = 2)
   regime_id <- integer(T)
   regimes <- vector("list", n_reg)
   
+  # helper: does draw_fun accept a state argument?
+  draw_has_arg <- (length(formals(draw_fun)) >= 1L)
+  
   t0 <- 1L
   for (r in seq_len(n_reg)) {
-    t1 <- min(T, t0 + L_switch - 1L)
+    t1 <- t0 + lens[r] - 1L
+    st <- states[r]
     
-    dgp_r <- draw_fun()  # must return list with $vc and $true_bases
-    U[t0:t1, ] <- rvinecop(t1 - t0 + 1L, dgp_r$vc)
+    dgp_r <- if (draw_has_arg) draw_fun(st) else draw_fun()
     
-    # store regime-specific truth you will need later
+    U[t0:t1, ] <- rvinecop(lens[r], dgp_r$vc)
+    
     u_star_r <- c(
-      # a = conditioning beta (U1 distress), b = target alpha (U2 tail)
       a0.05b0.05   = solve_u_star(dgp_r$vc, alpha = 0.05,  beta = 0.05),
       a0.05b0.1    = solve_u_star(dgp_r$vc, alpha = 0.10,  beta = 0.05),
       a0.1b0.1     = solve_u_star(dgp_r$vc, alpha = 0.10,  beta = 0.10),
       a0.1b0.05    = solve_u_star(dgp_r$vc, alpha = 0.05,  beta = 0.10),
-      
-      # NEW
       a0.05b0.025  = solve_u_star(dgp_r$vc, alpha = 0.025, beta = 0.05),
       a0.025b0.05  = solve_u_star(dgp_r$vc, alpha = 0.05,  beta = 0.025)
     )
     
     regimes[[r]] <- list(
       r = r,
+      state   = st,
       t_start = t0,
       t_end   = t1,
       idx     = t0:t1,
       vc      = dgp_r$vc,
-      true_bases = dgp_r$true_bases,  # for d=2 should be length 1
-      u_star  = u_star_r
+      true_bases = dgp_r$true_bases,
+      u_star  = u_star_r,
+      
+      # optional diagnostics (won't break anything)
+      lambdaL = if (!is.null(dgp_r$pair_list$e12$lambdaL)) dgp_r$pair_list$e12$lambdaL else NA_real_,
+      lambdaU = if (!is.null(dgp_r$pair_list$e12$lambdaU)) dgp_r$pair_list$e12$lambdaU else NA_real_
     )
     
     regime_id[t0:t1] <- r
@@ -72,6 +246,60 @@ make_piecewise_dgp_d2 <- function(T, L_switch, draw_fun) {
   
   list(U = U, regimes = regimes, regime_id = regime_id, true_base_t = true_base_t)
 }
+
+
+
+####################################################################
+
+
+# 
+# 
+# make_piecewise_dgp_d2 <- function(T, L_switch, draw_fun) {
+#   n_reg <- ceiling(T / L_switch)
+#   
+#   U <- matrix(NA_real_, nrow = T, ncol = 2)
+#   regime_id <- integer(T)
+#   regimes <- vector("list", n_reg)
+#   
+#   t0 <- 1L
+#   for (r in seq_len(n_reg)) {
+#     t1 <- min(T, t0 + L_switch - 1L)
+#     
+#     dgp_r <- draw_fun()  # must return list with $vc and $true_bases
+#     U[t0:t1, ] <- rvinecop(t1 - t0 + 1L, dgp_r$vc)
+#     
+#     # store regime-specific truth you will need later
+#     u_star_r <- c(
+#       # a = conditioning beta (U1 distress), b = target alpha (U2 tail)
+#       a0.05b0.05   = solve_u_star(dgp_r$vc, alpha = 0.05,  beta = 0.05),
+#       a0.05b0.1    = solve_u_star(dgp_r$vc, alpha = 0.10,  beta = 0.05),
+#       a0.1b0.1     = solve_u_star(dgp_r$vc, alpha = 0.10,  beta = 0.10),
+#       a0.1b0.05    = solve_u_star(dgp_r$vc, alpha = 0.05,  beta = 0.10),
+#       
+#       # NEW
+#       a0.05b0.025  = solve_u_star(dgp_r$vc, alpha = 0.025, beta = 0.05),
+#       a0.025b0.05  = solve_u_star(dgp_r$vc, alpha = 0.05,  beta = 0.025)
+#     )
+#     
+#     regimes[[r]] <- list(
+#       r = r,
+#       t_start = t0,
+#       t_end   = t1,
+#       idx     = t0:t1,
+#       vc      = dgp_r$vc,
+#       true_bases = dgp_r$true_bases,  # for d=2 should be length 1
+#       u_star  = u_star_r
+#     )
+#     
+#     regime_id[t0:t1] <- r
+#     t0 <- t1 + 1L
+#   }
+#   
+#   true_base_by_regime <- vapply(regimes, function(g) g$true_bases[1], character(1))
+#   true_base_t <- true_base_by_regime[regime_id]
+#   
+#   list(U = U, regimes = regimes, regime_id = regime_id, true_base_t = true_base_t)
+# }
 
 
 
@@ -439,9 +667,30 @@ for (s in 1:(n_sim)) { #################
   
   Ttot <- n_train + n_test
   L_switch <- 100L  # <- choose your "every x observations" here (or put inside cfg)
+
+  # choose mean regime length (50 or 100) and extreme time share
+  sched <- make_regime_schedule(
+    T = Ttot,
+    mean_len  = 100L,   # or 50L
+    p_extreme = 0.20,   # e.g., 20% of time in EXTREME lower-tail regimes
+    min_len = 20L,
+    max_len = 300L
+  )
   
-  piece <- make_piecewise_dgp_d2(T = Ttot, L_switch = L_switch, draw_fun = draw_vine_d2)
+  cat("mean_len_real:", sched$mean_len_real, "\n")
+  cat("frac_extreme_time_real:", sched$frac_extreme_time_real, "\n")
   
+  piece <- make_piecewise_dgp_d2(
+    T = Ttot,
+    L_switch = sched,
+    draw_fun = draw_vine_d2_regime
+  )
+  
+  dur <- vapply(piece$regimes, function(g) length(g$idx), integer(1))
+  st  <- vapply(piece$regimes, function(g) g$state, character(1))
+  cat("Avg regime duration:", mean(dur), "\n")
+  cat("Frac time EXTREME:", sum(dur[st=="EXTREME"]) / sum(dur), "\n")
+
   # "dgp" now becomes a container for the full regime path + truth
   dgp <- list(
     regimes     = piece$regimes,
@@ -632,7 +881,8 @@ library(future.apply)
 
 run_one_sim <- function(s,
                         n_train, n_test, d,
-                        L_switch = 100L,
+                        mean_len = 100L,
+                        p_extreme = 0.2,
                         out_dir = "simul_results/2d_smc") {
 
   set.seed(1111 + s)
@@ -642,9 +892,33 @@ run_one_sim <- function(s,
   source(here("src/simulation/naive_simulation.R"))
   source(here("src/simulation/main_simulation_nonparallel.R"))
 
+  
   Ttot <- n_train + n_test
-
-  piece <- make_piecewise_dgp_d2(T = Ttot, L_switch = L_switch, draw_fun = draw_vine_d2)
+  #L_switch <- 100L  # <- choose your "every x observations" here (or put inside cfg)
+  
+  # choose mean regime length (50 or 100) and extreme time share
+  sched <- make_regime_schedule(
+    T = Ttot,
+    mean_len  = mean_len,   # or 50L
+    p_extreme = p_extreme,   # e.g., 20% of time in EXTREME lower-tail regimes
+    min_len = 20L,
+    max_len = 300L
+  )
+  
+  cat("mean_len_real:", sched$mean_len_real, "\n")
+  cat("frac_extreme_time_real:", sched$frac_extreme_time_real, "\n")
+  
+  piece <- make_piecewise_dgp_d2(
+    T = Ttot,
+    L_switch = sched,
+    draw_fun = draw_vine_d2_regime
+  )
+  
+  dur <- vapply(piece$regimes, function(g) length(g$idx), integer(1))
+  st  <- vapply(piece$regimes, function(g) g$state, character(1))
+  cat("Avg regime duration:", mean(dur), "\n")
+  cat("Frac time EXTREME:", sum(dur[st=="EXTREME"]) / sum(dur), "\n")
+  
 
   dgp <- list(
     regimes     = piece$regimes,
@@ -739,8 +1013,8 @@ run_one_sim <- function(s,
   cfg <- modifyList(build_cfg(d = 2), list(M = 500, label = "M500", use_tail_informed_prior = TRUE, W=126L))
 
   # --- Run your method ---
-  #out <- naive_simul_d2_regimes(data, cfg, dgp)
-  out <- smc_simul_serial(data, cfg, dgp)
+  out <- naive_simul_d2_regimes(data, cfg, dgp)
+  #out <- smc_simul_serial(data, cfg, dgp)
 
   n_oos <- nrow(data$U) - cfg$W_predict
   y_real_oos  <- data$y_real[(nrow(data$y_real) - n_oos + 1):nrow(data$y_real), , drop = FALSE]
@@ -780,14 +1054,17 @@ run_one_sim <- function(s,
     rmse_mae_from_covar = rmse_mae_from_covar
   )
 
-  dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
-  saveRDS(result, file.path(out_dir, sprintf("results_smc_regimes_tip_s%03d.rds", s)))
+  #dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+  #saveRDS(result, file.path(out_dir, sprintf("results_smc_regimes_tip_s%03d.rds", s)))
 
   return(result)
 }
 
 
 library(future.apply)
+
+
+
 
 plan(multisession, workers = max(1, parallel::detectCores() - 1))
 
@@ -797,11 +1074,11 @@ res_list <- future_lapply(
   n_train = n_train,
   n_test  = n_test,
   d       = d,
-  L_switch = 100L,
+  mean_len = ml,
+  p_extreme = pe,
   out_dir  = "simul_results/2d_smc",
   future.seed = TRUE     # IMPORTANT: reproducible RNG across workers
 )
-
 
 
 eval_var_all   <- do.call(rbind, lapply(res_list, `[[`, "eval_var"))
@@ -809,13 +1086,89 @@ eval_covar_all <- do.call(rbind, lapply(res_list, `[[`, "eval_covar"))
 rmse_all       <- do.call(rbind, lapply(res_list, `[[`, "rmse_mae_from_covar"))
 
 
-
-
 mean_rate <- with(eval_var_all, mean(rate[alpha == 0.01], na.rm = TRUE))
 mean_rate
 
 mean_rate <- with(eval_covar_all, mean(rate[asset == 1 & alpha_j == 0.05 & alpha_port == 0.05], na.rm = TRUE))
 mean_rate
+
+
+
+
+
+
+########
+#loop
+library(future)
+library(future.apply)
+
+plan(multisession, workers = max(1, parallel::detectCores() - 1))
+
+mean_len_grid  <- c(50L, 100L)          # choose
+p_extreme_grid <- c(0.20, 0.40)   # choose
+
+base_dir <- "simul_results/2d_smc_grid"
+dir.create(base_dir, recursive = TRUE, showWarnings = FALSE)
+
+for (ml in mean_len_grid) {
+  for (pe in p_extreme_grid) {
+    
+    tag <- sprintf("mean%03d_pext%03d", ml, as.integer(round(100 * pe)))
+    out_dir <- file.path(base_dir, tag)
+    dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+    
+    cat("\n============================\n")
+    cat("Running:", tag, "\n")
+    cat("============================\n")
+    
+    res_list <- future_lapply(
+      X = 1:100,
+      FUN = run_one_sim,
+      n_train   = n_train,
+      n_test    = n_test,
+      d         = d,
+      mean_len  = ml,
+      p_extreme = pe,
+      out_dir   = out_dir,
+      future.seed = TRUE
+    )
+    
+    # bind
+    eval_var_all   <- do.call(rbind, lapply(res_list, `[[`, "eval_var"))
+    eval_covar_all <- do.call(rbind, lapply(res_list, `[[`, "eval_covar"))
+    rmse_all       <- do.call(rbind, lapply(res_list, `[[`, "rmse_mae_from_covar"))
+    
+    # add identifiers (so you can rbind across settings later)
+    eval_var_all$mean_len <- ml
+    eval_var_all$p_extreme <- pe
+    
+    eval_covar_all$mean_len <- ml
+    eval_covar_all$p_extreme <- pe
+    
+    rmse_all$mean_len <- ml
+    rmse_all$p_extreme <- pe
+    
+    # save everything for this (ml, pe)
+    saveRDS(
+      list(
+        mean_len = ml,
+        p_extreme = pe,
+        res_list = res_list,
+        eval_var_all = eval_var_all,
+        eval_covar_all = eval_covar_all,
+        rmse_all = rmse_all
+      ),
+      file = file.path(out_dir, sprintf("ALL_%s.rds", tag))
+    )
+    
+    # optional: also save the three tables separately
+    saveRDS(eval_var_all,   file.path(out_dir, sprintf("eval_var_%s.rds", tag)))
+    saveRDS(eval_covar_all, file.path(out_dir, sprintf("eval_covar_%s.rds", tag)))
+    saveRDS(rmse_all,       file.path(out_dir, sprintf("rmse_%s.rds", tag)))
+  }
+}
+
+# optional: after the loop, combine across all settings by reading ALL_*.rds
 
 
 
