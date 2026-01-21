@@ -5,10 +5,10 @@ library(here)
 library(fGarch)
 source(here("src/R", "config.R"))   
 
-n_sim   <- 3
+n_sim   <- 100
 d       <- 2
 n_train <- 756
-n_test  <- 1000
+n_test  <- 3000
 n       <- n_train+n_test
 
 fam_names <- c("bb1", "bb1r180", "bb7", "bb7r180", "t")
@@ -91,17 +91,17 @@ draw_bicop_regime <- function(state, fam_names) {
   
   # 1) sample resulting lower-tail dependence (your rule)
   if (state == "EXTREME") {
-    lamL_target <- runif(1, 0.70, 0.9)
+    lamL_target <- runif(1, 0.70, 0.87)
   } else { 
     # NORMAL: keep feasible per family (important!)
-    if (is_bb1) lamL_target <- runif(1, 0.50, 0.70) else lamL_target <- runif(1, 0.00, 0.70)
+    if (is_bb1) lamL_target <- runif(1, 0.51, 0.70) else lamL_target <- runif(1, 0.01, 0.70)
   }
   
   # 2) sample resulting upper-tail dependence according to the family
   if (is_t) {
     lamU_target <- lamL_target
   } else {
-    lamU_target <- runif(1, 0.00, 0.50)
+    lamU_target <- runif(1, 0.01, 0.50)
   }
   
   # 3) map resulting (lamL_target, lamU_target) -> base (lamL_base, lamU_base) depending on rotation
@@ -787,7 +787,7 @@ for (s in 1:(n_sim)) { #################
   )
   
   
-  cfg <- modifyList(build_cfg(d = 2), list(M = 500, label = "M500"))
+  cfg <- modifyList(build_cfg(d = 2), list(M = 500, label = "M500", use_tail_informed_prior=TRUE, tip_k=25))
   # cfg$L_switch <- L_switch  # optional, if you want it accessible inside smc_simul()
   
   # --- SMC (unchanged call signature) ---
@@ -883,14 +883,15 @@ run_one_sim <- function(s,
                         n_train, n_test, d,
                         mean_len = 100L,
                         p_extreme = 0.2,
+                        cfg=NULL,
                         out_dir = "simul_results/2d_smc") {
 
   set.seed(1111 + s)
 
   # if your functions come from config.R, load them inside workers too
-  source(here("src/R", "config.R"))
-  source(here("src/simulation/naive_simulation.R"))
-  source(here("src/simulation/main_simulation_nonparallel.R"))
+  # source(here("src/R", "config.R"))
+  # source(here("src/simulation/naive_simulation.R"))
+  # source(here("src/simulation/main_simulation_nonparallel.R"))
 
   
   Ttot <- n_train + n_test
@@ -902,12 +903,9 @@ run_one_sim <- function(s,
     mean_len  = mean_len,   # or 50L
     p_extreme = p_extreme,   # e.g., 20% of time in EXTREME lower-tail regimes
     min_len = 20L,
-    max_len = 300L
+    max_len = 3000L
   )
-  
-  cat("mean_len_real:", sched$mean_len_real, "\n")
-  cat("frac_extreme_time_real:", sched$frac_extreme_time_real, "\n")
-  
+
   piece <- make_piecewise_dgp_d2(
     T = Ttot,
     L_switch = sched,
@@ -916,9 +914,6 @@ run_one_sim <- function(s,
   
   dur <- vapply(piece$regimes, function(g) length(g$idx), integer(1))
   st  <- vapply(piece$regimes, function(g) g$state, character(1))
-  cat("Avg regime duration:", mean(dur), "\n")
-  cat("Frac time EXTREME:", sum(dur[st=="EXTREME"]) / sum(dur), "\n")
-  
 
   dgp <- list(
     regimes     = piece$regimes,
@@ -1010,11 +1005,11 @@ run_one_sim <- function(s,
     covar_true_a0025b05 = covar_true_a0025b05
   )
 
-  cfg <- modifyList(build_cfg(d = 2), list(M = 500, label = "M500", use_tail_informed_prior = TRUE, W=126L))
+  #cfg <- modifyList(build_cfg(d = 2), list(M = 500, label = "M500", use_tail_informed_prior = TRUE, tip_k=25))
 
   # --- Run your method ---
-  out <- naive_simul_d2_regimes(data, cfg, dgp)
-  #out <- smc_simul_serial(data, cfg, dgp)
+  #out <- naive_simul_d2_regimes(data, cfg, dgp)
+  out <- smc_simul_serial(data, cfg, dgp)
 
   n_oos <- nrow(data$U) - cfg$W_predict
   y_real_oos  <- data$y_real[(nrow(data$y_real) - n_oos + 1):nrow(data$y_real), , drop = FALSE]
@@ -1069,7 +1064,7 @@ library(future.apply)
 plan(multisession, workers = max(1, parallel::detectCores() - 1))
 
 res_list <- future_lapply(
-  X = 1:100,
+  X = 1:150,
   FUN = run_one_sim,
   n_train = n_train,
   n_test  = n_test,
@@ -1104,67 +1099,96 @@ library(future.apply)
 
 plan(multisession, workers = max(1, parallel::detectCores() - 1))
 
-mean_len_grid  <- c(50L, 100L)          # choose
-p_extreme_grid <- c(0.20, 0.40)   # choose
+library(here)
+
+invisible(
+  future::value(
+    future::future({
+      source(here("src/R", "config.R"))
+      source(here("src/simulation/naive_simulation.R"))
+      source(here("src/simulation/main_simulation_nonparallel.R"))
+      TRUE
+    })
+  )
+)
+
+
+mean_len_grid  <- c(252L)          # choose
+p_extreme_grid <- c(0.20)   # choose
+tip_k_grid     <- c(12, 25, 47)
 
 base_dir <- "simul_results/2d_smc_grid"
 dir.create(base_dir, recursive = TRUE, showWarnings = FALSE)
 
+
+
+
 for (ml in mean_len_grid) {
   for (pe in p_extreme_grid) {
-    
-    tag <- sprintf("mean%03d_pext%03d", ml, as.integer(round(100 * pe)))
-    out_dir <- file.path(base_dir, tag)
-    dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
-    
-    cat("\n============================\n")
-    cat("Running:", tag, "\n")
-    cat("============================\n")
-    
-    res_list <- future_lapply(
-      X = 1:100,
-      FUN = run_one_sim,
-      n_train   = n_train,
-      n_test    = n_test,
-      d         = d,
-      mean_len  = ml,
-      p_extreme = pe,
-      out_dir   = out_dir,
-      future.seed = TRUE
-    )
-    
-    # bind
-    eval_var_all   <- do.call(rbind, lapply(res_list, `[[`, "eval_var"))
-    eval_covar_all <- do.call(rbind, lapply(res_list, `[[`, "eval_covar"))
-    rmse_all       <- do.call(rbind, lapply(res_list, `[[`, "rmse_mae_from_covar"))
-    
-    # add identifiers (so you can rbind across settings later)
-    eval_var_all$mean_len <- ml
-    eval_var_all$p_extreme <- pe
-    
-    eval_covar_all$mean_len <- ml
-    eval_covar_all$p_extreme <- pe
-    
-    rmse_all$mean_len <- ml
-    rmse_all$p_extreme <- pe
-    
-    # save everything for this (ml, pe)
-    saveRDS(
-      list(
-        mean_len = ml,
+    for (tk in tip_k_grid) {
+      
+      cfg <- modifyList(build_cfg(d = 2), list(M = 1000, label = "M1000", use_tail_informed_prior = TRUE, tip_k=tk))
+      
+      tag <- sprintf(
+        "mean%03d_pext%03d_tipk%03d",
+        ml, as.integer(round(100 * pe)), tk
+      )
+      
+      out_dir <- file.path(base_dir, tag)
+      dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+      
+      
+      cat("\n============================\n")
+      cat("Running:", tag, "\n")
+      cat("============================\n")
+      
+      res_list <- future_lapply(
+        X = 1:150,
+        FUN = run_one_sim,
+        n_train   = n_train,
+        n_test    = n_test,
+        d         = d,
+        cfg       = cfg,
+        mean_len  = ml,
         p_extreme = pe,
-        res_list = res_list,
-        eval_var_all = eval_var_all,
-        eval_covar_all = eval_covar_all,
-        rmse_all = rmse_all
-      ),
-      file = file.path(out_dir, sprintf("ALL_%s.rds", tag))
-    )
-    
-    # optional: also save the three tables separately
-    saveRDS(eval_var_all,   file.path(out_dir, sprintf("eval_var_%s.rds", tag)))
-    saveRDS(eval_covar_all, file.path(out_dir, sprintf("eval_covar_%s.rds", tag)))
-    saveRDS(rmse_all,       file.path(out_dir, sprintf("rmse_%s.rds", tag)))
+        out_dir   = out_dir,
+        future.seed = TRUE
+      )
+      
+      # bind
+      eval_var_all   <- do.call(rbind, lapply(res_list, `[[`, "eval_var"))
+      eval_covar_all <- do.call(rbind, lapply(res_list, `[[`, "eval_covar"))
+      rmse_all       <- do.call(rbind, lapply(res_list, `[[`, "rmse_mae_from_covar"))
+      
+      ## add identifiers
+      for (x in list(eval_var_all, eval_covar_all, rmse_all)) {
+        x$mean_len  <- ml
+        x$p_extreme <- pe
+        x$tip_k     <- tk
+      }
+      
+      ## save
+      saveRDS(
+        list(
+          mean_len = ml,
+          p_extreme = pe,
+          tip_k = tk,
+          cfg = cfg,
+          res_list = res_list,
+          eval_var_all = eval_var_all,
+          eval_covar_all = eval_covar_all,
+          rmse_all = rmse_all
+        ),
+        file = file.path(out_dir, sprintf("ALL_%s.rds", tag))
+      )
+      
+      saveRDS(eval_var_all,
+              file.path(out_dir, sprintf("eval_var_%s.rds", tag)))
+      saveRDS(eval_covar_all,
+              file.path(out_dir, sprintf("eval_covar_%s.rds", tag)))
+      saveRDS(rmse_all,
+              file.path(out_dir, sprintf("rmse_%s.rds", tag)))
+    }
   }
 }
 
