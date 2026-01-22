@@ -117,7 +117,7 @@ draw_bicop_regime <- function(state, fam_names) {
   # 4) invert tails -> parameters
   if (is_t) {
     nu  <- runif(1, 2, 30)
-    rho <- t_tail2rho(lamL_target, nu)   # lamL=lamU for t
+    rho <- abs(t_tail2rho(lamL_target, nu))   # lamL=lamU for t
     par <- c(rho, nu)
     bic <- bicop_dist("t", 0L, par)      # rotation irrelevant for symmetric t
     return(list(
