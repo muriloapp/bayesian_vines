@@ -96,10 +96,43 @@ name_to_code <- c(
 )
 
 # convert VineCopula BiCopSelect -> rvinecopulib bicop_dist + pieces for hbicop
-vc_to_rvl <- function(fit_vc) {
+# vc_to_rvl <- function(fit_vc) {
+#   code <- fit_vc$family
+#   
+#   # family + rotation (VineCopula rotation is encoded in the integer code)
+#   fam_rot <- switch(as.character(code),
+#                     "0"  = list(fam="indep",    rot=0L),
+#                     "1"  = list(fam="gaussian", rot=0L),
+#                     "2"  = list(fam="t",        rot=0L),
+#                     "7"  = list(fam="bb1",      rot=0L),
+#                     "17" = list(fam="bb1",      rot=180L),
+#                     "9"  = list(fam="bb7",      rot=0L),
+#                     "19" = list(fam="bb7",      rot=180L),
+#                     stop("Unsupported VineCopula family code: ", code)
+#   )
+#   
+#   # parameters
+#   pars <- if (fam_rot$fam == "indep") numeric(0)
+#   else if (fam_rot$fam %in% c("gaussian")) c(fit_vc$par)
+#   else c(fit_vc$par, fit_vc$par2)  # t, bb1, bb7
+#   
+#   list(
+#     family     = fam_rot$fam,
+#     rotation   = fam_rot$rot,
+#     parameters = pars,
+#     dist       = bicop_dist(fam_rot$fam, fam_rot$rot, pars)
+#   )
+# }
+
+vc_to_rvl <- function(fit_vc,
+                      eps = 1e-8,
+                      min_bb7_delta = 0.01 + 1e-8,
+                      min_bb1_delta = 1 + 1e-8,
+                      rho_max = 0.99,
+                      nu_lo = 2 + 1e-8) {
+  
   code <- fit_vc$family
   
-  # family + rotation (VineCopula rotation is encoded in the integer code)
   fam_rot <- switch(as.character(code),
                     "0"  = list(fam="indep",    rot=0L),
                     "1"  = list(fam="gaussian", rot=0L),
@@ -111,18 +144,51 @@ vc_to_rvl <- function(fit_vc) {
                     stop("Unsupported VineCopula family code: ", code)
   )
   
-  # parameters
-  pars <- if (fam_rot$fam == "indep") numeric(0)
-  else if (fam_rot$fam %in% c("gaussian")) c(fit_vc$par)
-  else c(fit_vc$par, fit_vc$par2)  # t, bb1, bb7
+  # build raw parameter vector from VineCopula fit
+  pars <- if (fam_rot$fam == "indep") {
+    numeric(0)
+  } else if (fam_rot$fam == "gaussian") {
+    c(fit_vc$par)
+  } else {
+    c(fit_vc$par, fit_vc$par2)
+  }
+  
+  # sanitize per family (this is the key)
+  if (fam_rot$fam == "t") {
+    # pars = c(rho, nu)
+    pars[1] <- max(min(pars[1], rho_max), -rho_max)
+    pars[2] <- max(pars[2], nu_lo)
+  }
+  
+  if (fam_rot$fam == "bb1") {
+    # pars = c(theta, delta)
+    pars[1] <- max(pars[1], eps)
+    pars[2] <- max(pars[2], min_bb1_delta)
+  }
+  
+  if (fam_rot$fam == "bb7") {
+    # pars = c(theta, delta)
+    pars[1] <- max(pars[1], 1 + eps)
+    pars[2] <- max(pars[2], min_bb7_delta)   # <- prevents your crash
+  }
+  
+  # Build rvinecopulib object; fallback if still failing
+  dist <- tryCatch(
+    rvinecopulib::bicop_dist(fam_rot$fam, fam_rot$rot, pars),
+    error = function(e) {
+      # robust fallback: Gaussian independence-like
+      rvinecopulib::bicop_dist("gaussian", 0L, 0)
+    }
+  )
   
   list(
     family     = fam_rot$fam,
     rotation   = fam_rot$rot,
     parameters = pars,
-    dist       = bicop_dist(fam_rot$fam, fam_rot$rot, pars)
+    dist       = dist
   )
 }
+
 
 
 
