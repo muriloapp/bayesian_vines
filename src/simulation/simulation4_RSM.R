@@ -885,11 +885,12 @@ run_one_sim <- function(s,
                         p_extreme = 0.2,
                         tip_k = NA_integer_,
                         cfg=NULL,
+                        seed=NULL,
                         out_dir = "simul_results/2d_smc") {
 
   tryCatch({
   #set.seed(1111 + s)
-  seed_state <- .Random.seed
+  set.seed(seed+s)
     
   # if your functions come from config.R, load them inside workers too
   # source(here("src/R", "config.R"))
@@ -1069,8 +1070,7 @@ run_one_sim <- function(s,
     mean_len  = mean_len,
     p_extreme = p_extreme,
     tip_k     = tip_k,
-    sim       = s,
-    seed_state = seed_state
+    sim       = s
   )
   
   dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
@@ -1091,8 +1091,7 @@ run_one_sim <- function(s,
       mean_len = mean_len,
       p_extreme = p_extreme,
       tip_k = tip_k,
-      error = conditionMessage(e),
-      seed_state = seed_state
+      error = conditionMessage(e)
     ), f_final)
     return(f_final)
   })
@@ -1196,7 +1195,7 @@ for (ml in mean_len_grid) {
       cat("============================\n")
       
       sim_files <- future_lapply(
-        X = 1:150,
+        X = 1:100,
         FUN = run_one_sim,
         n_train   = n_train,
         n_test    = n_test,
@@ -1206,7 +1205,8 @@ for (ml in mean_len_grid) {
         p_extreme = pe,
         tip_k     = tk,
         out_dir   = out_dir,
-        future.seed = TRUE
+        future.seed = FALSE,
+        seed = 1111
       )
       
       saveRDS(sim_files, file.path(out_dir, sprintf("sim_files_%s.rds", tag)))
@@ -1250,6 +1250,31 @@ for (ml in mean_len_grid) {
 }
 
 # optional: after the loop, combine across all settings by reading ALL_*.rds
+
+
+
+
+err <- readRDS(".../sim_042_ERROR.rds")
+
+plan(sequential)                 # debug sequentially
+RNGkind("L'Ecuyer-CMRG")         # same RNG kind used by future.seed
+assign(".Random.seed", err$seed_state, envir = .GlobalEnv)
+
+# re-run ONLY that sim (no set.seed inside run_one_sim)
+run_one_sim(
+  s = err$sim,
+  n_train = n_train, n_test = n_test, d = d,
+  mean_len = err$mean_len,
+  p_extreme = err$p_extreme,
+  tip_k = err$tip_k,
+  cfg = cfg,
+  out_dir = "debug_one_sim"
+)
+
+
+
+
+
 
 
 
