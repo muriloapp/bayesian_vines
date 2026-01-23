@@ -648,14 +648,14 @@ covar_rmse_mae_all <- function(out, dgp,
 #############
 
 
-var_list <- vector("list", n_sim)
-covar_list <- vector("list", n_sim)
-logpred_list <- vector("list", n_sim) 
-QL_list <- vector("list", n_sim)
-FZL_list <- vector("list", n_sim)
-wCRPS_list <- vector("list", n_sim)
-rmse_mae_from_covar_list <- vector("list", n_sim)
-
+# var_list <- vector("list", n_sim)
+# covar_list <- vector("list", n_sim)
+# logpred_list <- vector("list", n_sim) 
+# QL_list <- vector("list", n_sim)
+# FZL_list <- vector("list", n_sim)
+# wCRPS_list <- vector("list", n_sim)
+# rmse_mae_from_covar_list <- vector("list", n_sim)
+# 
 
 alphas_covar <- c(0.025, 0.05, 0.10)
 betas_covar  <- c(0.025, 0.05, 0.10)
@@ -1018,8 +1018,8 @@ run_one_sim <- function(s,
   #cfg <- modifyList(build_cfg(d = 2), list(M = 500, label = "M500", use_tail_informed_prior = TRUE, tip_k=25))
 
   # --- Run your method ---
-  out <- naive_simul_d2_regimes(data, cfg, dgp)
-  #out <- smc_simul_serial(data, cfg, dgp)
+  #out <- naive_simul_d2_regimes(data, cfg, dgp)
+  out <- smc_simul_serial(data, cfg, dgp)
 
   n_oos <- nrow(data$U) - cfg$W_predict
   y_real_oos  <- data$y_real[(nrow(data$y_real) - n_oos + 1):nrow(data$y_real), , drop = FALSE]
@@ -1177,13 +1177,13 @@ source(here("src/simulation/main_simulation_nonparallel.R"))
 # 
 
 
-mean_len_grid  <- c(1000000L)          # choose
+mean_len_grid  <- c(1000000L, 252)          # choose
 p_extreme_grid <- c(0.20)   # choose
-tip_k_grid     <- c(1)
-aic_refit_every_grid <- c(252, 21)
-W_preict_grid <- c(252)
+tip_k_grid     <- c(12, 25, 47)
+aic_refit_every_grid <- c(1)
+W_preict_grid <- c(756)
 
-base_dir <- "simul_results/2d_naive_r10000_grid"
+base_dir <- "simul_results/2d_AIC_grid"
 dir.create(base_dir, recursive = TRUE, showWarnings = FALSE)
 
 
@@ -1223,7 +1223,7 @@ for (ml in mean_len_grid) {
           cat("============================\n")
           
           sim_files <- future_lapply(
-            X = 1:200,
+            X = 1:250,
             FUN = run_one_sim,
             n_train   = n_train,
             n_test    = n_test,
@@ -1233,7 +1233,7 @@ for (ml in mean_len_grid) {
             p_extreme = pe,
             tip_k     = tk,
             out_dir   = out_dir,
-            future.seed = 11111
+            future.seed = 1234
           )
           
           saveRDS(sim_files, file.path(out_dir, sprintf("sim_files_%s.rds", tag)))
@@ -1604,7 +1604,7 @@ mean(xx_smc)
 
 
 
-folder <- "simul_results/2d_naive_252train_15000_grid/mean1000000_pext010_tipk001"   # <- change this
+folder <- "simul_results/2d_naive_252train_10000_grid/mean1000000_pext010_tipk001"   # <- change this
 files  <- list.files(folder, pattern = "\\.rds$", full.names = TRUE)
 
 # read all files (each file is assumed to be a list)
@@ -1622,11 +1622,11 @@ covar_all <- do.call(rbind, covar_list)
 covar_all
 
 
-with(covar_all, mean(rate[asset == 2 & alpha_j == 0.05 & alpha_port == 0.05], na.rm = TRUE))
+with(covar_all, mean(rate[asset == 2 & alpha_j == 0.05 & alpha_port == 0.025], na.rm = TRUE))
 
 
 
-(covar_all[covar_all$asset==1 & covar_all$alpha_j==0.05 & covar_all$alpha_port==0.05,,drop=FALSE])
+(covar_all[covar_all$asset==1 & covar_all$alpha_j==0.05 & covar_all$alpha_port==0.025,,drop=FALSE])
 
 
 
