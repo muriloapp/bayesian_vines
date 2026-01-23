@@ -48,7 +48,7 @@ build_cfg <- function(d,
     M            = 2000L,                   # DO SENSITIVITY ANALYSIS
     ess_thr      = 0.50,                    # Standard in the literature
     W            = W,                    # DO SENSITIVITY ANALYSIS
-    k_step       = 350L,                      # Print diag every k_step
+    k_step       = 1000000L, #NEVER PRINT                      # Print diag every k_step
     n_mh         = 3L,
     W_predict    = W_predict,                    # Start predict 
     q_flip       = q_flip,                  # DO SENSITIVITY ANALYSIS

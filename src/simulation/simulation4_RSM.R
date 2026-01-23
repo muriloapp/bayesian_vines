@@ -1159,7 +1159,7 @@ mean_rate
 #loop
 library(future)
 library(future.apply)
-
+set.seed(1234)
 plan(multisession, workers = max(1, parallel::detectCores() - 1))
 
 library(here)
@@ -1183,7 +1183,7 @@ tip_k_grid     <- c(12, 25, 47)
 aic_refit_every_grid <- c(1)
 W_preict_grid <- c(756)
 
-base_dir <- "simul_results/2d_AIC_grid"
+base_dir <- "simul_results/2d_SMC_grid"
 dir.create(base_dir, recursive = TRUE, showWarnings = FALSE)
 
 
@@ -1604,7 +1604,7 @@ mean(xx_smc)
 
 
 
-folder <- "simul_results/2d_naive_252train_10000_grid/mean1000000_pext010_tipk001"   # <- change this
+folder <- "simul_results/2d_naive_252train_s10000_grid/mean1000000_pext010_tipk001"   # <- change this
 files  <- list.files(folder, pattern = "\\.rds$", full.names = TRUE)
 
 # read all files (each file is assumed to be a list)
@@ -1622,7 +1622,7 @@ covar_all <- do.call(rbind, covar_list)
 covar_all
 
 
-with(covar_all, mean(rate[asset == 2 & alpha_j == 0.05 & alpha_port == 0.025], na.rm = TRUE))
+with(covar_all, mean(rate[asset == 2 & alpha_j == 0.1 & alpha_port == 0.1], na.rm = TRUE))
 
 
 

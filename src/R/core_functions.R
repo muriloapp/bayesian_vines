@@ -775,8 +775,9 @@ resample_move_old_serial <- function(particles, newAncestors,
   }
   
   acc_pct <- 100 * mh_n_acc / mh_n_prop
-  cat(sprintf("MH acceptance = %4d / %4d  =  %.2f%%\n\n",
-              mh_n_acc, mh_n_prop, acc_pct))
+  # CHANGE LATER
+  #cat(sprintf("MH acceptance = %4d / %4d  =  %.2f%%\n\n",
+  #            mh_n_acc, mh_n_prop, acc_pct))
   
   list(particles = particles, acc_pct = acc_pct)
 }
