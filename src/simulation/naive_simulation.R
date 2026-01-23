@@ -548,7 +548,7 @@ naive_simul_d2_regimes <- function(data, cfg, dgp) {
   #                "current" excludes only the current true base at test_idx.
   #exclude_rule <- if (is.null(cfg$exclude_rule)) "window" else cfg$exclude_rule
   exclude_rule <- "current"
-  refit_every  <- if (is.null(cfg$refit_every)) 252L else as.integer(cfg$refit_every)
+  refit_every  <- if (is.null(cfg$refit_every)) 21L else as.integer(cfg$refit_every)
   
   out <- list(
     log_pred       = numeric(n_oos),
@@ -614,7 +614,7 @@ naive_simul_d2_regimes <- function(data, cfg, dgp) {
       blocked_bases <- blocked_bases[!is.na(blocked_bases)]
       out$blocked_bases_hist[[t]] <- blocked_bases
       
-      allowed_names_masked <- setdiff(allowed_names, blocked_bases)
+      allowed_names_masked <- allowed_names#setdiff(allowed_names, blocked_bases)
       
       # safety: if you accidentally block everything, fall back to unmasked set
       if (length(allowed_names_masked) == 0L) {

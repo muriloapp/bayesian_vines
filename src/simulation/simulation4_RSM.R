@@ -8,7 +8,7 @@ source(here("src/R", "config.R"))
 n_sim   <- 100
 d       <- 2
 n_train <- 756
-n_test  <- 3000
+n_test  <- 5000
 n       <- n_train+n_test
 
 fam_names <- c("bb1", "bb1r180", "bb7", "bb7r180", "t")
@@ -45,23 +45,35 @@ draw_regime_lengths <- function(T, mean_len = 100L, min_len = 10L, max_len = 500
 
 assign_states_by_time <- function(lens, p_extreme = 0.20) {
   T <- sum(lens)
-  target <- round(p_extreme * T)
-  
   n_reg <- length(lens)
-  states <- rep("NORMAL", n_reg)
   
-  ord <- sample.int(n_reg, n_reg)
-  ext_time <- 0L
-  for (k in ord) {
-    if (ext_time < target) {
-      states[k] <- "EXTREME"
-      ext_time <- ext_time + lens[k]
-    }
+  # allow single-regime schedule: EXTREME with prob p_extreme
+  if (n_reg == 1L) {
+    state <- if (runif(1) < p_extreme) "EXTREME" else "NORMAL"
+    return(list(
+      states = state,
+      frac_extreme_time = if (state == "EXTREME") 1 else 0
+    ))
   }
   
-  list(states = states,
-       frac_extreme_time = sum(lens[states == "EXTREME"]) / T)
+  target <- as.integer(round(p_extreme * T))
+  
+  states <- rep("NORMAL", n_reg)
+  ord <- sample.int(n_reg, n_reg)
+  
+  ext_time <- 0L
+  for (k in ord) {
+    if (ext_time >= target) break
+    states[k] <- "EXTREME"
+    ext_time <- ext_time + lens[k]
+  }
+  
+  list(
+    states = states,
+    frac_extreme_time = sum(lens[states == "EXTREME"]) / T
+  )
 }
+
 
 make_regime_schedule <- function(T, mean_len = 100L, p_extreme = 0.20,
                                  min_len = 10L, max_len = 500L) {
@@ -671,10 +683,10 @@ for (s in 1:(n_sim)) { #################
   # choose mean regime length (50 or 100) and extreme time share
   sched <- make_regime_schedule(
     T = Ttot,
-    mean_len  = 100L,   # or 50L
-    p_extreme = 0.20,   # e.g., 20% of time in EXTREME lower-tail regimes
+    mean_len  = 1000000L,   # or 50L
+    p_extreme = 0.10,   # e.g., 20% of time in EXTREME lower-tail regimes
     min_len = 20L,
-    max_len = 300L
+    max_len = 2000000L
   )
   
   cat("mean_len_real:", sched$mean_len_real, "\n")
@@ -1165,8 +1177,8 @@ source(here("src/simulation/main_simulation_nonparallel.R"))
 
 
 
-mean_len_grid  <- c(5000L)          # choose
-p_extreme_grid <- c(0.20)   # choose
+mean_len_grid  <- c(9000L)          # choose
+p_extreme_grid <- c(0.10)   # choose
 tip_k_grid     <- c(1)
 
 base_dir <- "simul_results/2d_naive_grid"
@@ -1195,7 +1207,7 @@ for (ml in mean_len_grid) {
       cat("============================\n")
       
       sim_files <- future_lapply(
-        X = 1:100,
+        X = 1:10,
         FUN = run_one_sim,
         n_train   = n_train,
         n_test    = n_test,
@@ -1344,7 +1356,7 @@ for (s in 1:(n_sim)) {
   cfg <- modifyList(build_cfg(d = 2), list(M = 500, label = "M500"))
   
   # # # NAIVE
-  # out <- naive_simul_d2(data, cfg, dgp)
+  out <- naive_simul_d2(data, cfg, dgp)
   # 
   # n_oos <- nrow(data$U) - cfg$W_predict
   # y_real_oos  <- data$y_real[(nrow(data$y_real) - n_oos + 1):nrow(data$y_real), , drop = FALSE]
@@ -1570,4 +1582,34 @@ for (s in seq_len(s)) {
 }
 
 mean(xx_smc)
+
+
+
+
+
+
+folder <- "simul_results/2d_naive_grid/mean252_pext010_tipk001"   # <- change this
+files  <- list.files(folder, pattern = "\\.rds$", full.names = TRUE)
+
+# read all files (each file is assumed to be a list)
+obj_list <- lapply(files, readRDS)
+
+# extract the element you want (file[[1]]$covar, file[[2]]$covar, ...)
+covar_list <- lapply(obj_list, `[[`, "eval_covar")
+
+# (optional) keep only non-missing covar elements
+covar_list <- Filter(Negate(is.null), covar_list)
+
+# bind vertically
+covar_all <- do.call(rbind, covar_list)
+
+covar_all
+
+
+with(covar_all, mean(rate[asset == 2 & alpha_j == 0.1 & alpha_port == 0.05], na.rm = TRUE))
+
+
+
+
+
 
