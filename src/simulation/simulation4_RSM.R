@@ -5,11 +5,6 @@ library(here)
 library(fGarch)
 source(here("src/R", "config.R"))   
 
-n_sim   <- 100
-d       <- 2
-n_train <- 756
-n_test  <- 5000
-n       <- n_train+n_test
 
 fam_names <- c("bb1", "bb1r180", "bb7", "bb7r180", "t")
 
@@ -902,7 +897,6 @@ run_one_sim <- function(s,
 
   tryCatch({
   #set.seed(1111 + s)
-  set.seed(seed+s)
     
   # if your functions come from config.R, load them inside workers too
   # source(here("src/R", "config.R"))
@@ -919,7 +913,7 @@ run_one_sim <- function(s,
     mean_len  = mean_len,   # or 50L
     p_extreme = p_extreme,   # e.g., 20% of time in EXTREME lower-tail regimes
     min_len = 20L,
-    max_len = 30000L
+    max_len = 2000000L
   )
 
   piece <- make_piecewise_dgp_d2(
@@ -1176,12 +1170,20 @@ source(here("src/simulation/naive_simulation.R"))
 source(here("src/simulation/main_simulation_nonparallel.R"))
 
 
+# d       <- 2
+# n_train <- 756
+# n_test  <- 3000
+# n       <- n_train+n_test
+# 
 
-mean_len_grid  <- c(9000L)          # choose
-p_extreme_grid <- c(0.10)   # choose
+
+mean_len_grid  <- c(1000000L)          # choose
+p_extreme_grid <- c(0.20)   # choose
 tip_k_grid     <- c(1)
+aic_refit_every_grid <- c(252, 21)
+W_preict_grid <- c(252)
 
-base_dir <- "simul_results/2d_naive_grid"
+base_dir <- "simul_results/2d_naive_r10000_grid"
 dir.create(base_dir, recursive = TRUE, showWarnings = FALSE)
 
 
@@ -1190,73 +1192,88 @@ dir.create(base_dir, recursive = TRUE, showWarnings = FALSE)
 for (ml in mean_len_grid) {
   for (pe in p_extreme_grid) {
     for (tk in tip_k_grid) {
-      
-      cfg <- modifyList(build_cfg(d = 2), list(M = 1000, label = "M1000", use_tail_informed_prior = TRUE, tip_k=tk))
-      
-      tag <- sprintf(
-        "mean%03d_pext%03d_tipk%03d",
-        ml, as.integer(round(100 * pe)), tk
-      )
-      
-      out_dir <- file.path(base_dir, tag)
-      dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
-      
-      
-      cat("\n============================\n")
-      cat("Running:", tag, "\n")
-      cat("============================\n")
-      
-      sim_files <- future_lapply(
-        X = 1:10,
-        FUN = run_one_sim,
-        n_train   = n_train,
-        n_test    = n_test,
-        d         = d,
-        cfg       = cfg,
-        mean_len  = ml,
-        p_extreme = pe,
-        tip_k     = tk,
-        out_dir   = out_dir,
-        future.seed = FALSE,
-        seed = 1111
-      )
-      
-      saveRDS(sim_files, file.path(out_dir, sprintf("sim_files_%s.rds", tag)))
-      
-      
-      # # bind
-      # eval_var_all   <- do.call(rbind, lapply(res_list, `[[`, "eval_var"))
-      # eval_covar_all <- do.call(rbind, lapply(res_list, `[[`, "eval_covar"))
-      # rmse_all       <- do.call(rbind, lapply(res_list, `[[`, "rmse_mae_from_covar"))
-      # 
-      # ## add identifiers
-      # for (x in list(eval_var_all, eval_covar_all, rmse_all)) {
-      #   x$mean_len  <- ml
-      #   x$p_extreme <- pe
-      #   x$tip_k     <- tk
-      # }
-      # 
-      # ## save
-      # saveRDS(
-      #   list(
-      #     mean_len = ml,
-      #     p_extreme = pe,
-      #     tip_k = tk,
-      #     cfg = cfg,
-      #     res_list = res_list,
-      #     eval_var_all = eval_var_all,
-      #     eval_covar_all = eval_covar_all,
-      #     rmse_all = rmse_all
-      #   ),
-      #   file = file.path(out_dir, sprintf("ALL_%s.rds", tag))
-      # )
-      # 
-      # saveRDS(eval_var_all,
-      #         file.path(out_dir, sprintf("eval_var_%s.rds", tag)))
-      # saveRDS(eval_covar_all,
-      #         file.path(out_dir, sprintf("eval_covar_%s.rds", tag)))
-      # saveRDS(rmse_all,
-      #         file.path(out_dir, sprintf("rmse_%s.rds", tag)))
+      for (wp in W_preict_grid) {
+        for (re in aic_refit_every_grid) {
+          
+          cfg <- modifyList(build_cfg(d = 2), list(M = 1000, label = "M1000", W_predict=wp, aic_refit_every = re,  use_tail_informed_prior = TRUE, tip_k = tk))
+          
+          
+          n_train <- cfg$W_predict
+          d       <- 2
+          n_test  <- 3000
+          n       <- n_train+n_test
+          
+          
+          
+          tag <- sprintf(
+            "ml%s_pext%03d_tipk%03d_wp%04d_re%03d",
+            formatC(ml, format = "d"),
+            as.integer(round(100 * pe)),  # 0.20 -> 020
+            tk,
+            wp,
+            re
+          )
+          
+          out_dir <- file.path(base_dir, tag)
+          dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+          
+          
+          cat("\n============================\n")
+          cat("Running:", tag, "\n")
+          cat("============================\n")
+          
+          sim_files <- future_lapply(
+            X = 1:200,
+            FUN = run_one_sim,
+            n_train   = n_train,
+            n_test    = n_test,
+            d         = d,
+            cfg       = cfg,
+            mean_len  = ml,
+            p_extreme = pe,
+            tip_k     = tk,
+            out_dir   = out_dir,
+            future.seed = 11111
+          )
+          
+          saveRDS(sim_files, file.path(out_dir, sprintf("sim_files_%s.rds", tag)))
+          
+          
+          # # bind
+          # eval_var_all   <- do.call(rbind, lapply(res_list, `[[`, "eval_var"))
+          # eval_covar_all <- do.call(rbind, lapply(res_list, `[[`, "eval_covar"))
+          # rmse_all       <- do.call(rbind, lapply(res_list, `[[`, "rmse_mae_from_covar"))
+          # 
+          # ## add identifiers
+          # for (x in list(eval_var_all, eval_covar_all, rmse_all)) {
+          #   x$mean_len  <- ml
+          #   x$p_extreme <- pe
+          #   x$tip_k     <- tk
+          # }
+          # 
+          # ## save
+          # saveRDS(
+          #   list(
+          #     mean_len = ml,
+          #     p_extreme = pe,
+          #     tip_k = tk,
+          #     cfg = cfg,
+          #     res_list = res_list,
+          #     eval_var_all = eval_var_all,
+          #     eval_covar_all = eval_covar_all,
+          #     rmse_all = rmse_all
+          #   ),
+          #   file = file.path(out_dir, sprintf("ALL_%s.rds", tag))
+          # )
+          # 
+          # saveRDS(eval_var_all,
+          #         file.path(out_dir, sprintf("eval_var_%s.rds", tag)))
+          # saveRDS(eval_covar_all,
+          #         file.path(out_dir, sprintf("eval_covar_%s.rds", tag)))
+          # saveRDS(rmse_all,
+          #         file.path(out_dir, sprintf("rmse_%s.rds", tag)))
+        }
+      }
     }
   }
 }
@@ -1493,7 +1510,6 @@ for (i in 1:s) {
 
 res_01_01 <- do.call(rbind, res)
 
-mean(res_01_01[res_01_01$asset==1,,drop=FALSE]$rate)
 mean(res_01_01[res_01_01$asset==2,,drop=FALSE]$rate)
 
 
@@ -1588,7 +1604,7 @@ mean(xx_smc)
 
 
 
-folder <- "simul_results/2d_naive_grid/mean252_pext010_tipk001"   # <- change this
+folder <- "simul_results/2d_naive_252train_15000_grid/mean1000000_pext010_tipk001"   # <- change this
 files  <- list.files(folder, pattern = "\\.rds$", full.names = TRUE)
 
 # read all files (each file is assumed to be a list)
@@ -1606,10 +1622,11 @@ covar_all <- do.call(rbind, covar_list)
 covar_all
 
 
-with(covar_all, mean(rate[asset == 2 & alpha_j == 0.1 & alpha_port == 0.05], na.rm = TRUE))
+with(covar_all, mean(rate[asset == 2 & alpha_j == 0.05 & alpha_port == 0.05], na.rm = TRUE))
 
 
 
+(covar_all[covar_all$asset==1 & covar_all$alpha_j==0.05 & covar_all$alpha_port==0.05,,drop=FALSE])
 
 
 

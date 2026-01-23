@@ -24,7 +24,9 @@ build_cfg <- function(d,
                       families_deep  = c("bb1","bb1r180","bb7","bb7r180","t"),
                       adapt_step_sd  = TRUE,
                       trunc_tree     = NULL,
-                      W              = 252L) {
+                      W              = 252L,
+                      W_predict      = 756L
+                      ) {
   
   d <- as.integer(d)
   K_full <- as.integer(d * (d - 1L) / 2L)
@@ -48,7 +50,7 @@ build_cfg <- function(d,
     W            = W,                    # DO SENSITIVITY ANALYSIS
     k_step       = 350L,                      # Print diag every k_step
     n_mh         = 3L,
-    W_predict    = 756L,                    # Start predict 
+    W_predict    = W_predict,                    # Start predict 
     q_flip       = q_flip,                  # DO SENSITIVITY ANALYSIS
     step_sd      = step_sd,
     lambda       = lambda,

@@ -548,7 +548,7 @@ naive_simul_d2_regimes <- function(data, cfg, dgp) {
   #                "current" excludes only the current true base at test_idx.
   #exclude_rule <- if (is.null(cfg$exclude_rule)) "window" else cfg$exclude_rule
   exclude_rule <- "current"
-  refit_every  <- if (is.null(cfg$refit_every)) 21L else as.integer(cfg$refit_every)
+  refit_every  <- if (is.null(cfg$aic_refit_every)) 252L else as.integer(cfg$aic_refit_every)
   
   out <- list(
     log_pred       = numeric(n_oos),
@@ -614,7 +614,7 @@ naive_simul_d2_regimes <- function(data, cfg, dgp) {
       blocked_bases <- blocked_bases[!is.na(blocked_bases)]
       out$blocked_bases_hist[[t]] <- blocked_bases
       
-      allowed_names_masked <- allowed_names#setdiff(allowed_names, blocked_bases)
+      allowed_names_masked <- setdiff(allowed_names, blocked_bases)
       
       # safety: if you accidentally block everything, fall back to unmasked set
       if (length(allowed_names_masked) == 0L) {
@@ -645,8 +645,8 @@ naive_simul_d2_regimes <- function(data, cfg, dgp) {
     out$log_pred[t] <- log(dbicop(u_test, model))
     
     # predictive draws on copula scale
-    draws <- rbicop(2000, model)
-    
+    draws <- rbicop(10000, model)
+
     # transform + build returns
     Z_pred <- st_inv_fast(draws, shape_fc[t, ], df_fc[t, ])
     R_t <- sweep(Z_pred, 2, as.numeric(sqrt(sig_fc[t, ])), `*`) + as.numeric(mu_fc[t, ])
