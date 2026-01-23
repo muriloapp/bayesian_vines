@@ -235,7 +235,7 @@ for (t in (cfg$W+1):N) {
       #   )
       # )
       #system.time(
-      draws <- smc_predictive_sample_fast2_scoped2_serial(particles, skeleton, w, L = 2000)
+      draws <- smc_predictive_sample_fast2_scoped2_serial(particles, skeleton, w, L = 10000)
       #)
       #cmp  <- sweep(draws, 2, as.numeric(u_t), FUN = "<=")  # L x d logical
       #pitV <- matrixStats::rowAlls(cmp)   
