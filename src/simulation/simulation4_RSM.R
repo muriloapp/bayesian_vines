@@ -1177,9 +1177,9 @@ source(here("src/simulation/main_simulation_nonparallel.R"))
 # 
 
 
-mean_len_grid  <- c(1000000L, 252)          # choose
+mean_len_grid  <- c(252)      #1000000L    # choose
 p_extreme_grid <- c(0.20)   # choose
-tip_k_grid     <- c(12, 25, 47)
+tip_k_grid     <- c(25, 47)  #12, 25, 
 aic_refit_every_grid <- c(1)
 W_preict_grid <- c(756)
 
@@ -1604,14 +1604,14 @@ mean(xx_smc)
 
 
 
-folder <- "simul_results/2d_naive_252train_s10000_grid/mean1000000_pext010_tipk001"   # <- change this
+folder <- "simul_results/2d_SMC_grid/ml252_pext020_tipk012_wp0756_re001"   # <- change this
 files  <- list.files(folder, pattern = "\\.rds$", full.names = TRUE)
 
 # read all files (each file is assumed to be a list)
 obj_list <- lapply(files, readRDS)
 
 # extract the element you want (file[[1]]$covar, file[[2]]$covar, ...)
-covar_list <- lapply(obj_list, `[[`, "eval_covar")
+covar_list <- lapply(obj_list, `[[`, "rmse_mae_from_covar")
 
 # (optional) keep only non-missing covar elements
 covar_list <- Filter(Negate(is.null), covar_list)
@@ -1622,7 +1622,9 @@ covar_all <- do.call(rbind, covar_list)
 covar_all
 
 
-with(covar_all, mean(rate[asset == 2 & alpha_j == 0.1 & alpha_port == 0.1], na.rm = TRUE))
+with(covar_all, mean(rate[asset == 2 & alpha_j == 0.05 & alpha_port == 0.05], na.rm = TRUE))
+
+with(covar_all, mean(RMSE[cond_asset == 2 & scenario == "a0.05b0.05"], na.rm = TRUE))
 
 
 
