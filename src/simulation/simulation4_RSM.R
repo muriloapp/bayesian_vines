@@ -98,13 +98,14 @@ draw_bicop_regime <- function(state, fam_names) {
   
  
   
-  
+  if (state == "NORMAL") {
   lamL_target <- runif(1, 0.01, 0.87)
   if (is_t) {
     lamU_target <- lamL_target
   } else {
     lamU_target <- runif(1, 0.01, 0.87)
   }
+  } else{stop("Check state")}
   
 
   # 
@@ -153,7 +154,7 @@ draw_bicop_regime <- function(state, fam_names) {
   if (is_bb1) {
     par <- bb1_tail2par(lamL_base, lamU_base)
     # BB1 requires delta>=1; ensure numerically safe
-    par[2] <- max(par[2], 1 + 1e-8)
+    #par[2] <- max(par[2], 1 + 1e-8)
     bic <- bicop_dist("bb1", rot, par)
     return(list(
       name_base = f,  # keep bb1 vs bb1r180 in truth labels
@@ -1189,7 +1190,7 @@ source(here("src/simulation/main_simulation_nonparallel.R"))
 # 
 
 
-mean_len_grid  <- c(252)      #1000000L    # choose
+mean_len_grid  <- c(10)      #1000000L    # choose
 p_extreme_grid <- c(0.20)   # choose
 tip_k_grid     <- c(25, 47)  #12, 25, 
 aic_refit_every_grid <- c(1)
@@ -1616,14 +1617,14 @@ mean(xx_smc)
 
 
 
-folder <- "simul_results/2d_SMC_grid/ml252_pext020_tipk012_wp0756_re001"   # <- change this
+folder <- "simul_results/2d_SMC_grid/ml252_pext020_tipk047_wp0756_re001"   # <- change this
 files  <- list.files(folder, pattern = "\\.rds$", full.names = TRUE)
 
 # read all files (each file is assumed to be a list)
 obj_list <- lapply(files, readRDS)
 
 # extract the element you want (file[[1]]$covar, file[[2]]$covar, ...)
-covar_list <- lapply(obj_list, `[[`, "rmse_mae_from_covar")
+covar_list <- lapply(obj_list, `[[`, "eval_covar")
 
 # (optional) keep only non-missing covar elements
 covar_list <- Filter(Negate(is.null), covar_list)
