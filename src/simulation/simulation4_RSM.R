@@ -96,20 +96,32 @@ draw_bicop_regime <- function(state, fam_names) {
   rot <- if (grepl("r180$", f)) 180L else 0L
   fam_base <- if (is_bb1) "bb1" else if (is_bb7) "bb7" else "t"
   
-  # 1) sample resulting lower-tail dependence (your rule)
-  if (state == "EXTREME") {
-    lamL_target <- runif(1, 0.70, 0.87)
-  } else { 
-    # NORMAL: keep feasible per family (important!)
-    if (is_bb1) lamL_target <- runif(1, 0.51, 0.70) else lamL_target <- runif(1, 0.01, 0.70)
-  }
+ 
   
-  # 2) sample resulting upper-tail dependence according to the family
+  
+  lamL_target <- runif(1, 0.01, 0.87)
   if (is_t) {
     lamU_target <- lamL_target
   } else {
-    lamU_target <- runif(1, 0.01, 0.50)
+    lamU_target <- runif(1, 0.01, 0.87)
   }
+  
+
+  # 
+  #  # 1) sample resulting lower-tail dependence (your rule)
+  # if (state == "EXTREME") {
+  #   lamL_target <- runif(1, 0.70, 0.87)
+  # } else { 
+  #   # NORMAL: keep feasible per family (important!)
+  #   if (is_bb1) lamL_target <- runif(1, 0.51, 0.70) else lamL_target <- runif(1, 0.01, 0.70)
+  # }
+  # 
+  # # 2) sample resulting upper-tail dependence according to the family
+  # if (is_t) {
+  #   lamU_target <- lamL_target
+  # } else {
+  #   lamU_target <- runif(1, 0.01, 0.50)
+  # }
   
   # 3) map resulting (lamL_target, lamU_target) -> base (lamL_base, lamU_base) depending on rotation
   # rotation 180 swaps lower and upper tails
