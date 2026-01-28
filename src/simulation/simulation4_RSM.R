@@ -1205,7 +1205,7 @@ mean_rate
 #loop
 library(future)
 library(future.apply)
-set.seed(1234)
+set.seed(11111)
 plan(multisession, workers = max(1, parallel::detectCores() - 1))
 
 library(here)
@@ -1227,7 +1227,7 @@ mean_len_grid  <- c(1e10)      #1000000L    # choose
 p_extreme_grid <- c(0.00)   # choose
 tip_k_grid     <- c(1)  #12, 25, 
 aic_refit_every_grid <- c(252)
-W_preict_grid <- c(252)
+W_predict_grid <- c(252)
 
 base_dir <- "simul_results/2d_NAIVE_grid_ext"
 dir.create(base_dir, recursive = TRUE, showWarnings = FALSE)
@@ -1238,7 +1238,7 @@ dir.create(base_dir, recursive = TRUE, showWarnings = FALSE)
 for (ml in mean_len_grid) {
   for (pe in p_extreme_grid) {
     for (tk in tip_k_grid) {
-      for (wp in W_preict_grid) {
+      for (wp in W_predict_grid) {
         for (re in aic_refit_every_grid) {
           
           cfg <- modifyList(build_cfg(d = 2), list(M = 1000, label = "M1000", W_predict=wp, aic_refit_every = re,  use_tail_informed_prior = TRUE, tip_k = tk))
@@ -1269,7 +1269,7 @@ for (ml in mean_len_grid) {
           cat("============================\n")
           
           sim_files <- future_lapply(
-            X = 1:250,
+            X = 1:500,
             FUN = run_one_sim,
             n_train   = n_train,
             n_test    = n_test,
@@ -1279,7 +1279,7 @@ for (ml in mean_len_grid) {
             p_extreme = pe,
             tip_k     = tk,
             out_dir   = out_dir,
-            future.seed = 1234
+            future.seed = 11111
           )
           
           saveRDS(sim_files, file.path(out_dir, sprintf("sim_files_%s.rds", tag)))
