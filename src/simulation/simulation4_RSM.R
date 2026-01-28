@@ -99,11 +99,11 @@ draw_bicop_regime <- function(state, fam_names) {
  
   
   if (state == "NORMAL") {
-  lamL_target <- runif(1, 0.01, 0.87)
+  lamL_target <- runif(1, 0.2, 0.85)
   if (is_t) {
     lamU_target <- lamL_target
   } else {
-    lamU_target <- runif(1, 0.01, 0.87)
+    lamU_target <- runif(1, 0.2, 0.85)
   }
   } else{stop("Check state")}
   
@@ -678,6 +678,10 @@ betas_covar  <- c(0.025, 0.05, 0.10)
 ################################################################################
 # Regimes
 
+n_test <- 10
+n_train <- 252
+d <- 2
+
 source(here("src/R", "config.R"))
 source(here("src/simulation/naive_simulation.R"))
 source(here("src/simulation/main_simulation_nonparallel.R"))
@@ -807,7 +811,7 @@ for (s in 1:(n_sim)) { #################
   )
   
   
-  cfg <- modifyList(build_cfg(d = 2), list(M = 500, label = "M500", use_tail_informed_prior=TRUE, tip_k=25))
+  cfg <- modifyList(build_cfg(d = 2), list(M = 500, label = "M500", use_tail_informed_prior=TRUE, tip_k=25, W_predict=n_train))
   # cfg$L_switch <- L_switch  # optional, if you want it accessible inside smc_simul()
   
   # --- SMC (unchanged call signature) ---
@@ -856,6 +860,17 @@ for (s in 1:(n_sim)) { #################
 
   rmse_mae_from_covar <- covar_rmse_mae_all(out, dgp)
   
+  eval_covar_asset <- covar_backtest_grid_asset(
+    out         = out,
+    y_real_oos  = y_real_oos,
+    rp_real_oos = rp_real_oos,
+    cfg_alphas  = cfg$alphas,
+    grid_ab     = grid_ab_use,
+    d           = d
+  )
+  
+  
+  
   
   
   sim_id <- s  # or whatever your simulation index is
@@ -864,6 +879,7 @@ for (s in 1:(n_sim)) { #################
   
   var_list[[sim_id]]  <- eval_var
   covar_list[[sim_id]] <- eval_covar
+  covar_asset_list[[sim_id]] <- eval_covar_asset
   logpred_list[[s]] <- out$log_pred
   QL_list[[s]] <- apply(out$port$QL, 2, sum)
   FZL_list[[s]] <- apply(out$port$FZL, 2, sum)
@@ -873,6 +889,7 @@ for (s in 1:(n_sim)) { #################
   out <- list(
     var_list     = var_list,
     covar_list   = covar_list,
+    covar_asset_list   = covar_asset_list,
     logpred_list = logpred_list,
     QL_list      = QL_list,
     FZL_list     = FZL_list,
@@ -1031,8 +1048,8 @@ run_one_sim <- function(s,
   #cfg <- modifyList(build_cfg(d = 2), list(M = 500, label = "M500", use_tail_informed_prior = TRUE, tip_k=25))
 
   # --- Run your method ---
-  #out <- naive_simul_d2_regimes(data, cfg, dgp)
-  out <- smc_simul_serial(data, cfg, dgp)
+  out <- naive_simul_d2_regimes(data, cfg, dgp)
+  #out <- smc_simul_serial(data, cfg, dgp)
 
   n_oos <- nrow(data$U) - cfg$W_predict
   y_real_oos  <- data$y_real[(nrow(data$y_real) - n_oos + 1):nrow(data$y_real), , drop = FALSE]
@@ -1058,6 +1075,15 @@ run_one_sim <- function(s,
   )
 
   rmse_mae_from_covar <- covar_rmse_mae_all(out, dgp)
+  
+  eval_covar_asset <- covar_backtest_grid_asset(
+    out         = out,
+    y_real_oos  = y_real_oos,
+    rp_real_oos = rp_real_oos,
+    cfg_alphas  = cfg$alphas,
+    grid_ab     = grid_ab_use,
+    d           = d
+  )
 
   eval_var$sim   <- s
   eval_covar$sim <- s
@@ -1079,17 +1105,24 @@ run_one_sim <- function(s,
   result <- list(
     eval_var  = eval_var,
     eval_covar = eval_covar,
+    eval_covar_asset = eval_covar_asset,
     log_pred  = out$log_pred,
     QL        = apply(out$port$QL, 2, sum),
     FZL       = apply(out$port$FZL, 2, sum),
     wCRPS     = sum(out$port$wCRPS),
     rmse_mae_from_covar = rmse_mae_from_covar,
+    dgp       =dgp,
     
     # record grid identifiers in each file (handy later)
     mean_len  = mean_len,
     p_extreme = p_extreme,
     tip_k     = tip_k,
-    sim       = s
+    sim       = s,
+    sched = sched,
+    piece = piece,
+    data = data,
+    dgp = dgp$truth
+    
   )
   
   dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
@@ -1190,13 +1223,13 @@ source(here("src/simulation/main_simulation_nonparallel.R"))
 # 
 
 
-mean_len_grid  <- c(10)      #1000000L    # choose
-p_extreme_grid <- c(0.20)   # choose
-tip_k_grid     <- c(25, 47)  #12, 25, 
-aic_refit_every_grid <- c(1)
-W_preict_grid <- c(756)
+mean_len_grid  <- c(1e10)      #1000000L    # choose
+p_extreme_grid <- c(0.00)   # choose
+tip_k_grid     <- c(1)  #12, 25, 
+aic_refit_every_grid <- c(252)
+W_preict_grid <- c(252)
 
-base_dir <- "simul_results/2d_SMC_grid"
+base_dir <- "simul_results/2d_NAIVE_grid_ext"
 dir.create(base_dir, recursive = TRUE, showWarnings = FALSE)
 
 
@@ -1213,7 +1246,7 @@ for (ml in mean_len_grid) {
           
           n_train <- cfg$W_predict
           d       <- 2
-          n_test  <- 3000
+          n_test  <- 2500
           n       <- n_train+n_test
           
           
@@ -1617,14 +1650,16 @@ mean(xx_smc)
 
 
 
-folder <- "simul_results/2d_SMC_grid/ml252_pext020_tipk047_wp0756_re001"   # <- change this
+folder <- "simul_results/2d_SMC_grid/mlNA_pext000_tipk012_wp0756_re001"   # <- change this
 files  <- list.files(folder, pattern = "\\.rds$", full.names = TRUE)
 
 # read all files (each file is assumed to be a list)
 obj_list <- lapply(files, readRDS)
 
 # extract the element you want (file[[1]]$covar, file[[2]]$covar, ...)
+covar_list <- lapply(obj_list, `[[`, "rmse_mae_from_covar")
 covar_list <- lapply(obj_list, `[[`, "eval_covar")
+
 
 # (optional) keep only non-missing covar elements
 covar_list <- Filter(Negate(is.null), covar_list)
@@ -1632,16 +1667,158 @@ covar_list <- Filter(Negate(is.null), covar_list)
 # bind vertically
 covar_all <- do.call(rbind, covar_list)
 
-covar_all
 
 
-with(covar_all, mean(rate[asset == 2 & alpha_j == 0.05 & alpha_port == 0.05], na.rm = TRUE))
+with(covar_all, mean(rate[asset == 2 & alpha_j == 0.1 & alpha_port == 0.1], na.rm = TRUE))
 
 with(covar_all, mean(RMSE[cond_asset == 2 & scenario == "a0.05b0.05"], na.rm = TRUE))
+with(covar_all, mean(MAE[cond_asset == 2 & scenario == "a0.05b0.05"], na.rm = TRUE))
+with(covar_all, mean(RMSE[cond_asset == 2 & scenario == "a0.05b0.025"], na.rm = TRUE))
+with(covar_all, mean(MAE[cond_asset == 2 & scenario == "a0.05b0.025"], na.rm = TRUE))
 
 
 
 (covar_all[covar_all$asset==1 & covar_all$alpha_j==0.05 & covar_all$alpha_port==0.025,,drop=FALSE])
+
+covar_all[covar_all$scenario =="a0.05b0.05",,drop=FALSE]
+
+
+
+
+
+
+
+folder <- "simul_results/2d_NAIVE_grid/mlNA_pext000_tipk001_wp0252_re252"   # <- change this
+files  <- list.files(folder, pattern = "\\.rds$", full.names = TRUE)
+obj_list <- lapply(files, readRDS)
+covar_list <- lapply(obj_list, `[[`, "rmse_mae_from_covar")
+covar_list <- lapply(obj_list, `[[`, "eval_covar")
+
+covar_list <- Filter(Negate(is.null), covar_list)
+covar_all <- do.call(rbind, covar_list)
+
+
+with(covar_all, mean(RMSE[cond_asset == 2 & scenario == "a0.05b0.05"], na.rm = TRUE))
+with(covar_all, mean(MAE[cond_asset == 2 & scenario == "a0.05b0.05"], na.rm = TRUE))
+with(covar_all, mean(RMSE[cond_asset == 2 & scenario == "a0.05b0.025"], na.rm = TRUE))
+with(covar_all, mean(MAE[cond_asset == 2 & scenario == "a0.05b0.025"], na.rm = TRUE))
+
+
+
+
+
+out2 <- covar_all[covar_all$cond_asset == 2 & covar_all$scenario =="a0.05b0.05",,drop=FALSE]$RMSE
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# --- same setup as your grid run ---
+library(here)
+library(future)
+library(future.apply)
+
+source(here("src/R", "config.R"))
+source(here("src/simulation/naive_simulation.R"))
+source(here("src/simulation/main_simulation_nonparallel.R"))
+
+# IMPORTANT for debugging: no parallel workers
+plan(sequential)
+
+# --- reconstruct the exact config/paths you used ---
+ml <- 1e10
+pe <- 0.00
+tk <- 1
+wp <- 252
+re <- 252
+
+base_dir <- "simul_results/2d_NAIVE_grid"
+dir.create(base_dir, recursive = TRUE, showWarnings = FALSE)
+
+cfg <- modifyList(
+  build_cfg(d = 2),
+  list(
+    M = 1000, label = "M1000",
+    W_predict = wp,
+    aic_refit_every = re,
+    use_tail_informed_prior = TRUE,
+    tip_k = tk
+  )
+)
+
+n_train <- cfg$W_predict
+d       <- 2
+n_test  <- 2500
+
+tag <- sprintf(
+  "ml%s_pext%03d_tipk%03d_wp%04d_re%03d",
+  formatC(ml, format = "d"),
+  as.integer(round(100 * pe)),
+  tk, wp, re
+)
+
+out_dir <- file.path(base_dir, tag)
+dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+
+# --- reproduce the SAME RNG used by future_lapply(X=1:250, future.seed=1234) for i=166 ---
+seed_for_index <- function(i, n, master = 1234, mode = c("stream", "substream")) {
+  mode <- match.arg(mode)
+  RNGkind("L'Ecuyer-CMRG")
+  set.seed(master)
+  
+  s <- .Random.seed
+  if (i > 1L) {
+    step_fun <- if (mode == "stream") parallel::nextRNGStream else parallel::nextRNGSubStream
+    for (k in 2:i) s <- step_fun(s)
+  }
+  s
+}
+
+i <- 166L
+
+# Try "stream" first (most common); if it doesn't match what you saw, switch to "substream"
+.Random.seed <- seed_for_index(i, n = 250L, master = 1234, mode = "stream")
+
+# --- now debug it ---
+options(error = recover)     # drops you into frames on error (great for "what is the DGP here?")
+debugonce(run_one_sim)       # step into run_one_sim
+
+res_166 <- run_one_sim(
+  i,
+  n_train   = n_train,
+  n_test    = n_test,
+  d         = d,
+  cfg       = cfg,
+  mean_len  = ml,
+  p_extreme = pe,
+  tip_k     = tk,
+  out_dir   = out_dir
+)
+
+
+
+
+
 
 
 

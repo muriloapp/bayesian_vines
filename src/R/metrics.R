@@ -167,7 +167,9 @@ wcrps_gr_scalar <- function(draws, y, ngrid = 2000) {
 #   out
 # }
 
-
+R_draws <- R_t
+VaRj <-  VaRj_5
+port_alpha = 0.05
 # Tail-CoVaR for ALL stocks at once:
 # R_draws: L×d draws; r_p: length-L portfolio draws; VaRj: length-d vector (at cond_alpha)
 # port_alpha: portfolio VaR level; cond_alpha used to build VaRj upstream
@@ -180,6 +182,20 @@ covar_tail_vec <- function(R_draws, r_p, VaRj, port_alpha = 0.05, minN = 200) {
       ord <- order(abs(R_draws[, j] - VaRj[j])); idx <- ord[1:minN]
     }
     out[j] <- as.numeric(quantile(r_p[idx], probs = port_alpha, names = FALSE))
+  }
+  out
+}
+
+
+
+covar_tail_vec_asset <- function(R_draws, r_p, VaRj, port_alpha = 0.05, minN = 200) {
+  
+  d <- ncol(R_draws)
+  out <- numeric(d)
+  for (j in seq_len(d)) {
+    xx  <- 3L - j
+    idx <- which(R_draws[, j] <= VaRj[j])
+    out[j] <- as.numeric(quantile(R_draws[idx, xx], probs = port_alpha, names = FALSE))
   }
   out
 }

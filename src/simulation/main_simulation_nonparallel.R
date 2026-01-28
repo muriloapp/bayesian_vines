@@ -195,6 +195,10 @@ smc_simul_serial <- function(data, cfg, dgp) {
     CoVaR_tail = array(
       NA_real_, c(n_oos, d, length(SCEN_COVAR)),
       dimnames = list(NULL, tickers, SCEN_COVAR)
+    ),
+    CoVaR_tail_asset = array(
+      NA_real_, c(n_oos, d, length(SCEN_COVAR)),
+      dimnames = list(NULL, tickers, SCEN_COVAR)
     )
     )
   
@@ -293,6 +297,20 @@ for (t in (cfg$W+1):N) {
       out$CoVaR_tail[idx, , "a0.1b0.05"] <- covar10b5
       out$CoVaR_tail[idx, , "a0.05b0.025"]  <- covar5b0025
       out$CoVaR_tail[idx, , "a0.025b0.05"]  <- covar025b5
+      
+      covar5     <- covar_tail_vec_asset(R_t, r_p, VaRj_5,  port_alpha = 0.05, minN = 50)
+      covar5b10  <- covar_tail_vec_asset(R_t, r_p, VaRj_5,  port_alpha = 0.10, minN = 50)
+      covar10    <- covar_tail_vec_asset(R_t, r_p, VaRj_10, port_alpha = 0.10, minN = 50)
+      covar10b5  <- covar_tail_vec_asset(R_t, r_p, VaRj_10, port_alpha = 0.05, minN = 50)
+      covar5b0025 <- covar_tail_vec_asset(R_t, r_p, VaRj_5,   port_alpha = 0.025, minN = 50)
+      covar025b5  <- covar_tail_vec_asset(R_t, r_p, VaRj_025, port_alpha = 0.05,  minN = 50)
+      
+      out$CoVaR_tail_asset[t, , "a0.05b0.05"] <- covar5
+      out$CoVaR_tail_asset[t, , "a0.05b0.1"]  <- covar5b10
+      out$CoVaR_tail_asset[t, , "a0.1b0.1"]   <- covar10
+      out$CoVaR_tail_asset[t, , "a0.1b0.05"]  <- covar10b5
+      out$CoVaR_tail_asset[t, , "a0.05b0.025"]  <- covar5b0025
+      out$CoVaR_tail_asset[t, , "a0.025b0.05"]  <- covar025b5
       
       
     }

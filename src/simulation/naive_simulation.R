@@ -584,6 +584,10 @@ naive_simul_d2_regimes <- function(data, cfg, dgp) {
     CoVaR_tail = array(
       NA_real_, c(n_oos, d, length(SCEN_COVAR)),
       dimnames = list(NULL, tickers, SCEN_COVAR)
+    ),
+    CoVaR_tail_asset = array(
+      NA_real_, c(n_oos, d, length(SCEN_COVAR)),
+      dimnames = list(NULL, tickers, SCEN_COVAR)
     )
   )
   
@@ -698,7 +702,22 @@ naive_simul_d2_regimes <- function(data, cfg, dgp) {
     out$CoVaR_tail[t, , "a0.05b0.025"]  <- covar5b0025
     out$CoVaR_tail[t, , "a0.025b0.05"]  <- covar025b5
     
-    print(t)
+    
+    covar5     <- covar_tail_vec_asset(R_t, r_p, VaRj_5,  port_alpha = 0.05, minN = 50)
+    covar5b10  <- covar_tail_vec_asset(R_t, r_p, VaRj_5,  port_alpha = 0.10, minN = 50)
+    covar10    <- covar_tail_vec_asset(R_t, r_p, VaRj_10, port_alpha = 0.10, minN = 50)
+    covar10b5  <- covar_tail_vec_asset(R_t, r_p, VaRj_10, port_alpha = 0.05, minN = 50)
+    covar5b0025 <- covar_tail_vec_asset(R_t, r_p, VaRj_5,   port_alpha = 0.025, minN = 50)
+    covar025b5  <- covar_tail_vec_asset(R_t, r_p, VaRj_025, port_alpha = 0.05,  minN = 50)
+    
+    out$CoVaR_tail_asset[t, , "a0.05b0.05"] <- covar5
+    out$CoVaR_tail_asset[t, , "a0.05b0.1"]  <- covar5b10
+    out$CoVaR_tail_asset[t, , "a0.1b0.1"]   <- covar10
+    out$CoVaR_tail_asset[t, , "a0.1b0.05"]  <- covar10b5
+    out$CoVaR_tail_asset[t, , "a0.05b0.025"]  <- covar5b0025
+    out$CoVaR_tail_asset[t, , "a0.025b0.05"]  <- covar025b5
+    
+
   }
   
   out
@@ -766,6 +785,21 @@ covar_hits_by_j <- function(r_p_real, y_real_oos, VaRj_oos, CoVaR_oos, alpha) {
   list(hits = hits_list, n = n_list)
 }
 
+covar_hits_by_j_asset <- function(r_p_real, y_real_oos, VaRj_oos, CoVaR_oos, alpha) {
+  d <- ncol(y_real_oos)
+  hits_list <- vector("list", d)
+  n_list    <- integer(d)
+  for (j in seq_len(d)) {
+    mask <- y_real_oos[, j] <= VaRj_oos[, j]  # days when j is distressed
+    n_list[j] <- sum(mask)
+    if (n_list[j] > 0) {
+      hits_list[[j]] <- as.numeric(y_real_oos[mask, j] <= CoVaR_oos[mask, j])
+    } else {
+      hits_list[[j]] <- numeric(0)
+    }
+  }
+  list(hits = hits_list, n = n_list)
+}
 
 
 port_var_backtest_df <- function(out, rp_real_oos, alphas) {
@@ -946,6 +980,85 @@ covar_backtest_grid <- function(out,
   
   eval_covar
 }
+
+covar_backtest_grid_asset <- function(out,
+                                y_real_oos,
+                                rp_real_oos,
+                                cfg_alphas,
+                                alphas_eval = c(0.10, 0.05),
+                                d = ncol(y_real_oos),
+                                grid_ab=NULL,
+                                tickers = NULL) {
+  
+  # label formatter to match dimnames like "a0.05b0.1"
+  fmt_ab <- function(x) {
+    if (abs(x - 0.025) < 1e-12) return("0.025")
+    if (abs(x - 0.05)  < 1e-12) return("0.05")
+    if (abs(x - 0.10)  < 1e-12) return("0.1")
+    as.character(x)
+  }
+  
+  if (is.null(grid_ab)) {
+    grid_ab <- expand.grid(alpha_j = alphas_eval,
+                           alpha_port = alphas_eval,
+                           KEEP.OUT.ATTRS = FALSE,
+                           stringsAsFactors = FALSE)
+  }
+  
+  eval_covar <- do.call(rbind, lapply(seq_len(nrow(grid_ab)), function(i) {
+    a <- grid_ab$alpha_j[i]      # VaR level for conditioning asset j
+    b <- grid_ab$alpha_port[i]   # portfolio CoVaR tail level
+    
+    # IMPORTANT: VaR slice index lives in cfg_alphas (not alphas_eval)
+    k <- which.min(abs(cfg_alphas - a))
+    
+    lab <- paste0("a", fmt_ab(a), "b", fmt_ab(b))
+    
+    VaRj_oos  <- out$risk$VaR[, , k, drop = FALSE][, , 1]   # n_oos x d
+    CoVaR_oos <- out$CoVaR_tail_asset[, , lab]                    # n_oos x d
+    
+    cond_hits <- covar_hits_by_j_asset(rp_real_oos,
+                                 as.matrix(y_real_oos),
+                                 VaRj_oos,
+                                 CoVaR_oos,
+                                 alpha = a)
+    
+    do.call(rbind, lapply(seq_len(d), function(j) {
+      hj <- cond_hits$hits[[j]]
+      
+      asset_name <- if (!is.null(tickers)) tickers[j] else j
+      
+      if (length(hj) == 0) {
+        data.frame(
+          asset      = asset_name,
+          alpha_j    = a,
+          alpha_port = b,
+          T_event    = 0L,
+          rate       = NA_real_,
+          kupiec_p   = NA_real_,
+          ind_p      = NA_real_,
+          cc_p       = NA_real_,
+          row.names  = NULL
+        )
+      } else {
+        data.frame(
+          asset      = asset_name,
+          alpha_j    = a,
+          alpha_port = b,
+          T_event    = length(hj),
+          rate       = mean(hj),
+          kupiec_p   = kupiec_test(hj, b)$pval,
+          ind_p      = christoffersen_ind_test(hj)$pval,
+          cc_p       = christoffersen_cc_test(hj, b)$pval,
+          row.names  = NULL
+        )
+      }
+    }))
+  }))
+  
+  eval_covar
+}
+
 
 # Tidy summaries ready to print/plot:
 #print(eval_port_var)     # list (one per alpha) with stats
