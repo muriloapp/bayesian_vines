@@ -167,9 +167,7 @@ wcrps_gr_scalar <- function(draws, y, ngrid = 2000) {
 #   out
 # }
 
-R_draws <- R_t
-VaRj <-  VaRj_5
-port_alpha = 0.05
+
 # Tail-CoVaR for ALL stocks at once:
 # R_draws: L×d draws; r_p: length-L portfolio draws; VaRj: length-d vector (at cond_alpha)
 # port_alpha: portfolio VaR level; cond_alpha used to build VaRj upstream
