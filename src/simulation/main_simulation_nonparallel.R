@@ -238,9 +238,9 @@ for (t in (cfg$W+1):N) {
       #     nc = 1               # keep 1 unless W*nc <= physical cores
       #   )
       # )
-      #system.time(
       draws <- smc_predictive_sample_fast2_scoped2_serial(particles, skeleton, w, L = 10000)
-      #)
+      
+
       #cmp  <- sweep(draws, 2, as.numeric(u_t), FUN = "<=")  # L x d logical
       #pitV <- matrixStats::rowAlls(cmp)   
       #out$pit_joint[idx] <- mean(pitV)   
@@ -305,12 +305,12 @@ for (t in (cfg$W+1):N) {
       covar5b0025 <- covar_tail_vec_asset(R_t, r_p, VaRj_5,   port_alpha = 0.025, minN = 50)
       covar025b5  <- covar_tail_vec_asset(R_t, r_p, VaRj_025, port_alpha = 0.05,  minN = 50)
       
-      out$CoVaR_tail_asset[t, , "a0.05b0.05"] <- covar5
-      out$CoVaR_tail_asset[t, , "a0.05b0.1"]  <- covar5b10
-      out$CoVaR_tail_asset[t, , "a0.1b0.1"]   <- covar10
-      out$CoVaR_tail_asset[t, , "a0.1b0.05"]  <- covar10b5
-      out$CoVaR_tail_asset[t, , "a0.05b0.025"]  <- covar5b0025
-      out$CoVaR_tail_asset[t, , "a0.025b0.05"]  <- covar025b5
+      out$CoVaR_tail_asset[idx, , "a0.05b0.05"] <- covar5
+      out$CoVaR_tail_asset[idx, , "a0.05b0.1"]  <- covar5b10
+      out$CoVaR_tail_asset[idx, , "a0.1b0.1"]   <- covar10
+      out$CoVaR_tail_asset[idx, , "a0.1b0.05"]  <- covar10b5
+      out$CoVaR_tail_asset[idx, , "a0.05b0.025"]  <- covar5b0025
+      out$CoVaR_tail_asset[idx, , "a0.025b0.05"]  <- covar025b5
       
       
     }

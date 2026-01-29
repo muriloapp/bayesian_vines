@@ -1049,8 +1049,8 @@ run_one_sim <- function(s,
   #cfg <- modifyList(build_cfg(d = 2), list(M = 500, label = "M500", use_tail_informed_prior = TRUE, tip_k=25))
 
   # --- Run your method ---
-  out <- naive_simul_d2_regimes(data, cfg, dgp)
-  #out <- smc_simul_serial(data, cfg, dgp)
+  #out <- naive_simul_d2_regimes(data, cfg, dgp)
+  out <- smc_simul_serial(data, cfg, dgp)
 
   n_oos <- nrow(data$U) - cfg$W_predict
   y_real_oos  <- data$y_real[(nrow(data$y_real) - n_oos + 1):nrow(data$y_real), , drop = FALSE]
@@ -1207,7 +1207,7 @@ mean_rate
 #loop
 library(future)
 library(future.apply)
-set.seed(11)
+set.seed(11111)
 plan(multisession, workers = max(1, parallel::detectCores() - 1))
 
 library(here)
@@ -1228,23 +1228,23 @@ source(here("src/simulation/main_simulation_nonparallel.R"))
 mean_len_grid  <- c(1e10, 500)      
 #p_extreme_grid <- c(0.00)   
 
-W_grid     <- c(252)  #AIC 
-#W_grid     <- c(252, 126, 504)  #SMC 
+#W_grid     <- c(252)  #AIC 
+W_grid     <- c(252, 126, 504)  #SMC 
 
-aic_refit_every_grid <- c(252, 63) #AIC 
-#aic_refit_every_grid <- c(1) #SMC 
+#aic_refit_every_grid <- c(252, 63) #AIC 
+aic_refit_every_grid <- c(1) #SMC 
 
-W_predict_grid <- c(252) #AIC 
-#W_predict_grid <- c(756) #SMC 
+#W_predict_grid <- c(252) #AIC 
+W_predict_grid <- c(1000) #SMC 
 
-base_dir <- "simul_results/NAIVE"
+base_dir <- "simul_results/SMC"
 dir.create(base_dir, recursive = TRUE, showWarnings = FALSE)
 
 
-# ml <- mean_len <- 1e10
-# wp <- 252
-# re <- 252
-# w <- W <- 252
+ml <- mean_len <- 1e10
+wp <- 756
+re <- 1
+w <- W <- 252
 
 for (ml in mean_len_grid) {
   #for (pe in p_extreme_grid) {
@@ -1257,7 +1257,7 @@ for (ml in mean_len_grid) {
           
           n_train <- cfg$W_predict
           d       <- 2
-          n_test  <- 10
+          n_test  <- 2000
           n       <- n_train+n_test
           
           
@@ -1287,7 +1287,6 @@ for (ml in mean_len_grid) {
             d         = d,
             cfg       = cfg,
             mean_len  = ml,
-            W     = w,
             out_dir   = out_dir,
             future.seed = 11111
           )
