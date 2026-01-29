@@ -232,6 +232,8 @@ make_piecewise_dgp_d2 <- function(T, L_switch, draw_fun) {
     dgp_r <- if (draw_has_arg) draw_fun(st) else draw_fun()
     
     U[t0:t1, ] <- rvinecop(lens[r], dgp_r$vc)
+    U[t0:t1, ] <- pmin(U[t0:t1, ], 0.9999)             # avoid possible 1
+    
     
     u_star_r <- c(
       a0.05b0.05   = solve_u_star(dgp_r$vc, alpha = 0.05,  beta = 0.05),
@@ -805,7 +807,6 @@ for (s in 1:(n_sim)) { #################
     covar_true_a05b10 = covar_true_a05b10,
     covar_true_a10b10 = covar_true_a10b10,
     covar_true_a10b05 = covar_true_a10b05,
-    # NEW
     covar_true_a05b0025 = covar_true_a05b0025,
     covar_true_a0025b05 = covar_true_a0025b05
   )
@@ -919,7 +920,7 @@ library(future.apply)
 run_one_sim <- function(s,
                         n_train, n_test, d,
                         mean_len = 100L,
-                        p_extreme = 0.2,
+                        p_extreme = 0.0,
                         tip_k = NA_integer_,
                         cfg=NULL,
                         seed=NULL,
@@ -1121,7 +1122,8 @@ run_one_sim <- function(s,
     sched = sched,
     piece = piece,
     data = data,
-    dgp = dgp$truth
+    dgp = dgp$truth,
+    cfg = cfg
     
   )
   
@@ -1205,7 +1207,7 @@ mean_rate
 #loop
 library(future)
 library(future.apply)
-set.seed(11111)
+set.seed(11)
 plan(multisession, workers = max(1, parallel::detectCores() - 1))
 
 library(here)
@@ -1223,39 +1225,48 @@ source(here("src/simulation/main_simulation_nonparallel.R"))
 # 
 
 
-mean_len_grid  <- c(1e10)      #1000000L    # choose
-p_extreme_grid <- c(0.00)   # choose
-tip_k_grid     <- c(1)  #12, 25, 
-aic_refit_every_grid <- c(252)
-W_predict_grid <- c(252)
+mean_len_grid  <- c(1e10, 500)      
+#p_extreme_grid <- c(0.00)   
 
-base_dir <- "simul_results/2d_NAIVE_grid_ext"
+W_grid     <- c(252)  #AIC 
+#W_grid     <- c(252, 126, 504)  #SMC 
+
+aic_refit_every_grid <- c(252, 63) #AIC 
+#aic_refit_every_grid <- c(1) #SMC 
+
+W_predict_grid <- c(252) #AIC 
+#W_predict_grid <- c(756) #SMC 
+
+base_dir <- "simul_results/NAIVE"
 dir.create(base_dir, recursive = TRUE, showWarnings = FALSE)
 
 
-
+# ml <- mean_len <- 1e10
+# wp <- 252
+# re <- 252
+# w <- W <- 252
 
 for (ml in mean_len_grid) {
-  for (pe in p_extreme_grid) {
-    for (tk in tip_k_grid) {
+  #for (pe in p_extreme_grid) {
+    for (w in W_grid) {
       for (wp in W_predict_grid) {
         for (re in aic_refit_every_grid) {
           
-          cfg <- modifyList(build_cfg(d = 2), list(M = 1000, label = "M1000", W_predict=wp, aic_refit_every = re,  use_tail_informed_prior = TRUE, tip_k = tk))
+          cfg <- modifyList(build_cfg(d = 2), list(M = 1000, label = "M1000", W_predict=wp, aic_refit_every = re, W=w,  use_tail_informed_prior = TRUE))
           
           
           n_train <- cfg$W_predict
           d       <- 2
-          n_test  <- 2500
+          n_test  <- 10
           n       <- n_train+n_test
           
           
           
           tag <- sprintf(
-            "ml%s_pext%03d_tipk%03d_wp%04d_re%03d",
+            "ml%s_w%03d_wp%04d_re%03d",
             formatC(ml, format = "d"),
-            as.integer(round(100 * pe)),  # 0.20 -> 020
-            tk,
+            #as.integer(round(100 * pe)),  # 0.20 -> 020
+            w,
             wp,
             re
           )
@@ -1269,60 +1280,33 @@ for (ml in mean_len_grid) {
           cat("============================\n")
           
           sim_files <- future_lapply(
-            X = 1:500,
+            X = 1:300,
             FUN = run_one_sim,
             n_train   = n_train,
             n_test    = n_test,
             d         = d,
             cfg       = cfg,
             mean_len  = ml,
-            p_extreme = pe,
-            tip_k     = tk,
+            W     = w,
             out_dir   = out_dir,
             future.seed = 11111
           )
           
           saveRDS(sim_files, file.path(out_dir, sprintf("sim_files_%s.rds", tag)))
           
-          
-          # # bind
-          # eval_var_all   <- do.call(rbind, lapply(res_list, `[[`, "eval_var"))
-          # eval_covar_all <- do.call(rbind, lapply(res_list, `[[`, "eval_covar"))
-          # rmse_all       <- do.call(rbind, lapply(res_list, `[[`, "rmse_mae_from_covar"))
-          # 
-          # ## add identifiers
-          # for (x in list(eval_var_all, eval_covar_all, rmse_all)) {
-          #   x$mean_len  <- ml
-          #   x$p_extreme <- pe
-          #   x$tip_k     <- tk
-          # }
-          # 
-          # ## save
-          # saveRDS(
-          #   list(
-          #     mean_len = ml,
-          #     p_extreme = pe,
-          #     tip_k = tk,
-          #     cfg = cfg,
-          #     res_list = res_list,
-          #     eval_var_all = eval_var_all,
-          #     eval_covar_all = eval_covar_all,
-          #     rmse_all = rmse_all
-          #   ),
-          #   file = file.path(out_dir, sprintf("ALL_%s.rds", tag))
-          # )
-          # 
-          # saveRDS(eval_var_all,
-          #         file.path(out_dir, sprintf("eval_var_%s.rds", tag)))
-          # saveRDS(eval_covar_all,
-          #         file.path(out_dir, sprintf("eval_covar_%s.rds", tag)))
-          # saveRDS(rmse_all,
-          #         file.path(out_dir, sprintf("rmse_%s.rds", tag)))
         }
       }
     }
-  }
+  #}
 }
+
+
+
+
+
+
+
+
 
 # optional: after the loop, combine across all settings by reading ALL_*.rds
 
@@ -1650,7 +1634,7 @@ mean(xx_smc)
 
 
 
-folder <- "simul_results/2d_SMC_grid/mlNA_pext000_tipk012_wp0756_re001"   # <- change this
+folder <- "simul_results/2d_SMC_grid/mlNA_pext000_tipk001_wp0756_re001"   # <- change this
 files  <- list.files(folder, pattern = "\\.rds$", full.names = TRUE)
 
 # read all files (each file is assumed to be a list)
@@ -1658,7 +1642,7 @@ obj_list <- lapply(files, readRDS)
 
 # extract the element you want (file[[1]]$covar, file[[2]]$covar, ...)
 covar_list <- lapply(obj_list, `[[`, "rmse_mae_from_covar")
-covar_list <- lapply(obj_list, `[[`, "eval_covar")
+covar_list <- lapply(obj_list, `[[`, "eval_covar_asset")
 
 
 # (optional) keep only non-missing covar elements
@@ -1668,9 +1652,11 @@ covar_list <- Filter(Negate(is.null), covar_list)
 covar_all <- do.call(rbind, covar_list)
 
 
+with(covar_all, mean(rate[asset == 2 & alpha_j == 0.1 & alpha_port == 0.05], na.rm = TRUE))
+with(covar_all, mean(rate[asset == 2 & alpha_j == 0.05 & alpha_port == 0.025], na.rm = TRUE))
 
-with(covar_all, mean(rate[asset == 2 & alpha_j == 0.1 & alpha_port == 0.1], na.rm = TRUE))
-
+with(covar_all, mean(RMSE[cond_asset == 2 & scenario == "a0.1b0.05"], na.rm = TRUE))
+with(covar_all, mean(MAE[cond_asset == 2 & scenario == "a0.1b0.05"], na.rm = TRUE))
 with(covar_all, mean(RMSE[cond_asset == 2 & scenario == "a0.05b0.05"], na.rm = TRUE))
 with(covar_all, mean(MAE[cond_asset == 2 & scenario == "a0.05b0.05"], na.rm = TRUE))
 with(covar_all, mean(RMSE[cond_asset == 2 & scenario == "a0.05b0.025"], na.rm = TRUE))
@@ -1692,12 +1678,18 @@ folder <- "simul_results/2d_NAIVE_grid/mlNA_pext000_tipk001_wp0252_re252"   # <-
 files  <- list.files(folder, pattern = "\\.rds$", full.names = TRUE)
 obj_list <- lapply(files, readRDS)
 covar_list <- lapply(obj_list, `[[`, "rmse_mae_from_covar")
-covar_list <- lapply(obj_list, `[[`, "eval_covar")
+covar_list <- lapply(obj_list, `[[`, "eval_covar_asset")
 
 covar_list <- Filter(Negate(is.null), covar_list)
 covar_all <- do.call(rbind, covar_list)
 
 
+with(covar_all, mean(rate[asset == 2 & alpha_j == 0.1 & alpha_port == 0.05], na.rm = TRUE))
+with(covar_all, mean(rate[asset == 2 & alpha_j == 0.05 & alpha_port == 0.025], na.rm = TRUE))
+
+
+with(covar_all, mean(RMSE[cond_asset == 2 & scenario == "a0.1b0.05"], na.rm = TRUE))
+with(covar_all, mean(MAE[cond_asset == 2 & scenario == "a0.1b0.05"], na.rm = TRUE))
 with(covar_all, mean(RMSE[cond_asset == 2 & scenario == "a0.05b0.05"], na.rm = TRUE))
 with(covar_all, mean(MAE[cond_asset == 2 & scenario == "a0.05b0.05"], na.rm = TRUE))
 with(covar_all, mean(RMSE[cond_asset == 2 & scenario == "a0.05b0.025"], na.rm = TRUE))

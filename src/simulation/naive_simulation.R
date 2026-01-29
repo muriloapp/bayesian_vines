@@ -790,10 +790,11 @@ covar_hits_by_j_asset <- function(r_p_real, y_real_oos, VaRj_oos, CoVaR_oos, alp
   hits_list <- vector("list", d)
   n_list    <- integer(d)
   for (j in seq_len(d)) {
+    xx = 3-j
     mask <- y_real_oos[, j] <= VaRj_oos[, j]  # days when j is distressed
     n_list[j] <- sum(mask)
     if (n_list[j] > 0) {
-      hits_list[[j]] <- as.numeric(y_real_oos[mask, j] <= CoVaR_oos[mask, j])
+      hits_list[[j]] <- as.numeric(y_real_oos[mask, xx] <= CoVaR_oos[mask, j]) # CoVaR_oos[mask, j] covar given that asset j is distressed
     } else {
       hits_list[[j]] <- numeric(0)
     }
