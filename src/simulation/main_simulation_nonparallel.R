@@ -1,110 +1,4 @@
 
-ci_quantile_boot <- function(x, a, B = 500, level = 0.95) {
-  stopifnot(level > 0 && level < 1, a > 0 && a < 1, B >= 1)
-  
-  # helper for one vector
-  one <- function(v) {
-    v <- as.numeric(v)
-    L <- length(v)
-    vals <- replicate(B, {
-      vb <- sample(v, L, replace = TRUE)
-      as.numeric(quantile(vb, probs = a, type = 8))
-    })
-    as.numeric(quantile(vals,
-                        probs = c((1 - level)/2, 1 - (1 - level)/2),
-                        names = FALSE))
-  }
-  
-  if (is.matrix(x)) {
-    # return 2 x ncol matrix: rows = (lower, upper), cols = original columns
-    out <- sapply(seq_len(ncol(x)), function(j) one(x[, j]))
-    rownames(out) <- c("lower", "upper")
-    colnames(out) <- colnames(x) %||% paste0("col", seq_len(ncol(x)))
-    return(out)
-  } else {
-    return(one(x))
-  }
-}
-
-
-ci_covar_boot_both <- function(R, alpha = 0.05, beta = 0.05,
-                               B = 1000, level = 0.95, type = 8,
-                               min_tail = 50) {
-  stopifnot(is.matrix(R), ncol(R) == 2)
-  L <- nrow(R)
-  qs <- c((1 - level)/2, 1 - (1 - level)/2)
-  
-  covar_2_given_1 <- function(Rb) {
-    thr <- as.numeric(quantile(Rb[, 1], probs = beta, type = type))
-    sel <- (Rb[, 1] <= thr)
-    if (sum(sel) < min_tail) return(NA_real_)
-    as.numeric(quantile(Rb[sel, 2], probs = alpha, type = type))
-  }
-  
-  covar_1_given_2 <- function(Rb) {
-    thr <- as.numeric(quantile(Rb[, 2], probs = beta, type = type))
-    sel <- (Rb[, 2] <= thr)
-    if (sum(sel) < min_tail) return(NA_real_)
-    as.numeric(quantile(Rb[sel, 1], probs = alpha, type = type))
-  }
-  
-  vals21 <- numeric(B)
-  vals12 <- numeric(B)
-  
-  for (b in seq_len(B)) {
-    ii <- sample.int(L, L, replace = TRUE)  # resample ROWS (keeps dependence)
-    Rb <- R[ii, , drop = FALSE]
-    vals21[b] <- covar_2_given_1(Rb)
-    vals12[b] <- covar_1_given_2(Rb)
-  }
-  
-  vals21 <- vals21[is.finite(vals21)]
-  vals12 <- vals12[is.finite(vals12)]
-  
-  ci21 <- if (length(vals21) >= max(30, 0.1 * B)) {
-    setNames(as.numeric(quantile(vals21, probs = qs, names = FALSE)), c("lower", "upper"))
-  } else c(lower = NA_real_, upper = NA_real_)
-  
-  ci12 <- if (length(vals12) >= max(30, 0.1 * B)) {
-    setNames(as.numeric(quantile(vals12, probs = qs, names = FALSE)), c("lower", "upper"))
-  } else c(lower = NA_real_, upper = NA_real_)
-  
-  list(
-    CoVaR_2_given_1 = ci21,
-    CoVaR_1_given_2 = ci12
-  )
-}
-
-
-ci_covar_boot_both_moutn <- function(R, alpha=0.05, beta=0.05, B=100, level=0.95, type=8,
-                                     min_tail=50, m_frac=0.5) {
-  L <- nrow(R); m <- max(200L, floor(m_frac * L))
-  qs <- c((1-level)/2, 1-(1-level)/2)
-  
-  one <- function(Rb, cond_col, target_col) {
-    thr <- as.numeric(quantile(Rb[,cond_col], beta, type=type))
-    sel <- (Rb[,cond_col] <= thr)
-    if (sum(sel) < min_tail) return(NA_real_)
-    as.numeric(quantile(Rb[sel, target_col], alpha, type=type))
-  }
-  
-  v21 <- v12 <- numeric(B)
-  for (b in 1:B) {
-    ii <- sample.int(L, m, replace=TRUE)
-    Rb <- R[ii, , drop=FALSE]
-    v21[b] <- one(Rb, 1, 2)
-    v12[b] <- one(Rb, 2, 1)
-  }
-  v21 <- v21[is.finite(v21)]; v12 <- v12[is.finite(v12)]
-  
-  list(
-    CoVaR_2_given_1 = setNames(as.numeric(quantile(v21, qs, names=FALSE)), c("lower","upper")),
-    CoVaR_1_given_2 = setNames(as.numeric(quantile(v12, qs, names=FALSE)), c("lower","upper"))
-  )
-}
-
-
-
 
 smc_simul_serial <- function(data, cfg, dgp) {
   
@@ -122,43 +16,6 @@ smc_simul_serial <- function(data, cfg, dgp) {
   
   skeleton <- make_skeleton_CVM(U[1:t_train, ], trunc_tree = cfg$trunc_tree, structure = dgp$vc$structure)
   cfg <- add_first_tree_map(cfg, skeleton)
-  # 
-  # exports <- c(
-  #   # constants & templates 
-  #   "FAM_INFO", "FAM_INDEP", "FAM_GAUSS", "FAM_BB1", "FAM_BB1R180",
-  #   "T_INDEP",  "T_GAUSS",   "T_BB1", "T_BB1R180", "FAM_BB8R180",
-  #   "FAM_BB7","FAM_BB7R180","T_BB8R180","T_BB7","T_BB7R180", "FAM_T","T_T",
-  #   # helper functions 
-  #   "active_fams", "sanitize_bb1", "mh_worker_standard", "mh_worker_block",
-  #   "bb1r180_tail2par", "bb1r180_par2tail", "bb1r180_log_jacobian",
-  #   "bb7_tail2par","bb7_par2tail","bb7_log_jacobian","bb7r180_tail2par","bb7r180_par2tail",
-  #   "bb7r180_log_jacobian","bb8r180_tail2par","bb8r180_par2tail","bb8r180_log_jacobian_1d",
-  #   "sanitize_bb7","sanitize_bb8",
-  #   "t_par2tail","t_tail2rho","t_log_jacobian","sanitize_t",
-  #   # core SMC kernels 
-  #   "mh_step", "mh_step_in_tree",
-  #   "update_weights", "ESS", "systematic_resample",
-  #   # log-target & proposals 
-  #   "log_prior", "bb1_tail2par", "bb1_par2tail", "bb1_log_jacobian",
-  #   "rtnorm_vec", "log_prior_edge",
-  #   # likelihood helpers 
-  #   "bicop_dist", "vinecop_dist", "dvinecop",
-  #   "rvinecop","bicop",
-  #   # shared data objects 
-  #   "skeleton", "cfg",
-  #   # diagnostics & prediction 
-  #   "diagnostic_report", "compute_predictive_metrics",
-  #   "compute_log_incr",
-  #   # small utilities    
-  #   "w_mean", "w_var", "mc_se", "w_quantile", "fillna_neg", "fam_spec","get_tails","clamp01","init_from_tails",
-  #   "tail_weights", "safe_logdens",
-  #   "logit","ilogit","dlogitnorm",
-  #   "emp_tails_FRAPO","seed_family_from_emp",
-  #   "log_prior_edge_strong",".tip_means_for_edge_t","log_prior_with_tip_time","log_prior_with_tip_cached",
-  #   ".safe_logdens1","fast_vine_from_row",".build_vine_from_vectors",
-  #   ".as_particle_vectors","K_of_skeleton","safe_sample",
-  #   "true_bases", "dgp"
-  # )
 
 
   out <- list(
@@ -224,30 +81,8 @@ for (t in (cfg$W+1):N) {
       y_real_t <- y_real[idx,]
       out$log_pred[idx] <- compute_predictive_metrics(u_t, particles, skeleton, w/sum(w), cfg)$log_pred_density
 
-      #system.time(
-      #draws <- smc_predictive_sample_fast2_scoped(particles, skeleton, w, L = 20000, cl = cl[1:8])
-      #)
-      # system.time(
-      #   R_draws <- smc_predictive_sample_fast2_grouped_epoch(
-      #     w   = particles$w,
-      #     L   = 20000,         # or whatever you need
-      #     cl  = cl,
-      #     round_digits = 6,    # more aggressive (e.g., 5) groups more; try 5–6
-      #     top_k = NULL,        # optional
-      #     min_count = 0,       # optional
-      #     nc = 1               # keep 1 unless W*nc <= physical cores
-      #   )
-      # )
       draws <- smc_predictive_sample_fast2_scoped2_serial(particles, skeleton, w, L = 10000)
       
-
-      #cmp  <- sweep(draws, 2, as.numeric(u_t), FUN = "<=")  # L x d logical
-      #pitV <- matrixStats::rowAlls(cmp)   
-      #out$pit_joint[idx] <- mean(pitV)   
-      
-      #out$pit_rosen[idx, ] <- empirical_rosenblatt_from_draws(as.numeric(u_t), draws, K = floor(sqrt(nrow(draws))))
-      
-
       Z_pred <- st_inv_fast(draws, shape_fc[idx, ], df_fc[idx, ])  
       R_t  <- sweep(Z_pred, 2, as.numeric(sqrt(sig_fc[idx, ])), `*`) + as.numeric(mu_fc[idx, ])          # L × d
   
@@ -315,8 +150,6 @@ for (t in (cfg$W+1):N) {
       
     }
     
-    # diagnostics
-
     dg <- diagnostic_report(t, 0, U, particles, w, cfg)
     
     out$diag_log[t, `:=`(t        = t,

@@ -8,7 +8,7 @@ load_packages <- function() {
   pkgs <- c(
     "rvinecopulib", "VineCopula", "data.table", "tictoc", #"Rcpp",
     "here", "parallel", "profvis", "ggplot2", "reshape2", #, "RcppThread"
-    "data.table", "parallel"
+    "data.table"
   )
   lapply(pkgs, require, character.only = TRUE)
 }
@@ -88,13 +88,11 @@ build_cfg <- function(d,
 
 source(here("src/R", "utils.R"))
 source(here("src/R", "core_functions.R"))
-source(here("src/simulation", "simulation.R"))
 source(here("src/models", "smc_stand_vine.R"))
 #source(here("src/models", "smc_block_vine.R"))
 source(here("src/R", "results_helpers.R"))
 source(here("src/models", "main_empirical.R"))
 source(here("src/R", "metrics.R"))
-source(here("src/simulation", "main_simulation_nonparallel.R"))
 
 
 
