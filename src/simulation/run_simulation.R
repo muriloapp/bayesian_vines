@@ -12,13 +12,6 @@ source(here("src/simulation/naive_simulation.R"))
 source(here("src/simulation/main_simulation_nonparallel.R"))
 
 
-# d       <- 2
-# n_train <- 756
-# n_test  <- 3000
-# n       <- n_train+n_test
-# 
-
-
 mean_len_grid  <- c(1e10, 500)      
 #p_extreme_grid <- c(0.00)   
 
@@ -59,7 +52,6 @@ for (ml in mean_len_grid) {
         tag <- sprintf(
           "ml%s_w%03d_wp%04d_re%03d",
           formatC(ml, format = "d"),
-          #as.integer(round(100 * pe)),  # 0.20 -> 020
           w,
           wp,
           re
