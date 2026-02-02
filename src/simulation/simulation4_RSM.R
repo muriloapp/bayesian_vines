@@ -1633,7 +1633,7 @@ mean(xx_smc)
 
 
 
-folder <- "simul_results/2d_SMC_grid/mlNA_pext000_tipk001_wp0756_re001"   # <- change this
+folder <- "simul_results/SMC/ml500_w126_wp1000_re001"   # <- change this
 files  <- list.files(folder, pattern = "\\.rds$", full.names = TRUE)
 
 # read all files (each file is assumed to be a list)
@@ -1641,7 +1641,7 @@ obj_list <- lapply(files, readRDS)
 
 # extract the element you want (file[[1]]$covar, file[[2]]$covar, ...)
 covar_list <- lapply(obj_list, `[[`, "rmse_mae_from_covar")
-covar_list <- lapply(obj_list, `[[`, "eval_covar_asset")
+covar_list <- lapply(obj_list, `[[`, "eval_covar")
 
 
 # (optional) keep only non-missing covar elements
@@ -1652,6 +1652,7 @@ covar_all <- do.call(rbind, covar_list)
 
 
 with(covar_all, mean(rate[asset == 2 & alpha_j == 0.1 & alpha_port == 0.05], na.rm = TRUE))
+with(covar_all, mean(rate[asset == 2 & alpha_j == 0.05 & alpha_port == 0.05], na.rm = TRUE))
 with(covar_all, mean(rate[asset == 2 & alpha_j == 0.05 & alpha_port == 0.025], na.rm = TRUE))
 
 with(covar_all, mean(RMSE[cond_asset == 2 & scenario == "a0.1b0.05"], na.rm = TRUE))
@@ -1673,17 +1674,18 @@ covar_all[covar_all$scenario =="a0.05b0.05",,drop=FALSE]
 
 
 
-folder <- "simul_results/2d_NAIVE_grid/mlNA_pext000_tipk001_wp0252_re252"   # <- change this
+folder <- "simul_results/NAIVE/ml500_w252_wp0252_re063"   # <- change this
 files  <- list.files(folder, pattern = "\\.rds$", full.names = TRUE)
 obj_list <- lapply(files, readRDS)
 covar_list <- lapply(obj_list, `[[`, "rmse_mae_from_covar")
-covar_list <- lapply(obj_list, `[[`, "eval_covar_asset")
+covar_list <- lapply(obj_list, `[[`, "eval_covar")
 
 covar_list <- Filter(Negate(is.null), covar_list)
 covar_all <- do.call(rbind, covar_list)
 
 
 with(covar_all, mean(rate[asset == 2 & alpha_j == 0.1 & alpha_port == 0.05], na.rm = TRUE))
+with(covar_all, mean(rate[asset == 2 & alpha_j == 0.05 & alpha_port == 0.05], na.rm = TRUE))
 with(covar_all, mean(rate[asset == 2 & alpha_j == 0.05 & alpha_port == 0.025], na.rm = TRUE))
 
 
