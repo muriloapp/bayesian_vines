@@ -734,7 +734,7 @@ resample_move_old_serial <- function(particles, newAncestors,
     
     acc_local <- 0L
     for (k in seq_len(n_mh)) {
-      res <- mh_step(
+      res <- mh_step_simul(
         fam, th1, th2,
         data_up_to_t, skeleton, cfg,
         tip_means_cache = tip_cache,
@@ -819,7 +819,7 @@ resample_move_old <- function(particles, newAncestors,
         
         acc_local <- 0L
         for (k in seq_len(cfg$n_mh)) {
-          res <- mh_step(fam, th1, th2, data_up_to_t, skeleton, cfg,
+          res <- mh_step_simul(fam, th1, th2, data_up_to_t, skeleton, cfg,
                              tip_means_cache = tip_cache, wobs = wobs, true_bases=true_bases)
           fam <- res$fam; th1 <- res$th1; th2 <- res$th2
           if (isTRUE(res$last_accept)) acc_local <- acc_local + 1L
@@ -850,7 +850,7 @@ resample_move_old <- function(particles, newAncestors,
 }
 
 
-mh_step <- function(fam, th1, th2,
+mh_step_simul <- function(fam, th1, th2,
                         data_up_to_t, skeleton, cfg,
                         tip_means_cache = NULL,   # list length K, each NULL or c(mL=..,mU=..)
                         wobs = NULL, true_bases=NULL) {           # optional obs weights
@@ -1381,7 +1381,7 @@ mh_worker_standard <- function(idx, n_mh, slice, data_up_to_t, skeleton, cfg)
   acc_local <- 0L
   
   for (k in seq_len(n_mh)) {
-    p <- mh_step(p, data_up_to_t, skeleton, cfg)
+    p <- mh_step_simul(p, data_up_to_t, skeleton, cfg)
     if (isTRUE(p$last_accept)) acc_local <- acc_local + 1L
   }
   
