@@ -734,7 +734,7 @@ resample_move_old_serial <- function(particles, newAncestors,
     
     acc_local <- 0L
     for (k in seq_len(n_mh)) {
-      res <- mh_step_simul(
+      res <- mh_step(
         fam, th1, th2,
         data_up_to_t, skeleton, cfg,
         tip_means_cache = tip_cache,
@@ -819,7 +819,7 @@ resample_move_old <- function(particles, newAncestors,
         
         acc_local <- 0L
         for (k in seq_len(cfg$n_mh)) {
-          res <- mh_step_simul(fam, th1, th2, data_up_to_t, skeleton, cfg,
+          res <- mh_step(fam, th1, th2, data_up_to_t, skeleton, cfg,
                              tip_means_cache = tip_cache, wobs = wobs, true_bases=true_bases)
           fam <- res$fam; th1 <- res$th1; th2 <- res$th2
           if (isTRUE(res$last_accept)) acc_local <- acc_local + 1L
@@ -850,7 +850,8 @@ resample_move_old <- function(particles, newAncestors,
 }
 
 
-mh_step_simul <- function(fam, th1, th2,
+
+mh_step <- function(fam, th1, th2,
                         data_up_to_t, skeleton, cfg,
                         tip_means_cache = NULL,   # list length K, each NULL or c(mL=..,mU=..)
                         wobs = NULL, true_bases=NULL) {           # optional obs weights
@@ -863,7 +864,6 @@ mh_step_simul <- function(fam, th1, th2,
   
   ## (a) Family flips — Tree 1 only (tail-seeded init if TIP)
   end_first_tr <- sum(cfg$edge_tree == 1L)
-  end_second_tr <- sum(cfg$edge_tree == 2L)  # Add this line for the second tree
   
   if (end_first_tr > 0L) {
     flip_mask <- runif(end_first_tr) < cfg$q_flip
@@ -914,35 +914,6 @@ mh_step_simul <- function(fam, th1, th2,
     }
   }
   
-  # Second tree flip (add this part for the second tree)
-  # HARD CODED
-  # if (end_second_tr > 0L) {
-  #   flip_mask <- runif(end_second_tr) < cfg$q_flip
-  #   if (any(flip_mask)) {
-  #       tr_idx <- cfg$edge_tree[3] 
-  #       if (tr_idx != 2L) next  # Apply only to the second tree
-  #       
-  #       old_code <- fam_p[3]
-  #       allowed_names <- if (tr_idx == 2L) cfg$families_deep 
-  #       
-  #       # Exclude the true family for this edge from the allowed families
-  #       allowed_codes <- setdiff(FAM_INFO$code[FAM_INFO$name %in% allowed_names], old_code)
-  #       
-  #       if (!is.null(true_bases)){
-  #         true_family_names <- true_bases[3]
-  #         true_family_codes <- FAM_INFO$code[FAM_INFO$name %in% true_family_names]
-  #         allowed_codes <- setdiff(allowed_codes, true_family_codes)
-  #       }
-  #       if (!length(allowed_codes)) next
-  #       new_code <- safe_sample(allowed_codes, 1L)
-  #       fam_p[3] <- new_code
-  #       
-  #       # NO TIP here: just use tails of old param set
-  #       tails_old <- get_tails(old_code, th1_p[3], th2_p[3])
-  #       tp_new    <- init_from_tails(new_code, tails_old)
-  #       th1_p[3] <- tp_new[1]; th2_p[3] <- tp_new[2]
-  #     }
-  #   }
   
   
   ## (b) Random-walk in tail space, map back, sanitize
@@ -1381,7 +1352,7 @@ mh_worker_standard <- function(idx, n_mh, slice, data_up_to_t, skeleton, cfg)
   acc_local <- 0L
   
   for (k in seq_len(n_mh)) {
-    p <- mh_step_simul(p, data_up_to_t, skeleton, cfg)
+    p <- mh_step(p, data_up_to_t, skeleton, cfg)
     if (isTRUE(p$last_accept)) acc_local <- acc_local + 1L
   }
   
