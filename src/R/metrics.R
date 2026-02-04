@@ -183,3 +183,21 @@ covar_tail_vec <- function(R_draws, r_p, VaRj, port_alpha = 0.05, minN = 200) {
   }
   out
 }
+
+
+
+covar_tail_vec_asset <- function(R_draws, r_p, VaRj, port_alpha = 0.05, minN = 200) {
+  
+  d <- ncol(R_draws)
+  out <- numeric(d)
+  for (j in seq_len(d)) {
+    xx  <- 3L - j ### ONLY WORK FOR 2 assets
+    idx <- which(R_draws[, j] <= VaRj[j])
+    out[j] <- as.numeric(quantile(R_draws[idx, xx], probs = port_alpha, names = FALSE))
+  }
+  out
+}
+
+
+
+

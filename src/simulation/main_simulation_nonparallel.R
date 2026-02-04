@@ -1,0 +1,205 @@
+
+
+smc_simul_serial <- function(data, cfg, dgp) {
+  
+  true_bases <- dgp$true_bases
+  U      <- data$U
+  M <- cfg$M; K <- cfg$K; N <- nrow(U); d <- cfg$d; n_oos <- N - cfg$W_predict
+  tickers    <- colnames(U); A <- length(cfg$alphas); t_train <- cfg$W_predict
+  
+  mu_fc   <- data$mu_fc[(nrow(data$mu_fc)   - n_oos + 1):nrow(data$mu_fc), , drop = FALSE]
+  sig_fc  <- data$sig_fc[(nrow(data$sig_fc) - n_oos + 1):nrow(data$sig_fc), , drop = FALSE]
+  df_fc   <- data$df_fc[(nrow(data$df_fc)   - n_oos + 1):nrow(data$df_fc), , drop = FALSE]
+  shape_fc<- data$shape_fc[(nrow(data$shape_fc) - n_oos + 1):nrow(data$shape_fc), , drop = FALSE]
+  y_real  <- data$y_real[(nrow(data$y_real) - n_oos + 1):nrow(data$y_real), , drop = FALSE]
+  
+  
+  skeleton <- make_skeleton_CVM(U[1:t_train, ], trunc_tree = cfg$trunc_tree, structure = dgp$vc$structure)
+  cfg <- add_first_tree_map(cfg, skeleton)
+
+
+  out <- list(
+    log_pred    = numeric(n_oos),
+    pit_joint = numeric(n_oos),
+    pit_rosen = matrix(NA_real_, n_oos, d, dimnames = list(NULL, tickers)),
+    diag_log    = data.table(t = integer(N), ESS = numeric(N), unique = integer(N), euc = numeric(N), sparsity = numeric(N)),
+    mh_acc_pct  = rep(NA_real_, N),
+    step_sd_hist= rep(NA_real_, N),
+    fam_hist  = array(NA_integer_, dim = c(M,N,K)),
+    par1_hist = array(NA_real_,    dim = c(M,N,K)),
+    par2_hist = array(NA_real_,    dim = c(M,N,K)),
+    rotation_hist = array(NA_real_, dim = c(M,N,K)),
+    ancestorIndices = matrix(0L, M, N),
+    risk    =  list(
+                      dates = integer(n_oos),                                        
+                      VaR   = array(NA_real_, dim = c(n_oos, d, A), dimnames = list(NULL, tickers, paste0("a", cfg$alphas))),
+                      ES    = array(NA_real_, dim = c(n_oos, d, A), dimnames = list(NULL, tickers, paste0("a", cfg$alphas)))
+                    ),      
+    
+    QL    = array(NA_real_, c(n_oos, d, A), dimnames = list(NULL, tickers, paste0("a", cfg$alphas))),
+    FZL   = array(NA_real_, c(n_oos, d, A), dimnames = list(NULL, tickers, paste0("a", cfg$alphas))),
+    wCRPS = matrix(NA_real_, n_oos, d, dimnames = list(NULL, tickers)),
+    
+    port = list(
+                    dates  = integer(n_oos),
+                    VaR    = matrix(NA_real_, n_oos, A, dimnames = list(NULL, paste0("a", cfg$alphas))),
+                    ES     = matrix(NA_real_, n_oos, A, dimnames = list(NULL, paste0("a", cfg$alphas))),
+                    QL    = matrix(NA_real_, n_oos, A, dimnames = list(NULL, paste0("a", cfg$alphas))),
+                    FZL   = matrix(NA_real_, n_oos, A, dimnames = list(NULL, paste0("a", cfg$alphas))),
+                    wCRPS = numeric(n_oos)
+                  ),
+    
+    CoVaR_tail = array(
+      NA_real_, c(n_oos, d, length(SCEN_COVAR)),
+      dimnames = list(NULL, tickers, SCEN_COVAR)
+    ),
+    CoVaR_tail_asset = array(
+      NA_real_, c(n_oos, d, length(SCEN_COVAR)),
+      dimnames = list(NULL, tickers, SCEN_COVAR)
+    )
+    )
+  
+  
+  # init particles
+  U_init <- U[1:(cfg$W-1), , drop = FALSE]
+  particles <- new_particles_mats(cfg, U_init, true_bases = true_bases) # TRUE BASES
+  out$ancestorIndices[,1] <- seq_len(M)
+  
+  
+
+for (t in (cfg$W+1):N) {
+    u_t_1 <- U[t-1,,drop=FALSE]
+    u_t <- U[t,,drop=FALSE]
+
+    log_inc <- compute_log_incr(particles, u_t_1, skeleton)
+    particles <- update_weights(particles, log_inc)
+    w <- particles$w
+    
+    if (t > cfg$W_predict) {
+      idx <- t - cfg$W_predict
+      
+      y_real_t <- y_real[idx,]
+      out$log_pred[idx] <- compute_predictive_metrics(u_t, particles, skeleton, w/sum(w), cfg)$log_pred_density
+
+      draws <- smc_predictive_sample_fast2_scoped2_serial(particles, skeleton, w, L = 10000)
+      
+      Z_pred <- st_inv_fast(draws, shape_fc[idx, ], df_fc[idx, ])  
+      R_t  <- sweep(Z_pred, 2, as.numeric(sqrt(sig_fc[idx, ])), `*`) + as.numeric(mu_fc[idx, ])          # L × d
+  
+      rs <- risk_stats_full(R_t, cfg$alphas)
+      out$risk$dates[idx]   <- t
+      out$risk$VaR [idx, , ] <- rs$VaR          # d × A
+      out$risk$ES  [idx, , ] <- rs$ES
+      
+      # EW-portfolio metrics 
+      r_p  <- rowMeans(R_t)                                           
+      ps   <- port_stats(r_p, cfg$alphas)    
+      out$port$dates[idx]   <- t                                       
+      out$port$VaR [idx, ]  <- ps$VaR
+      out$port$ES  [idx, ]  <- ps$ES 
+      
+      r_p_real <- mean(as.numeric(y_real_t))
+      out$port$QL[idx, ]   <- vapply(seq_along(cfg$alphas), function(k) pinball_loss(r_p_real, ps$VaR[k], cfg$alphas[k]), numeric(1))
+      out$port$FZL[idx, ]  <- vapply(seq_along(cfg$alphas), function(k) fzl_pzc_scalar(r_p_real, ps$VaR[k], ps$ES[k], cfg$alphas[k]), numeric(1))
+      out$port$wCRPS[idx]  <- wcrps_gr_scalar(r_p, r_p_real)
+      
+      out$QL[idx, , ]  <- pinball_matrix(t(as.matrix(y_real_t)), rs$VaR, cfg$alphas) # Quantile loss per asset & alpha using the VaR you already computed
+      out$FZL[idx, , ] <- fzl_pzc_matrix(t(as.matrix(y_real_t)), rs$VaR, rs$ES, cfg$alphas) # FZL joint loss for (VaR, ES)
+      out$wCRPS[idx, ] <- wcrps_gr_matrix(R_t, t(as.matrix(y_real_t))) # Weighted CRPS from predictive draws 'R_t' and realization
+      
+      
+      # CoVaR
+      k5  <- which.min(abs(cfg$alphas - 0.05))
+      k10 <- which.min(abs(cfg$alphas - 0.10))
+      k025 <- which.min(abs(cfg$alphas - 0.025))
+      
+      VaRj_025 <- rs$VaR[, k025]
+      VaRj_5  <- rs$VaR[, k5]   # d-vector
+      VaRj_10 <- rs$VaR[, k10]
+      
+      
+      covar5  <- covar_tail_vec(R_t, r_p, VaRj_5,  port_alpha = 0.05, minN = 50)
+      covar5b10  <- covar_tail_vec(R_t, r_p, VaRj_5,  port_alpha = 0.1, minN = 50)
+      covar10 <- covar_tail_vec(R_t, r_p, VaRj_10, port_alpha = 0.10, minN = 50)
+      covar10b5 <- covar_tail_vec(R_t, r_p, VaRj_10, port_alpha = 0.05, minN = 50)
+      covar5b0025 <- covar_tail_vec(R_t, r_p, VaRj_5,   port_alpha = 0.025, minN = 50)
+      covar025b5  <- covar_tail_vec(R_t, r_p, VaRj_025, port_alpha = 0.05,  minN = 50)
+      
+      
+      out$CoVaR_tail[idx, , "a0.05b0.05"] <- covar5
+      out$CoVaR_tail[idx, , "a0.05b0.1"] <- covar5b10
+      out$CoVaR_tail[idx, , "a0.1b0.1"] <- covar10
+      out$CoVaR_tail[idx, , "a0.1b0.05"] <- covar10b5
+      out$CoVaR_tail[idx, , "a0.05b0.025"]  <- covar5b0025
+      out$CoVaR_tail[idx, , "a0.025b0.05"]  <- covar025b5
+      
+      covar5     <- covar_tail_vec_asset(R_t, r_p, VaRj_5,  port_alpha = 0.05, minN = 50)
+      covar5b10  <- covar_tail_vec_asset(R_t, r_p, VaRj_5,  port_alpha = 0.10, minN = 50)
+      covar10    <- covar_tail_vec_asset(R_t, r_p, VaRj_10, port_alpha = 0.10, minN = 50)
+      covar10b5  <- covar_tail_vec_asset(R_t, r_p, VaRj_10, port_alpha = 0.05, minN = 50)
+      covar5b0025 <- covar_tail_vec_asset(R_t, r_p, VaRj_5,   port_alpha = 0.025, minN = 50)
+      covar025b5  <- covar_tail_vec_asset(R_t, r_p, VaRj_025, port_alpha = 0.05,  minN = 50)
+      
+      out$CoVaR_tail_asset[idx, , "a0.05b0.05"] <- covar5
+      out$CoVaR_tail_asset[idx, , "a0.05b0.1"]  <- covar5b10
+      out$CoVaR_tail_asset[idx, , "a0.1b0.1"]   <- covar10
+      out$CoVaR_tail_asset[idx, , "a0.1b0.05"]  <- covar10b5
+      out$CoVaR_tail_asset[idx, , "a0.05b0.025"]  <- covar5b0025
+      out$CoVaR_tail_asset[idx, , "a0.025b0.05"]  <- covar025b5
+      
+      
+    }
+    
+    dg <- diagnostic_report(t, 0, U, particles, w, cfg)
+    
+    out$diag_log[t, `:=`(t        = t,
+                         ESS      = dg$ESS,
+                         unique   = dg$unique,
+                         euc      = dg$euc,
+                         sparsity = dg$sparsity)]
+    
+    # resample / move
+    if (ESS(w) < cfg$ess_thr * M && t < N) {
+      newAncestors <- stratified_resample(w)
+      data_up_to_t <- U[max(1, t - cfg$W + 1):(t-1), , drop = FALSE]
+      
+      move_out <- resample_move_old_serial(particles, newAncestors, data_up_to_t, NULL,
+                                    cfg$type, cfg, skeleton = skeleton, true_bases=true_bases) #true_bases
+      
+      particles <- move_out$particles
+      out$mh_acc_pct[t] <- move_out$acc_pct
+      if (cfg$adapt_step_sd) {
+        {cfg$step_sd <- compute_adapt_step_sd(cfg, move_out$acc_pct)}
+        out$step_sd_hist[t] <- cfg$step_sd
+      }
+    } else {
+      step_prev <- t - 1L
+      newAncestors    <- if (step_prev < 1L) seq_len(M) else out$ancestorIndices[, step_prev]
+    }
+    
+    # after MH/resample at time t:
+    #push_epoch_state(cl, particles, skeleton, epoch_id = t)
+    out$ancestorIndices[, t] <- newAncestors
+    
+    # history arrays
+    out$fam_hist [ , t,] <- particles$fam_mat
+    out$par1_hist[, t,]  <- particles$th1_mat
+    out$par2_hist[, t,]  <- particles$th2_mat
+
+}
+  
+  out$cfg <- cfg
+  out$particles_final    <- particles
+  out$log_model_evidence <- sum(out$log_pred, na.rm = TRUE)
+  out
+}
+
+
+
+
+
+
+
+
+
+

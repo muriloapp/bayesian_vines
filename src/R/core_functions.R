@@ -130,7 +130,7 @@ safe_sample <- function(x, size, replace = FALSE, prob = NULL) {
 
 
 # returns a single particle as 1×K row matrices (so can rbind into big mats)
-new_particle_row_mat <- function(cfg, U_init = NULL) {
+new_particle_row_mat <- function(cfg, U_init = NULL, true_bases=NULL) {
   K   <- cfg$K
   fam <- integer(K); th1 <- numeric(K); th2 <- numeric(K)
   
@@ -142,6 +142,19 @@ new_particle_row_mat <- function(cfg, U_init = NULL) {
     tr_k <- cfg$edge_tree[k]
     allowed_names <- if (tr_k == 1L) cfg$families_first else cfg$families_deep
     fam_tbl <- FAM_INFO[FAM_INFO$name %in% allowed_names, , drop = FALSE]
+    
+    # --- NEW: remove the "true" family for this edge (if provided) ---
+    if (!is.null(true_bases)) {
+      true_name  <- true_bases[k]  # assumes aligned with edge order k = 1..K
+      true_code  <- FAM_INFO$code[match(true_name, FAM_INFO$name)]
+      if (!is.na(true_code)) {
+        fam_tbl <- fam_tbl[fam_tbl$code != true_code, , drop = FALSE]
+      }
+      # safety: if you removed everything, fall back to original allowed set
+      if (nrow(fam_tbl) == 0L) {
+        fam_tbl <- FAM_INFO[FAM_INFO$name %in% allowed_names, , drop = FALSE]
+      }
+    }
     
     if (tip_on && tr_k == 1L) {
       # ---- TIP-aware family selection on Tree 1 ----
@@ -158,7 +171,7 @@ new_particle_row_mat <- function(cfg, U_init = NULL) {
       #is_tailfam <- fam_tbl$code %in% tail_codes
       #w          <- base_w * ifelse(is_tailfam, 1 + 3*tail_strength, pmax(1 - 0.9*tail_strength, 0.1))
       #w          <- w / sum(w)
-      w          <- rep(1 / length(cfg$families_first), length(cfg$families_first))
+      w          <- rep(1 / nrow(fam_tbl), nrow(fam_tbl))
       
       code_k  <- sample(fam_tbl$code, 1L, prob = w)
       fam[k]  <- code_k
@@ -241,11 +254,11 @@ new_particle_row_mat <- function(cfg, U_init = NULL) {
 }
 
 # Build M particles and stack row-wise: fast to serialize, easy to slice by row
-new_particles_mats <- function(cfg, U_init = NULL) {
+new_particles_mats <- function(cfg, U_init = NULL, true_bases = NULL) {
   M <- as.integer(cfg$M)
   rows <- vector("list", M)
   for (m in seq_len(M)) {
-    rows[[m]] <- new_particle_row_mat(cfg, U_init)  # must return 1×K matrices
+    rows[[m]] <- new_particle_row_mat(cfg, U_init, true_bases = true_bases)  # must return 1×K matrices
   }
   
   fam_mat <- do.call(rbind, lapply(rows, `[[`, "fam"))
@@ -680,14 +693,100 @@ init_from_tails <- function(new_code, tails) {
 # }
 # 
 
-
-
+resample_move_old_serial <- function(particles, newAncestors,
+                              data_up_to_t, cl = NULL, type, cfg,
+                              skeleton = NULL, tr = NULL, temp_skel = NULL,
+                              true_bases = NULL) {
+  
+  # ----- 1) RESAMPLE (row reindex) -----
+  M <- nrow(particles$fam_mat)
+  particles$fam_mat <- particles$fam_mat[newAncestors, , drop = FALSE]
+  particles$th1_mat <- particles$th1_mat[newAncestors, , drop = FALSE]
+  particles$th2_mat <- particles$th2_mat[newAncestors, , drop = FALSE]
+  particles$w       <- rep(1 / M, M)
+  if (!is.null(particles$last_accept)) particles$last_accept[] <- FALSE
+  
+  # ----- 2) PRECOMPUTE (once) -----
+  tip_cache <- if (isTRUE(cfg$use_tail_informed_prior))
+    precompute_tip_means(data_up_to_t, cfg) else NULL
+  
+  wobs <- if (isTRUE(cfg$use_weighted_ll))
+    tail_weights(data_up_to_t, tau = cfg$tauL,
+                 k = cfg$joint_k, eps = cfg$tail_eps) else NULL
+  
+  mh_n_prop <- M * cfg$n_mh
+  tictoc::tic("MH move")
+  
+  if (!identical(type, "standard")) {
+    stop("Only type='standard' is implemented for the matrix-based path.")
+  }
+  
+  # snapshot matrices (avoid closures capturing 'particles' by reference weirdly)
+  fam_mat <- particles$fam_mat
+  th1_mat <- particles$th1_mat
+  th2_mat <- particles$th2_mat
+  n_mh    <- cfg$n_mh
+  
+  mh_one <- function(i, fam_mat, th1_mat, th2_mat, data_up_to_t, skeleton, cfg, tip_cache, wobs, true_bases, n_mh) {
+    fam <- as.integer(fam_mat[i, ])
+    th1 <- as.numeric(th1_mat[i, ])
+    th2 <- as.numeric(th2_mat[i, ])
+    
+    acc_local <- 0L
+    for (k in seq_len(n_mh)) {
+      res <- mh_step(
+        fam, th1, th2,
+        data_up_to_t, skeleton, cfg,
+        tip_means_cache = tip_cache,
+        wobs            = wobs,
+        true_bases      = true_bases
+      )
+      fam <- res$fam; th1 <- res$th1; th2 <- res$th2
+      if (isTRUE(res$last_accept)) acc_local <- acc_local + 1L
+    }
+    list(fam = fam, th1 = th1, th2 = th2, acc = acc_local)
+  }
+  
+  # ----- 2.5) RUN (SERIAL BY DEFAULT) -----
+  # If you truly want NO inner parallelism, keep cl = NULL everywhere.
+  mh_results <- lapply(
+    seq_len(M),
+    mh_one,
+    fam_mat      = fam_mat,
+    th1_mat      = th1_mat,
+    th2_mat      = th2_mat,
+    data_up_to_t = data_up_to_t,
+    skeleton     = skeleton,
+    cfg          = cfg,
+    tip_cache    = tip_cache,
+    wobs         = wobs,
+    true_bases   = true_bases,
+    n_mh         = n_mh
+  )
+  
+  tictoc::toc()
+  
+  # ----- 3) COLLECT -----
+  mh_n_acc <- sum(vapply(mh_results, `[[`, integer(1), "acc"))
+  for (i in seq_len(M)) {
+    particles$fam_mat[i, ] <- as.integer(mh_results[[i]]$fam)
+    particles$th1_mat[i, ] <- mh_results[[i]]$th1
+    particles$th2_mat[i, ] <- mh_results[[i]]$th2
+  }
+  
+  acc_pct <- 100 * mh_n_acc / mh_n_prop
+  # CHANGE LATER
+  #cat(sprintf("MH acceptance = %4d / %4d  =  %.2f%%\n\n",
+  #            mh_n_acc, mh_n_prop, acc_pct))
+  
+  list(particles = particles, acc_pct = acc_pct)
+}
 
 
 
 resample_move_old <- function(particles, newAncestors,
                               data_up_to_t, cl, type, cfg,
-                              skeleton = NULL, tr = NULL, temp_skel = NULL) {
+                              skeleton = NULL, tr = NULL, temp_skel = NULL, true_bases=NULL) {
   
   # ----- 1) RESAMPLE (row reindex) -----
   M <- nrow(particles$fam_mat)
@@ -721,7 +820,7 @@ resample_move_old <- function(particles, newAncestors,
         acc_local <- 0L
         for (k in seq_len(cfg$n_mh)) {
           res <- mh_step(fam, th1, th2, data_up_to_t, skeleton, cfg,
-                             tip_means_cache = tip_cache, wobs = wobs)
+                             tip_means_cache = tip_cache, wobs = wobs, true_bases=true_bases)
           fam <- res$fam; th1 <- res$th1; th2 <- res$th2
           if (isTRUE(res$last_accept)) acc_local <- acc_local + 1L
         }
@@ -751,10 +850,11 @@ resample_move_old <- function(particles, newAncestors,
 }
 
 
+
 mh_step <- function(fam, th1, th2,
                         data_up_to_t, skeleton, cfg,
                         tip_means_cache = NULL,   # list length K, each NULL or c(mL=..,mU=..)
-                        wobs = NULL) {           # optional obs weights
+                        wobs = NULL, true_bases=NULL) {           # optional obs weights
   K <- length(fam)
   
   # --- propose ---
@@ -764,6 +864,7 @@ mh_step <- function(fam, th1, th2,
   
   ## (a) Family flips — Tree 1 only (tail-seeded init if TIP)
   end_first_tr <- sum(cfg$edge_tree == 1L)
+  
   if (end_first_tr > 0L) {
     flip_mask <- runif(end_first_tr) < cfg$q_flip
     if (any(flip_mask)) {
@@ -775,6 +876,13 @@ mh_step <- function(fam, th1, th2,
         old_code <- fam_p[idx]
         allowed_names <- if (tr_idx == 1L) cfg$families_first else cfg$families_deep
         allowed_codes <- setdiff(FAM_INFO$code[FAM_INFO$name %in% allowed_names], old_code)
+        
+        #Make sure the true family is NOT in allowed_codes
+        if (!is.null(true_bases)){
+          true_family_names <- true_bases[idx]  # True families
+          true_family_codes <- FAM_INFO$code[FAM_INFO$name %in% true_family_names]
+          allowed_codes <- setdiff(allowed_codes, true_family_codes)
+        }
         if (!length(allowed_codes)) next
         
         new_code <- safe_sample(allowed_codes, 1L)
@@ -799,12 +907,14 @@ mh_step <- function(fam, th1, th2,
           }
         } else {
           tails_old <- get_tails(old_code, th1_p[idx], th2_p[idx])
-          tp_new    <- init_from_tails(new_code, tails_old)
+          tp_new    <- init_from_tails(new_code, tails_old) ## NEED TO CHANGE COLUMN NAMES
           th1_p[idx] <- tp_new[1]; th2_p[idx] <- tp_new[2]
         }
       }
     }
   }
+  
+  
   
   ## (b) Random-walk in tail space, map back, sanitize
   # Gaussian
@@ -1927,6 +2037,64 @@ smc_predictive_sample_fast2_scoped <- function(particles, skel, w, L = 10000, cl
 }
 
 
+
+smc_predictive_sample_fast2_scoped2_serial <- function(particles, skel, w, L = 10000) {
+  # normalize weights
+  w[!is.finite(w)] <- 0
+  w[w < 0] <- 0
+  sw <- sum(w)
+  if (sw <= 0) stop("All weights are zero/invalid.")
+  w <- w / sw
+  
+  # sanity
+  stopifnot(is.matrix(particles$fam_mat), is.matrix(particles$th1_mat),
+            is.matrix(particles$th2_mat))
+  M <- nrow(particles$fam_mat)
+  if (length(w) != M) stop("length(w) must equal number of particles (nrow(fam_mat)).")
+  if (L < 1L) stop("L must be >= 1.")
+  
+  # counts per particle
+  cnt  <- residual_counts(w, L)
+  used <- which(cnt > 0L)
+  
+  d0 <- ncol(skel$structure)
+  if (!length(used)) return(matrix(numeric(0), nrow = 0, ncol = d0))
+  
+  sims <- vector("list", length(used))
+  d_ref <- NULL
+  
+  for (k in seq_along(used)) {
+    i  <- used[k]
+    ni <- cnt[i]
+    
+    vine_i <- .build_vine_from_vectors(
+      fam  = as.integer(particles$fam_mat[i, ]),
+      th1  = as.numeric(particles$th1_mat[i, ]),
+      th2  = as.numeric(particles$th2_mat[i, ]),
+      skel = skel
+    )
+    
+    sim <- rvinecop(ni, vine_i, cores = 1)   # keep cores=1 always here
+    if (!is.matrix(sim)) sim <- as.matrix(sim)
+    
+    if (is.null(d_ref)) d_ref <- ncol(sim)
+    else if (ncol(sim) != d_ref)
+      stop(sprintf("Inconsistent simulated dimension: %d vs %d", ncol(sim), d_ref))
+    
+    sims[[k]] <- sim
+  }
+  
+  out <- do.call(rbind, sims)
+  rownames(out) <- NULL
+  
+  # safety: ensure exactly L rows (residual_counts should already guarantee this)
+  if (nrow(out) != L) {
+    # in case your residual_counts has rounding edge cases:
+    out <- out[seq_len(min(nrow(out), L)), , drop = FALSE]
+  }
+  
+  out
+}
 
 
 
