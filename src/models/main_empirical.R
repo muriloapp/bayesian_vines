@@ -1,4 +1,8 @@
 
+SCEN_COVAR <- c(
+  "a0.05b0.05", "a0.05b0.1", "a0.1b0.1", "a0.1b0.05",
+  "a0.05b0.025", "a0.025b0.05"
+)
 
 smc_full <- function(data, cfg) {
   
@@ -22,14 +26,14 @@ smc_full <- function(data, cfg) {
     "T_INDEP",  "T_GAUSS",   "T_BB1", "T_BB1R180", "FAM_BB8R180",
     "FAM_BB7","FAM_BB7R180","T_BB8R180","T_BB7","T_BB7R180", "FAM_T","T_T",
     # helper functions 
-    "active_fams", "sanitize_bb1", "mh_worker_standard", "mh_worker_block",
+    "active_fams", "sanitize_bb1", 
     "bb1r180_tail2par", "bb1r180_par2tail", "bb1r180_log_jacobian",
     "bb7_tail2par","bb7_par2tail","bb7_log_jacobian","bb7r180_tail2par","bb7r180_par2tail",
     "bb7r180_log_jacobian","bb8r180_tail2par","bb8r180_par2tail","bb8r180_log_jacobian_1d",
     "sanitize_bb7","sanitize_bb8",
     "t_par2tail","t_tail2rho","t_log_jacobian","sanitize_t",
     # core SMC kernels 
-    "mh_step", "mh_step_in_tree",
+    "mh_step",
     "update_weights", "ESS", "systematic_resample",
     # log-target & proposals 
     "log_prior", "bb1_tail2par", "bb1_par2tail", "bb1_log_jacobian",
@@ -53,7 +57,6 @@ smc_full <- function(data, cfg) {
   )
   cl <- make_cluster(cfg$nc, cfg$seed, exports)
   parallel::clusterEvalQ(cl, {
-    ## 1) Pin native threads on each worker (prevents oversubscription)
     Sys.setenv(
       OMP_NUM_THREADS        = "1",
       MKL_NUM_THREADS        = "1",
@@ -65,15 +68,7 @@ smc_full <- function(data, cfg) {
       RhpcBLASctl::blas_set_num_threads(1)
       RhpcBLASctl::omp_set_num_threads(1)
     }
-    
-    ## 2) Load your libs
-    library(rvinecopulib)
-    library(FRAPO)
-    
-    NULL
   })
-  
-  #register_worker_helpers(cl)
   
 
   out <- list(
@@ -107,7 +102,11 @@ smc_full <- function(data, cfg) {
                     wCRPS = numeric(n_oos)
                   ),
     
-    CoVaR_tail = array(NA_real_, c(n_oos, d, 4), dimnames = list(NULL, tickers, c("a0.05b0.05","a0.05b0.1","a0.1b0.1","a0.1b0.05")))
+    CoVaR_tail = array(
+      NA_real_, c(n_oos, d, length(SCEN_COVAR)),
+      dimnames = list(NULL, tickers, SCEN_COVAR)
+    )
+    #CoVaR_tail = array(NA_real_, c(n_oos, d, 4), dimnames = list(NULL, tickers, c("a0.05b0.05","a0.05b0.1","a0.1b0.1","a0.1b0.05")))
     )
 
   
@@ -147,7 +146,7 @@ for (t in (cfg$W+1):N) {
       #   )
       # )
       #system.time(
-      draws <- smc_predictive_sample_fast2_scoped2(particles, skeleton, w, L = 20000, cl = cl[1:12])
+      draws <- smc_predictive_sample_fast2_scoped2(particles, skeleton, w, L = 20000, cl = cl[1])
       #)
       cmp  <- sweep(draws, 2, as.numeric(u_t), FUN = "<=")  # L x d logical
       pitV <- matrixStats::rowAlls(cmp)   
@@ -182,20 +181,27 @@ for (t in (cfg$W+1):N) {
       
       
       # CoVaR
+      k025 <- which.min(abs(cfg$alphas - 0.025))
       k5  <- which.min(abs(cfg$alphas - 0.05))
       k10 <- which.min(abs(cfg$alphas - 0.10))
       
+      VaRj_025 <- rs$VaR[, k025]
       VaRj_5  <- rs$VaR[, k5]   # d-vector
       VaRj_10 <- rs$VaR[, k10]
+      
       covar5  <- covar_tail_vec(R_t, r_p, VaRj_5,  port_alpha = 0.05, minN = 50)
       covar5b10  <- covar_tail_vec(R_t, r_p, VaRj_5,  port_alpha = 0.1, minN = 50)
       covar10 <- covar_tail_vec(R_t, r_p, VaRj_10, port_alpha = 0.10, minN = 50)
       covar10b5 <- covar_tail_vec(R_t, r_p, VaRj_10, port_alpha = 0.05, minN = 50)
+      covar5b0025 <- covar_tail_vec(R_t, r_p, VaRj_5,   port_alpha = 0.025, minN = 50)
+      covar025b5  <- covar_tail_vec(R_t, r_p, VaRj_025, port_alpha = 0.05,  minN = 50)
       
       out$CoVaR_tail[idx, , "a0.05b0.05"] <- covar5
       out$CoVaR_tail[idx, , "a0.05b0.1"] <- covar5b10
       out$CoVaR_tail[idx, , "a0.1b0.1"] <- covar10
       out$CoVaR_tail[idx, , "a0.1b0.05"] <- covar10b5
+      out$CoVaR_tail[idx, , "a0.05b0.025"]  <- covar5b0025
+      out$CoVaR_tail[idx, , "a0.025b0.05"]  <- covar025b5
       
       
     }
@@ -215,8 +221,12 @@ for (t in (cfg$W+1):N) {
       newAncestors <- stratified_resample(w)
       data_up_to_t <- U[max(1, t - cfg$W + 1):(t-1), , drop = FALSE]
       system.time(
-      move_out <- resample_move_old(particles, newAncestors, data_up_to_t, cl[1:30],
+      move_out <- resample_move_old(particles, newAncestors, data_up_to_t, cl[1:7],
                                     cfg$type, cfg, skeleton = skeleton)
+      )
+      system.time(
+        move_out <- resample_move_old3(particles, newAncestors, data_up_to_t, cl[1:7],
+                                      cfg$type, cfg, skeleton = skeleton)
       )
       particles <- move_out$particles
       out$mh_acc_pct[t] <- move_out$acc_pct

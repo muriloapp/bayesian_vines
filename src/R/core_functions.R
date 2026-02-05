@@ -783,10 +783,281 @@ resample_move_old_serial <- function(particles, newAncestors,
 }
 
 
+# 
+# resample_move_old <- function(particles, newAncestors,
+#                               data_up_to_t, cl, type, cfg,
+#                               skeleton = NULL, tr = NULL, temp_skel = NULL) {
+#   
+#   # ----- 1) RESAMPLE (row reindex) -----
+#   M <- nrow(particles$fam_mat)
+#   particles$fam_mat <- particles$fam_mat[newAncestors, , drop = FALSE]
+#   particles$th1_mat <- particles$th1_mat[newAncestors, , drop = FALSE]
+#   particles$th2_mat <- particles$th2_mat[newAncestors, , drop = FALSE]
+#   particles$w       <- rep(1 / M, M)
+#   if (!is.null(particles$last_accept)) particles$last_accept[] <- FALSE
+#   
+#   # ----- 2) PRECOMPUTE (once) -----
+#   tip_cache <- if (isTRUE(cfg$use_tail_informed_prior))
+#     precompute_tip_means(data_up_to_t, cfg) else NULL
+#   wobs <- if (isTRUE(cfg$use_weighted_ll))
+#     tail_weights(data_up_to_t, tau = cfg$tauL,
+#                  k = cfg$joint_k, eps = cfg$tail_eps) else NULL
+#   
+#   # ship big read-only objects once
+#   parallel::clusterExport(cl, c("particles","tip_cache","wobs"), envir = environment())
+#   
+#   mh_n_prop <- M * cfg$n_mh
+#   tic("MH move")
+#   
+#   mh_results <- parallel::parLapply(
+#     cl, seq_len(M),
+#     function(i, data_up_to_t, skeleton, cfg, tip_cache, wobs) {
+#       fam <- as.integer(particles$fam_mat[i, ])
+#       th1 <- as.numeric(particles$th1_mat[i, ])
+#       th2 <- as.numeric(particles$th2_mat[i, ])
+#       
+#       acc_local <- 0L
+#       for (k in seq_len(cfg$n_mh)) {
+#         
+#         res <- mh_step(fam, th1, th2, data_up_to_t, skeleton, cfg,
+#                            tip_means_cache = tip_cache, wobs = wobs)
+#         
+#         fam <- res$fam; th1 <- res$th1; th2 <- res$th2
+#         if (isTRUE(res$last_accept)) acc_local <- acc_local + 1L
+#       }
+#       list(fam = fam, th1 = th1, th2 = th2, acc = acc_local)
+#     },
+#     data_up_to_t, skeleton, cfg, tip_cache, wobs
+#   )
+# 
+# 
+#   
+#   toc()
+#   
+#   # ----- 3) COLLECT -----
+#   mh_n_acc <- sum(vapply(mh_results, `[[`, integer(1), "acc"))
+#   for (i in seq_len(M)) {
+#     particles$fam_mat[i, ] <- as.integer(mh_results[[i]]$fam)
+#     particles$th1_mat[i, ] <- mh_results[[i]]$th1
+#     particles$th2_mat[i, ] <- mh_results[[i]]$th2
+#   }
+#   
+#   acc_pct <- 100 * mh_n_acc / mh_n_prop
+#   cat(sprintf("MH acceptance = %4d / %4d  =  %.2f%%\n\n",
+#               mh_n_acc, mh_n_prop, acc_pct))
+#   
+#   list(particles = particles, acc_pct = acc_pct)
+# }
+
+resample_move_old3 <- function(particles, newAncestors,
+                              data_up_to_t, cl, type, cfg,
+                              skeleton = NULL, tr = NULL, temp_skel = NULL,
+                              target_chunks_per_worker = 10L) {
+  
+  # ----- 1) RESAMPLE -----
+  M <- nrow(particles$fam_mat)
+  particles$fam_mat <- particles$fam_mat[newAncestors, , drop = FALSE]
+  particles$th1_mat <- particles$th1_mat[newAncestors, , drop = FALSE]
+  particles$th2_mat <- particles$th2_mat[newAncestors, , drop = FALSE]
+  particles$w       <- rep(1 / M, M)
+  if (!is.null(particles$last_accept)) particles$last_accept[] <- FALSE
+  
+  # ----- 2) PRECOMPUTE -----
+  tip_cache <- if (isTRUE(cfg$use_tail_informed_prior))
+    precompute_tip_means(data_up_to_t, cfg) else NULL
+  
+  wobs <- if (isTRUE(cfg$use_weighted_ll))
+    tail_weights(data_up_to_t, tau = cfg$tauL, k = cfg$joint_k, eps = cfg$tail_eps) else NULL
+  
+  fam_mat <- particles$fam_mat
+  th1_mat <- particles$th1_mat
+  th2_mat <- particles$th2_mat
+  
+  mh_n_prop <- M * cfg$n_mh
+  nc <- length(cl)
+  
+  # ----- 3) EXPORT ONLY WHAT CHANGES EACH MOVE -----
+  # (Assumes mh_step, helpers, and constants already exported in make_cluster())
+  parallel::clusterExport(
+    cl,
+    varlist = c("fam_mat", "th1_mat", "th2_mat", "data_up_to_t", "tip_cache", "wobs", "cfg", "skeleton"),
+    envir = environment()
+  )
+  
+  # ----- 4) CHUNKING -----
+  # total chunks ≈ nc * target_chunks_per_worker
+  target_chunks <- max(nc, nc * as.integer(target_chunks_per_worker))
+  chunk_size <- max(1L, as.integer(ceiling(M / target_chunks)))
+  
+  idx <- seq_len(M)
+  idx_chunks <- split(idx, ceiling(idx / chunk_size))
+  
+  tic(sprintf("MH move (LB, chunk_size=%d, chunks=%d)", chunk_size, length(idx_chunks)))
+  
+  chunk_results <- parallel::parLapplyLB(
+    cl, idx_chunks,
+    function(idxs) {
+      n_idx <- length(idxs)
+      K <- ncol(fam_mat)
+      
+      fam_out <- matrix(0L, n_idx, K)
+      th1_out <- matrix(0.0, n_idx, K)
+      th2_out <- matrix(0.0, n_idx, K)
+      acc_out <- integer(n_idx)
+      
+      for (jj in seq_along(idxs)) {
+        i <- idxs[jj]
+        
+        fam <- fam_mat[i, ]        # integer already (after export)
+        th1 <- th1_mat[i, ]        # numeric already
+        th2 <- th2_mat[i, ]        # numeric already
+        
+        acc_local <- 0L
+        for (k in seq_len(cfg$n_mh)) {
+          res <- mh_step(
+            fam, th1, th2,
+            data_up_to_t, skeleton, cfg,
+            tip_means_cache = tip_cache,
+            wobs = wobs
+          )
+          fam <- res$fam; th1 <- res$th1; th2 <- res$th2
+          if (isTRUE(res$last_accept)) acc_local <- acc_local + 1L
+        }
+        
+        fam_out[jj, ] <- fam
+        th1_out[jj, ] <- th1
+        th2_out[jj, ] <- th2
+        acc_out[jj]   <- acc_local
+      }
+      
+      list(idxs = idxs, fam = fam_out, th1 = th1_out, th2 = th2_out, acc = acc_out)
+    }
+  )
+  
+  toc()
+  
+  # ----- 5) COLLECT -----
+  mh_n_acc <- 0L
+  for (chunk in chunk_results) {
+    particles$fam_mat[chunk$idxs, ] <- chunk$fam
+    particles$th1_mat[chunk$idxs, ] <- chunk$th1
+    particles$th2_mat[chunk$idxs, ] <- chunk$th2
+    mh_n_acc <- mh_n_acc + sum(chunk$acc)
+  }
+  
+  acc_pct <- 100 * mh_n_acc / mh_n_prop
+  cat(sprintf("MH acceptance = %4d / %4d  =  %.2f%%\n\n", mh_n_acc, mh_n_prop, acc_pct))
+  
+  list(particles = particles, acc_pct = acc_pct)
+}
+
+
+
+resample_move_old2 <- function(particles, newAncestors,
+                              data_up_to_t, cl, type, cfg,
+                              skeleton = NULL, tr = NULL, temp_skel = NULL) {
+  
+  # ----- 1) RESAMPLE -----
+  M <- nrow(particles$fam_mat)
+  particles$fam_mat <- particles$fam_mat[newAncestors, , drop = FALSE]
+  particles$th1_mat <- particles$th1_mat[newAncestors, , drop = FALSE]
+  particles$th2_mat <- particles$th2_mat[newAncestors, , drop = FALSE]
+  particles$w       <- rep(1 / M, M)
+  if (!is.null(particles$last_accept)) particles$last_accept[] <- FALSE
+  
+  # ----- 2) PRECOMPUTE -----
+  tip_cache <- if (isTRUE(cfg$use_tail_informed_prior))
+    precompute_tip_means(data_up_to_t, cfg) else NULL
+  
+  wobs <- if (isTRUE(cfg$use_weighted_ll))
+    tail_weights(data_up_to_t, tau = cfg$tauL, k = cfg$joint_k, eps = cfg$tail_eps) else NULL
+  
+  mh_n_prop <- M * cfg$n_mh
+  
+  # ----- Export big changing objects ONCE -----
+  fam_mat <- particles$fam_mat
+  th1_mat <- particles$th1_mat
+  th2_mat <- particles$th2_mat
+  
+  parallel::clusterExport(
+    cl,
+    varlist = c("fam_mat", "th1_mat", "th2_mat", "data_up_to_t", "skeleton", "cfg", "tip_cache", "wobs"),
+    envir = environment()
+  )
+  
+  # ----- (2) Chunking: tune chunk size -----
+  # If mh_step is heavy, you want *moderate* chunks to reduce overhead but keep load balance.
+  # Good starting point: ~ 5–20 chunks per worker.
+  nc <- length(cl)
+  chunk_size <- max(10L, as.integer(ceiling(M / (nc * 10L))))  # tweak: 5L, 10L, 20L
+  idx <- seq_len(M)
+  idx_chunks <- split(idx, ceiling(idx / chunk_size))
+  
+  tic("MH move (chunked + exported mats)")
+  
+  # Use parLapplyLB for load balancing (often better than fixed chunks)
+  chunk_results <- parallel::parLapplyLB(
+    cl, idx_chunks,
+    function(idxs) {
+      n_idx <- length(idxs)
+      K <- ncol(fam_mat)
+      
+      fam_out <- matrix(0L, n_idx, K)
+      th1_out <- matrix(0.0, n_idx, K)
+      th2_out <- matrix(0.0, n_idx, K)
+      acc_out <- integer(n_idx)
+      
+      for (jj in seq_along(idxs)) {
+        i <- idxs[jj]
+        
+        fam <- as.integer(fam_mat[i, ])
+        th1 <- as.numeric(th1_mat[i, ])
+        th2 <- as.numeric(th2_mat[i, ])
+        
+        acc_local <- 0L
+        for (k in seq_len(cfg$n_mh)) {
+          res <- mh_step(
+            fam, th1, th2,
+            data_up_to_t, skeleton, cfg,
+            tip_means_cache = tip_cache,
+            wobs = wobs
+          )
+          fam <- res$fam; th1 <- res$th1; th2 <- res$th2
+          if (isTRUE(res$last_accept)) acc_local <- acc_local + 1L
+        }
+        
+        fam_out[jj, ] <- fam
+        th1_out[jj, ] <- th1
+        th2_out[jj, ] <- th2
+        acc_out[jj]   <- acc_local
+      }
+      
+      list(idxs = idxs, fam = fam_out, th1 = th1_out, th2 = th2_out, acc = acc_out)
+    }
+  )
+  
+  toc()
+  
+  # ----- 3) COLLECT -----
+  mh_n_acc <- 0L
+  for (chunk in chunk_results) {
+    particles$fam_mat[chunk$idxs, ] <- chunk$fam
+    particles$th1_mat[chunk$idxs, ] <- chunk$th1
+    particles$th2_mat[chunk$idxs, ] <- chunk$th2
+    mh_n_acc <- mh_n_acc + sum(chunk$acc)
+  }
+  
+  acc_pct <- 100 * mh_n_acc / mh_n_prop
+  cat(sprintf("MH acceptance = %4d / %4d  =  %.2f%%\n\n", mh_n_acc, mh_n_prop, acc_pct))
+  
+  list(particles = particles, acc_pct = acc_pct)
+}
+
+
 
 resample_move_old <- function(particles, newAncestors,
                               data_up_to_t, cl, type, cfg,
-                              skeleton = NULL, tr = NULL, temp_skel = NULL, true_bases=NULL) {
+                              skeleton = NULL, tr = NULL, temp_skel = NULL) {
   
   # ----- 1) RESAMPLE (row reindex) -----
   M <- nrow(particles$fam_mat)
@@ -800,54 +1071,80 @@ resample_move_old <- function(particles, newAncestors,
   tip_cache <- if (isTRUE(cfg$use_tail_informed_prior))
     precompute_tip_means(data_up_to_t, cfg) else NULL
   wobs <- if (isTRUE(cfg$use_weighted_ll))
-    tail_weights(data_up_to_t, tau = cfg$tauL,
-                 k = cfg$joint_k, eps = cfg$tail_eps) else NULL
+    tail_weights(data_up_to_t, tau = cfg$tauL, k = cfg$joint_k, eps = cfg$tail_eps) else NULL
   
-  # ship big read-only objects once
-  parallel::clusterExport(cl, c("particles","tip_cache","wobs"), envir = environment())
+  # Local copies (so we pass only what we need)
+  fam_mat <- particles$fam_mat
+  th1_mat <- particles$th1_mat
+  th2_mat <- particles$th2_mat
   
   mh_n_prop <- M * cfg$n_mh
-  tic("MH move")
   
-  if (identical(type, "standard")) {
-    mh_results <- parallel::parLapply(
-      cl, seq_len(M),
-      function(i, data_up_to_t, skeleton, cfg, tip_cache, wobs) {
-        fam <- as.integer(particles$fam_mat[i, ])
-        th1 <- as.numeric(particles$th1_mat[i, ])
-        th2 <- as.numeric(particles$th2_mat[i, ])
+  # ----- (2) CHUNK INDICES: ~nc tasks instead of M tasks -----
+  nc <- length(cl)
+  idx_chunks <- split(seq_len(M), rep(seq_len(nc), length.out = M))
+  
+  tic("MH move (chunked)")
+  
+  chunk_results <- parallel::parLapply(
+    cl, idx_chunks,
+    function(idxs, fam_mat, th1_mat, th2_mat, data_up_to_t, skeleton, cfg, tip_cache, wobs) {
+      
+      n_idx <- length(idxs)
+      K <- ncol(fam_mat)
+      
+      fam_out <- matrix(0L, n_idx, K)
+      th1_out <- matrix(0.0, n_idx, K)
+      th2_out <- matrix(0.0, n_idx, K)
+      acc_out <- integer(n_idx)
+      
+      for (jj in seq_along(idxs)) {
+        i <- idxs[jj]
+        
+        fam <- as.integer(fam_mat[i, ])
+        th1 <- as.numeric(th1_mat[i, ])
+        th2 <- as.numeric(th2_mat[i, ])
         
         acc_local <- 0L
         for (k in seq_len(cfg$n_mh)) {
-          res <- mh_step(fam, th1, th2, data_up_to_t, skeleton, cfg,
-                             tip_means_cache = tip_cache, wobs = wobs, true_bases=true_bases)
+          res <- mh_step(
+            fam, th1, th2,
+            data_up_to_t, skeleton, cfg,
+            tip_means_cache = tip_cache,
+            wobs = wobs
+          )
           fam <- res$fam; th1 <- res$th1; th2 <- res$th2
           if (isTRUE(res$last_accept)) acc_local <- acc_local + 1L
         }
-        list(fam = fam, th1 = th1, th2 = th2, acc = acc_local)
-      },
-      data_up_to_t, skeleton, cfg, tip_cache, wobs
-    )
-  } else {
-    stop("Only type='standard' is implemented for the matrix-based path.")
-  }
+        
+        fam_out[jj, ] <- fam
+        th1_out[jj, ] <- th1
+        th2_out[jj, ] <- th2
+        acc_out[jj]   <- acc_local
+      }
+      
+      list(idxs = idxs, fam = fam_out, th1 = th1_out, th2 = th2_out, acc = acc_out)
+    },
+    fam_mat, th1_mat, th2_mat, data_up_to_t, skeleton, cfg, tip_cache, wobs
+  )
   
   toc()
   
   # ----- 3) COLLECT -----
-  mh_n_acc <- sum(vapply(mh_results, `[[`, integer(1), "acc"))
-  for (i in seq_len(M)) {
-    particles$fam_mat[i, ] <- as.integer(mh_results[[i]]$fam)
-    particles$th1_mat[i, ] <- mh_results[[i]]$th1
-    particles$th2_mat[i, ] <- mh_results[[i]]$th2
+  mh_n_acc <- 0L
+  for (chunk in chunk_results) {
+    particles$fam_mat[chunk$idxs, ] <- chunk$fam
+    particles$th1_mat[chunk$idxs, ] <- chunk$th1
+    particles$th2_mat[chunk$idxs, ] <- chunk$th2
+    mh_n_acc <- mh_n_acc + sum(chunk$acc)
   }
   
   acc_pct <- 100 * mh_n_acc / mh_n_prop
-  cat(sprintf("MH acceptance = %4d / %4d  =  %.2f%%\n\n",
-              mh_n_acc, mh_n_prop, acc_pct))
+  cat(sprintf("MH acceptance = %4d / %4d  =  %.2f%%\n\n", mh_n_acc, mh_n_prop, acc_pct))
   
   list(particles = particles, acc_pct = acc_pct)
 }
+
 
 
 
@@ -1345,32 +1642,32 @@ compute_adapt_step_sd <- function(cfg, acc_pct, lambda = 0.25, target_acc = 0.30
 }
 
 ## Resample move
-
-mh_worker_standard <- function(idx, n_mh, slice, data_up_to_t, skeleton, cfg)
-{
-  p         <- slice[[idx]]
-  acc_local <- 0L
-  
-  for (k in seq_len(n_mh)) {
-    p <- mh_step(p, data_up_to_t, skeleton, cfg)
-    if (isTRUE(p$last_accept)) acc_local <- acc_local + 1L
-  }
-  
-  list(p = p, acc = acc_local)
-}
-
-mh_worker_block <- function(idx, n_mh, slice, data_up_to_t, temp_skel, tr, cfg)
-{
-  p         <- slice[[idx]]
-  acc_local <- 0L
-  
-  for (k in seq_len(n_mh)) {
-    p <- mh_step_in_tree(p, tr, data_up_to_t, temp_skel, cfg)
-    if (isTRUE(p$last_accept)) acc_local <- acc_local + 1L
-  }
-  
-  list(p = p, acc = acc_local)
-}
+# 
+# mh_worker_standard <- function(idx, n_mh, slice, data_up_to_t, skeleton, cfg)
+# {
+#   p         <- slice[[idx]]
+#   acc_local <- 0L
+#   
+#   for (k in seq_len(n_mh)) {
+#     p <- mh_step(p, data_up_to_t, skeleton, cfg)
+#     if (isTRUE(p$last_accept)) acc_local <- acc_local + 1L
+#   }
+#   
+#   list(p = p, acc = acc_local)
+# }
+# 
+# mh_worker_block <- function(idx, n_mh, slice, data_up_to_t, temp_skel, tr, cfg)
+# {
+#   p         <- slice[[idx]]
+#   acc_local <- 0L
+#   
+#   for (k in seq_len(n_mh)) {
+#     p <- mh_step_in_tree(p, tr, data_up_to_t, temp_skel, cfg)
+#     if (isTRUE(p$last_accept)) acc_local <- acc_local + 1L
+#   }
+#   
+#   list(p = p, acc = acc_local)
+# }
 
 
 
@@ -1840,67 +2137,67 @@ smc_predictive_sample <- function(particles,          # list of M particles
 
 
 
-
-
-## Tree by tree functions
-
-mh_step_in_tree <- function(p, tr, data_up_to_t, temp_skel, cfg) {
-  
-  if (tr == 1) {
-    edges_in_previous_trees <- 0L
-  } else {
-    edges_in_previous_trees <- cfg$d * (tr - 1) - (tr - 1) * tr / 2
-  }
-  first_edge <- edges_in_previous_trees + 1L
-  last_edge  <- edges_in_previous_trees + (cfg$d - tr)
-  if (tr == cfg$G) {
-    last_edge <- cfg$K
-  }
-  idx_tree   <- first_edge:last_edge        # vector of edge indices
-  
-  prop <- p
-  prop$theta <- p$theta + rnorm(cfg$K, 0, cfg$step_sd)
-  
-  vine_prop <- fast_vine_from_particle(prop, temp_skel)
-  prop_ll   <- sum(log(pmax(dvinecop(data_up_to_t, vine_prop),
-                            .Machine$double.eps)))
-  
-  vine_curr <- fast_vine_from_particle(p, temp_skel)
-  curr_ll   <- sum(log(pmax(dvinecop(data_up_to_t, vine_curr),
-                            .Machine$double.eps)))
-  
-  log_acc <- (prop_ll + log_prior(prop, cfg)) -
-    (curr_ll + log_prior(p, cfg))  
-  
-  if (log(runif(1)) < log_acc) {
-    p$theta       <- prop$theta
-    p$last_accept <- TRUE
-  } else {
-    p$last_accept <- FALSE
-  }
-  
-  return(p)
-}
-
-calculate_log_lik_tree_tr <- function(particle, skel_tr, u_row, t, tr, tr_prev, skeletons_by_tr, cfg) {
-  if (tr == 1) {
-    vine_j <- fast_vine_from_particle(particle, skel_tr)
-    dens_val <- dvinecop(u_row, vine_j)
-    return(log(dens_val + 1e-100))
-  }
-  
-  # For subsequent trees, we need the density of the current and previous model
-  # The pre-computation of skeletons_by_tr makes this much faster.
-  skel_tr_minus_1 <- skeletons_by_tr[[tr_prev]]
-  
-  vine_j_tr <- fast_vine_from_particle(particle, skel_tr)
-  dens_val_tr <- dvinecop(u_row, vine_j_tr)
-  
-  vine_j_prev <- fast_vine_from_particle(particle, skel_tr_minus_1)
-  dens_val_prev <- dvinecop(u_row, vine_j_prev)
-  
-  return(log(dens_val_tr + 1e-100) - log(dens_val_prev + 1e-100))
-}
+# 
+# 
+# ## Tree by tree functions
+# 
+# mh_step_in_tree <- function(p, tr, data_up_to_t, temp_skel, cfg) {
+#   
+#   if (tr == 1) {
+#     edges_in_previous_trees <- 0L
+#   } else {
+#     edges_in_previous_trees <- cfg$d * (tr - 1) - (tr - 1) * tr / 2
+#   }
+#   first_edge <- edges_in_previous_trees + 1L
+#   last_edge  <- edges_in_previous_trees + (cfg$d - tr)
+#   if (tr == cfg$G) {
+#     last_edge <- cfg$K
+#   }
+#   idx_tree   <- first_edge:last_edge        # vector of edge indices
+#   
+#   prop <- p
+#   prop$theta <- p$theta + rnorm(cfg$K, 0, cfg$step_sd)
+#   
+#   vine_prop <- fast_vine_from_particle(prop, temp_skel)
+#   prop_ll   <- sum(log(pmax(dvinecop(data_up_to_t, vine_prop),
+#                             .Machine$double.eps)))
+#   
+#   vine_curr <- fast_vine_from_particle(p, temp_skel)
+#   curr_ll   <- sum(log(pmax(dvinecop(data_up_to_t, vine_curr),
+#                             .Machine$double.eps)))
+#   
+#   log_acc <- (prop_ll + log_prior(prop, cfg)) -
+#     (curr_ll + log_prior(p, cfg))  
+#   
+#   if (log(runif(1)) < log_acc) {
+#     p$theta       <- prop$theta
+#     p$last_accept <- TRUE
+#   } else {
+#     p$last_accept <- FALSE
+#   }
+#   
+#   return(p)
+# }
+# 
+# calculate_log_lik_tree_tr <- function(particle, skel_tr, u_row, t, tr, tr_prev, skeletons_by_tr, cfg) {
+#   if (tr == 1) {
+#     vine_j <- fast_vine_from_particle(particle, skel_tr)
+#     dens_val <- dvinecop(u_row, vine_j)
+#     return(log(dens_val + 1e-100))
+#   }
+#   
+#   # For subsequent trees, we need the density of the current and previous model
+#   # The pre-computation of skeletons_by_tr makes this much faster.
+#   skel_tr_minus_1 <- skeletons_by_tr[[tr_prev]]
+#   
+#   vine_j_tr <- fast_vine_from_particle(particle, skel_tr)
+#   dens_val_tr <- dvinecop(u_row, vine_j_tr)
+#   
+#   vine_j_prev <- fast_vine_from_particle(particle, skel_tr_minus_1)
+#   dens_val_prev <- dvinecop(u_row, vine_j_prev)
+#   
+#   return(log(dens_val_tr + 1e-100) - log(dens_val_prev + 1e-100))
+# }
 
 
 

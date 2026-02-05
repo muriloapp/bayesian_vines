@@ -12,12 +12,19 @@ library(fGarch)
 ################################################################################
 
 dt_long <- read_excel('C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/data/data.xlsx')          
+
+library(dplyr)
+
+dt_long <- dt_long %>%
+  filter(Ticker %in% c("JPM","BAC", "C","MS","BK", "STT", "GS"))
+
+
 dt_long <- as.data.table(dt_long)
 dt_long[, Date := as.Date(Date, format = "%d/%m/%Y")]
 dt_wide <- dcast(dt_long, Date ~ Ticker, value.var = "Ret")
 setorder(dt_wide, Date)                           
 
-ret_xts <- xts(dt_wide[, -1, with = FALSE], order.by = dt_wide$Date)
+ret_xts <- xts(dt_wide[, -1], order.by = dt_wide$Date)
 ret_xts <- log1p(ret_xts)
 
 # Excluding MS due to data issues and excluding one particular row wihtou values for all assets
