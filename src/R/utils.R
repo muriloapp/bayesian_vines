@@ -337,13 +337,47 @@ make_skeleton_CVM <- function(U_train, trunc_tree = 2, structure = NULL) {      
   skeleton
 }
 
+# 
+# make_cluster <- function(n_cores, seed, exports) {
+#   cl <- makeCluster(n_cores)
+#   clusterSetRNGStream(cl, seed)
+#   clusterExport(cl, exports , envir = parent.frame())
+#   cl
+# }
 
-make_cluster <- function(n_cores, seed, exports) {
-  cl <- makeCluster(n_cores)
-  clusterSetRNGStream(cl, seed)
-  clusterExport(cl, exports , envir = parent.frame())
+make_cluster <- function(n_cores, seed, exports, envir = .GlobalEnv) {
+  cl <- parallel::makeCluster(n_cores)
+  parallel::clusterSetRNGStream(cl, seed)
+
+  # export from a stable environment (globals created by source())
+  parallel::clusterExport(cl, exports, envir = envir)
+
   cl
 }
+
+# make_cluster <- function(n_cores, seed,
+#                          exports_globals,
+#                          exports_locals = character(0),
+#                          globals_env = .GlobalEnv,
+#                          locals_env  = parent.frame()) {
+#   
+#   cl <- parallel::makeCluster(n_cores)
+#   parallel::clusterSetRNGStream(cl, seed)
+#   
+#   # Export "global" functions/constants from a stable env
+#   if (length(exports_globals)) {
+#     parallel::clusterExport(cl, exports_globals, envir = globals_env)
+#   }
+#   
+#   # Export "local" objects (cfg, skeleton, etc.) from the caller frame
+#   if (length(exports_locals)) {
+#     parallel::clusterExport(cl, exports_locals, envir = locals_env)
+#   }
+#   
+#   cl
+# }
+
+
 
 active_fams <- function(cfg) FAM_INFO[FAM_INFO$name %in% cfg$families, ]
 

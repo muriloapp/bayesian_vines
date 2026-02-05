@@ -27,22 +27,21 @@ run_empirical <- function() {
     # list(label = "tip_w504_M2000_tipk5",  use_tail_informed_prior = TRUE, W = 504L, M=2000L, tip_k=25),
     # list(label = "tip_w504_M2000_tipk15",  use_tail_informed_prior = TRUE, W = 504L, M=2000L, tip_k=76)
     
-    list(label = "tip_w252_M2000_tip",  use_tail_informed_prior = TRUE, W = 252L, M=2000L),#, q_flip = 0.2)
+    list(label = "tip_w252_M2000_tip",  use_tail_informed_prior = TRUE, W = 252L, M=3000L),#, q_flip = 0.2)
     list(label = "tip_w126_M2000_tip",  use_tail_informed_prior = TRUE, W = 126L, M=2000L),#, q_flip = 0.2)
     list(label = "tip_w504_M2000_tip",  use_tail_informed_prior = TRUE, W = 504L, M=2000L)#, q_flip = 0.2)
 
   )
   
- v=cfg_variants[[1]]
+ #v=cfg_variants[[1]]
   for (v in cfg_variants) {
     cfg <- modifyList(build_cfg(ncol(dat$U), trunc_tree=4), v[ setdiff(names(v),"label") ])
-    cfg$label <- v$label %||% "cfg"
+    cfg$label <- v$label
     set.seed(cfg$seed)
     
     data = dat
     res <- smc_full(dat, cfg)
     res$cfg <- cfg
-    res$alg <- if (isTRUE(cfg$use_weighted_ll)) "tail_weighted" else "standard"
     save_result(res, here("empirical_results"))
   }
 }

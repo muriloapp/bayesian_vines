@@ -42,7 +42,8 @@ smc_full <- function(data, cfg) {
     "bicop_dist", "vinecop_dist", "dvinecop",
     "rvinecop","bicop",
     # shared data objects 
-    "skeleton", "cfg",
+    #"skeleton", 
+    #"cfg",
     # diagnostics & prediction 
     "diagnostic_report", "compute_predictive_metrics",
     "compute_log_incr",
@@ -57,18 +58,53 @@ smc_full <- function(data, cfg) {
   )
   cl <- make_cluster(cfg$nc, cfg$seed, exports)
   parallel::clusterEvalQ(cl, {
+    library(data.table)
+    library(matrixStats)
+    library(rvinecopulib)
+    library(VineCopula)
+    NULL
+  })
+  
+  parallel::clusterEvalQ(cl, {
     Sys.setenv(
-      OMP_NUM_THREADS        = "1",
-      MKL_NUM_THREADS        = "1",
-      OPENBLAS_NUM_THREADS   = "1",
+      OMP_NUM_THREADS = "1",
+      MKL_NUM_THREADS = "1",
+      OPENBLAS_NUM_THREADS = "1",
       VECLIB_MAXIMUM_THREADS = "1",
-      GOTO_NUM_THREADS       = "1"
+      GOTO_NUM_THREADS = "1"
     )
     if (requireNamespace("RhpcBLASctl", quietly = TRUE)) {
       RhpcBLASctl::blas_set_num_threads(1)
       RhpcBLASctl::omp_set_num_threads(1)
     }
+    NULL
   })
+  
+  # cl <- make_cluster(
+  #   n_cores = cfg$nc,
+  #   seed    = cfg$seed,
+  #   exports_globals = exports,
+  #   exports_locals  = exports,
+  #   globals_env = .GlobalEnv,   # where your sourced functions/constants usually live
+  #   locals_env  = environment() # has cfg/skeleton created inside smc_full()
+  # )
+  on.exit(parallel::stopCluster(cl), add = TRUE)
+  # parallel::clusterEvalQ(cl, {
+  # 
+  #   # Sys.setenv(
+  #   #   OMP_NUM_THREADS        = "1",
+  #   #   MKL_NUM_THREADS        = "1",
+  #   #   OPENBLAS_NUM_THREADS   = "1",
+  #   #   VECLIB_MAXIMUM_THREADS = "1",
+  #   #   GOTO_NUM_THREADS       = "1"
+  #   # )
+  #   # if (requireNamespace("RhpcBLASctl", quietly = TRUE)) {
+  #   #   RhpcBLASctl::blas_set_num_threads(1)
+  #   #   RhpcBLASctl::omp_set_num_threads(1)
+  #   # }
+  # })
+  
+  cl20 <- structure(cl[1:20], class = class(cl))
   
 
   out <- list(
@@ -113,7 +149,7 @@ smc_full <- function(data, cfg) {
   # init particles
   U_init <- U[1:(cfg$W-1), , drop = FALSE]
   particles <- new_particles_mats(cfg, U_init)
-  out$ancestorIndices[,1] <- seq_len(M)
+  out$ancestorIndices[, 1] <- seq_len(M)
   
 
 for (t in (cfg$W+1):N) {
@@ -131,9 +167,9 @@ for (t in (cfg$W+1):N) {
       y_real_t <- y_real[idx,]
       out$log_pred[idx] <- compute_predictive_metrics(u_t, particles, skeleton, w/sum(w), cfg)$log_pred_density
 
-      #system.time(
-      #draws <- smc_predictive_sample_fast2_scoped(particles, skeleton, w, L = 20000, cl = cl[1:8])
-      #)
+      # system.time(
+      # draws <- smc_predictive_sample_fast2_scoped(particles, skeleton, w, L = 20000, cl = cl[1:20])
+      # )
       # system.time(
       #   R_draws <- smc_predictive_sample_fast2_grouped_epoch(
       #     w   = particles$w,
@@ -145,9 +181,8 @@ for (t in (cfg$W+1):N) {
       #     nc = 1               # keep 1 unless W*nc <= physical cores
       #   )
       # )
-      #system.time(
-      draws <- smc_predictive_sample_fast2_scoped2(particles, skeleton, w, L = 20000, cl = cl[1])
-      #)
+      draws <- smc_predictive_sample_fast2_scoped2(particles, skeleton, w, L = 20000, cl = cl20)
+      
       cmp  <- sweep(draws, 2, as.numeric(u_t), FUN = "<=")  # L x d logical
       pitV <- matrixStats::rowAlls(cmp)   
       out$pit_joint[idx] <- mean(pitV)   
@@ -220,14 +255,11 @@ for (t in (cfg$W+1):N) {
     if (ESS(w) < cfg$ess_thr * M && t < N) {
       newAncestors <- stratified_resample(w)
       data_up_to_t <- U[max(1, t - cfg$W + 1):(t-1), , drop = FALSE]
-      system.time(
-      move_out <- resample_move_old(particles, newAncestors, data_up_to_t, cl[1:7],
+
+      move_out <- resample_move_old(particles, newAncestors, data_up_to_t, cl,
                                     cfg$type, cfg, skeleton = skeleton)
-      )
-      system.time(
-        move_out <- resample_move_old3(particles, newAncestors, data_up_to_t, cl[1:7],
-                                      cfg$type, cfg, skeleton = skeleton)
-      )
+      
+
       particles <- move_out$particles
       out$mh_acc_pct[t] <- move_out$acc_pct
       if (cfg$adapt_step_sd) {

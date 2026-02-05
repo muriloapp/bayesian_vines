@@ -48,7 +48,7 @@ build_cfg <- function(d,
     ess_thr      = 0.50,                       # ESS threshold
     n_mh         = 3L,                         # number of mh iterations
     W            = W,                          # look-back period to mh_step and to compute empirical tails
-    k_step       = 1000000L,                   # print diagnostic every k_step obs
+    k_step       = 1000,                   # print diagnostic every k_step obs
     
     W_predict    = W_predict,                  # training period -> start to predict after W_predict
     q_flip       = q_flip,                     # prob of proposing a family flip
@@ -58,10 +58,10 @@ build_cfg <- function(d,
     families_first = families_first,
     families_deep  = families_deep,
     adapt_step_sd  = adapt_step_sd,
-    seed         = 42L,
+    seed         = 11111L,
     G            = 2L,
     edge_tree    = edge_tree,                  # <- length == K
-    nc           = 7,                          # cores
+    nc           = 63,                          # cores
     type         = "standard",
     alphas       = c(0.1, 0.05, 0.025, 0.01),  # alpha for tail risk
     use_tail_informed_prior = FALSE,           # turn on strong tail-centered priors
@@ -89,10 +89,10 @@ build_cfg <- function(d,
 
 source(here("src/R", "utils.R"))
 source(here("src/R", "core_functions.R"))
-source(here("src/models", "smc_stand_vine.R"))
+#source(here("src/models", "smc_stand_vine.R"))
 #source(here("src/models", "smc_block_vine.R"))
 source(here("src/R", "results_helpers.R"))
-source(here("src/models", "main_empirical.R"))
+#source(here("src/models", "main_empirical.R"))
 source(here("src/R", "metrics.R"))
 
 
