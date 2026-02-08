@@ -99,78 +99,141 @@ for (ml in mean_len_grid) {
 
 
 
+# 
+# 
+# folder <- "simul_results/SMC/mlNA_w252_wp1000_re001"   # <- change this
+# files  <- list.files(folder, pattern = "\\.rds$", full.names = TRUE)
+# 
+# # read all files (each file is assumed to be a list)
+# obj_list <- lapply(files, readRDS)
+# 
+# # extract the element you want (file[[1]]$covar, file[[2]]$covar, ...)
+# rmse_list <- lapply(obj_list, `[[`, "rmse_mae_from_covar")
+# rmse_all <- do.call(rbind, rmse_list)
+# 
+# 
+# with(rmse_all, mean(RMSE[cond_asset == 2 & scenario == "a0.1b0.1"], na.rm = TRUE))
+# with(rmse_all, mean(MAE[cond_asset == 2 & scenario == "a0.1b0.1"], na.rm = TRUE))
+# with(rmse_all, mean(RMSE[cond_asset == 2 & scenario == "a0.1b0.05"], na.rm = TRUE))
+# with(rmse_all, mean(MAE[cond_asset == 2 & scenario == "a0.1b0.05"], na.rm = TRUE))
+# with(rmse_all, mean(RMSE[cond_asset == 2 & scenario == "a0.05b0.05"], na.rm = TRUE))
+# with(rmse_all, mean(MAE[cond_asset == 2 & scenario == "a0.05b0.05"], na.rm = TRUE))
+# with(rmse_all, mean(RMSE[cond_asset == 2 & scenario == "a0.05b0.025"], na.rm = TRUE))
+# with(rmse_all, mean(MAE[cond_asset == 2 & scenario == "a0.05b0.025"], na.rm = TRUE))
+# 
+# 
+# 
+# covar_list <- lapply(obj_list, `[[`, "eval_covar_asset")
+# 
+# covar_all <- do.call(rbind, covar_list)
+# 
+# with(covar_all, mean(rate[asset == 2 & alpha_j == 0.1 & alpha_port == 0.1], na.rm = TRUE))
+# with(covar_all, mean(rate[asset == 2 & alpha_j == 0.1 & alpha_port == 0.05], na.rm = TRUE))
+# with(covar_all, mean(rate[asset == 2 & alpha_j == 0.05 & alpha_port == 0.05], na.rm = TRUE))
+# with(covar_all, mean(rate[asset == 2 & alpha_j == 0.05 & alpha_port == 0.025], na.rm = TRUE))
+# 
+# 
+# 
+# (covar_all[covar_all$asset==1 & covar_all$alpha_j==0.05 & covar_all$alpha_port==0.025,,drop=FALSE])
+# 
+# covar_all[covar_all$scenario =="a0.05b0.05",,drop=FALSE]
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+# folder <- "simul_results/NAIVE/mlNA_w252_wp0252_re252"   # <- change this
+# files  <- list.files(folder, pattern = "\\.rds$", full.names = TRUE)
+# obj_list <- lapply(files, readRDS)
+# covar_list <- lapply(obj_list, `[[`, "rmse_mae_from_covar")
+# covar_list <- lapply(obj_list, `[[`, "eval_covar_asset")
+# 
+# covar_list <- Filter(Negate(is.null), covar_list)
+# covar_all <- do.call(rbind, covar_list)
+# 
+# 
+# with(covar_all, mean(rate[asset == 2 & alpha_j == 0.1 & alpha_port == 0.05], na.rm = TRUE))
+# with(covar_all, mean(rate[asset == 2 & alpha_j == 0.05 & alpha_port == 0.05], na.rm = TRUE))
+# with(covar_all, mean(rate[asset == 2 & alpha_j == 0.05 & alpha_port == 0.025], na.rm = TRUE))
+# 
+# 
+# with(covar_all, mean(RMSE[cond_asset == 2 & scenario == "a0.1b0.05"], na.rm = TRUE))
+# with(covar_all, mean(MAE[cond_asset == 2 & scenario == "a0.1b0.05"], na.rm = TRUE))
+# with(covar_all, mean(RMSE[cond_asset == 2 & scenario == "a0.05b0.05"], na.rm = TRUE))
+# with(covar_all, mean(MAE[cond_asset == 2 & scenario == "a0.05b0.05"], na.rm = TRUE))
+# with(covar_all, mean(RMSE[cond_asset == 2 & scenario == "a0.05b0.025"], na.rm = TRUE))
+# with(covar_all, mean(MAE[cond_asset == 2 & scenario == "a0.05b0.025"], na.rm = TRUE))
+# 
+# 
+# 
+# 
+# 
+# out2 <- covar_all[covar_all$cond_asset == 2 & covar_all$scenario =="a0.05b0.05",,drop=FALSE]$RMSE
+# 
+# 
+# 
 
 
-folder <- "simul_results/SMC/mlNA_w252_wp1000_re001"   # <- change this
-files  <- list.files(folder, pattern = "\\.rds$", full.names = TRUE)
 
-# read all files (each file is assumed to be a list)
-obj_list <- lapply(files, readRDS)
+library(dplyr)
+library(tidyr)
+library(openxlsx)
 
-# extract the element you want (file[[1]]$covar, file[[2]]$covar, ...)
-covar_list <- lapply(obj_list, `[[`, "rmse_mae_from_covar")
-covar_list <- lapply(obj_list, `[[`, "eval_covar_asset")
+folder_rel <- "SMC/ml500_w126_wp1000_re001"
+#folder_rel <- "NAIVE_300/ml500_w252_wp0252_re063"
 
+folder     <- file.path("simul_results", folder_rel)
 
-# (optional) keep only non-missing covar elements
-covar_list <- Filter(Negate(is.null), covar_list)
+scenarios_tbl <- tibble(
+  alpha_j    = c(0.10, 0.10, 0.05, 0.05),
+  alpha_port = c(0.10, 0.05, 0.05, 0.025)
+) %>%
+  mutate(
+    scenario = sprintf("a%sb%s", alpha_j, alpha_port),
+    Col      = sprintf("(%g,%g)", alpha_j, alpha_port)
+  )
 
-# bind vertically
-covar_all <- do.call(rbind, covar_list)
+summarize_folder <- function(folder, cond_asset = 2, asset = 2, scenarios_tbl) {
+  files <- list.files(folder, pattern = "\\.rds$", full.names = TRUE)
+  if (length(files) == 0) stop("No .rds files found in: ", folder)
+  
+  obj <- lapply(files, readRDS)
+  
+  rmse_all  <- bind_rows(lapply(obj, `[[`, "rmse_mae_from_covar"))
+  covar_all <- bind_rows(lapply(obj, `[[`, "eval_covar_asset"))
+  
+  rmse_sum <- rmse_all %>%
+    filter(cond_asset == !!cond_asset) %>%
+    group_by(scenario) %>%
+    summarise(RMSE = mean(RMSE, na.rm = TRUE),
+              MAE  = mean(MAE,  na.rm = TRUE), .groups = "drop")
+  
+  vr_sum <- covar_all %>%
+    filter(asset == !!asset) %>%
+    group_by(alpha_j, alpha_port) %>%
+    summarise(ViolationRate = mean(rate, na.rm = TRUE), .groups = "drop") %>%
+    mutate(scenario = sprintf("a%sb%s", alpha_j, alpha_port))
+  
+  scenarios_tbl %>%
+    select(scenario, Col) %>%
+    left_join(rmse_sum, by = "scenario") %>%
+    left_join(vr_sum %>% select(scenario, ViolationRate), by = "scenario")
+}
 
+res <- summarize_folder(folder, scenarios_tbl = scenarios_tbl)
 
-with(covar_all, mean(rate[asset == 2 & alpha_j == 0.1 & alpha_port == 0.05], na.rm = TRUE))
-with(covar_all, mean(rate[asset == 2 & alpha_j == 0.05 & alpha_port == 0.05], na.rm = TRUE))
-with(covar_all, mean(rate[asset == 2 & alpha_j == 0.05 & alpha_port == 0.025], na.rm = TRUE))
+tab <- res %>%
+  pivot_longer(c(RMSE, MAE, ViolationRate), names_to = "Metric", values_to = "Value") %>%
+  mutate(Metric = recode(Metric, ViolationRate = "Violation rate")) %>%
+  select(Metric, Col, Value) %>%
+  pivot_wider(names_from = Col, values_from = Value) %>%
+  arrange(factor(Metric, levels = c("RMSE", "MAE", "Violation rate")))
 
-with(covar_all, mean(RMSE[cond_asset == 2 & scenario == "a0.1b0.05"], na.rm = TRUE))
-with(covar_all, mean(MAE[cond_asset == 2 & scenario == "a0.1b0.05"], na.rm = TRUE))
-with(covar_all, mean(RMSE[cond_asset == 2 & scenario == "a0.05b0.05"], na.rm = TRUE))
-with(covar_all, mean(MAE[cond_asset == 2 & scenario == "a0.05b0.05"], na.rm = TRUE))
-with(covar_all, mean(RMSE[cond_asset == 2 & scenario == "a0.05b0.025"], na.rm = TRUE))
-with(covar_all, mean(MAE[cond_asset == 2 & scenario == "a0.05b0.025"], na.rm = TRUE))
-
-
-
-(covar_all[covar_all$asset==1 & covar_all$alpha_j==0.05 & covar_all$alpha_port==0.025,,drop=FALSE])
-
-covar_all[covar_all$scenario =="a0.05b0.05",,drop=FALSE]
-
-
-
-
-
-
-
-folder <- "simul_results/NAIVE/mlNA_w252_wp0252_re252"   # <- change this
-files  <- list.files(folder, pattern = "\\.rds$", full.names = TRUE)
-obj_list <- lapply(files, readRDS)
-covar_list <- lapply(obj_list, `[[`, "rmse_mae_from_covar")
-covar_list <- lapply(obj_list, `[[`, "eval_covar_asset")
-
-covar_list <- Filter(Negate(is.null), covar_list)
-covar_all <- do.call(rbind, covar_list)
-
-
-with(covar_all, mean(rate[asset == 2 & alpha_j == 0.1 & alpha_port == 0.05], na.rm = TRUE))
-with(covar_all, mean(rate[asset == 2 & alpha_j == 0.05 & alpha_port == 0.05], na.rm = TRUE))
-with(covar_all, mean(rate[asset == 2 & alpha_j == 0.05 & alpha_port == 0.025], na.rm = TRUE))
-
-
-with(covar_all, mean(RMSE[cond_asset == 2 & scenario == "a0.1b0.05"], na.rm = TRUE))
-with(covar_all, mean(MAE[cond_asset == 2 & scenario == "a0.1b0.05"], na.rm = TRUE))
-with(covar_all, mean(RMSE[cond_asset == 2 & scenario == "a0.05b0.05"], na.rm = TRUE))
-with(covar_all, mean(MAE[cond_asset == 2 & scenario == "a0.05b0.05"], na.rm = TRUE))
-with(covar_all, mean(RMSE[cond_asset == 2 & scenario == "a0.05b0.025"], na.rm = TRUE))
-with(covar_all, mean(MAE[cond_asset == 2 & scenario == "a0.05b0.025"], na.rm = TRUE))
-
-
-
-
-
-out2 <- covar_all[covar_all$cond_asset == 2 & covar_all$scenario =="a0.05b0.05",,drop=FALSE]$RMSE
-
-
+out_file <- file.path("simul_results/", paste0("tables/", folder_rel, ".xlsx"))
+dir.create(dirname(out_file), recursive = TRUE, showWarnings = FALSE)
+write.xlsx(tab, out_file, overwrite = TRUE)
 
 
 
