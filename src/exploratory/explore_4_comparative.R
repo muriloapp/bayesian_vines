@@ -334,8 +334,8 @@ out_list <- list(
   #smc126_10   = readRDS("empirical_results/standard_tip_w126_M2000_tipk10.rds"),
   #smc126_15   = readRDS("empirical_results/standard_tip_w126_M2000_tipk15.rds"),
    #smc252_5   = readRDS("empirical_results/standard_tip_w252_M2000_tipk5.rds"),
-   #smc252   = readRDS("empirical_results/unnamedAlg_tip_w252_M3000_tip.rds")
-   #smc126   = readRDS("empirical_results/unnamedAlg_tip_w126_M3000_tip.rds")
+   smc252   = readRDS("empirical_results/unnamedAlg_tip_w252_M3000_tip.rds")
+  # smc126   = readRDS("empirical_results/unnamedAlg_tip_w126_M3000_tip.rds"),
    #smc504   = readRDS("empirical_results/unnamedAlg_tip_w504_M3000_tip.rds")
    #smc252_15   = readRDS("empirical_results/standard_tip_w252_M2000_tipk15.rds"),
    #smc504_5   = readRDS("empirical_results/standard_tip_w504_M2000_tipk5.rds"),
@@ -344,7 +344,7 @@ out_list <- list(
    
    #smc252_10_flat   = readRDS("empirical_results/standard_5d_flat.rds"),
    #alt_gaussian   = readRDS("empirical_results/naive_5d_gaussian.rds"),
-   alt   = readRDS("empirical_results/naive_1refit.rds")
+   #alt   = readRDS("empirical_results/naive_1refit.rds")
 )
 
 # Choose period & assets by name (Date handling is centralized and consistent)
@@ -367,7 +367,7 @@ cmp <- compare_models(
 )
 
 cmp$port_var
-cmp$covar[(alpha_j == 0.05)&(alpha_port  == 0.05)]
+cmp$covar[(alpha_j == 0.05)&(alpha_port  == 0.025)]
 
 # Tidy results ready for tables/plots:
 # cmp$port_var  # columns: model, alpha, n, hits, rate, kupiec, ind, cc
