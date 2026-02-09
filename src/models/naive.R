@@ -6,20 +6,23 @@ library(data.table)
 source(here("src/R", "utils.R"))
 source(here("src/R", "metrics.R"))
 
-
-build_cfg <- function(d,
-                      K = d * (d - 1) / 2) {
+#OK
+build_cfg <- function(d, trunc_tree = 4, K = d * (d - 1) / 2) {
+  K <- K_from_trunc(d, trunc_tree)
+  
   list(
     d       = d,
     K       = K,
-    W_predict    = 756L,                                 
+    seed  = 11111,
+    W_predict    = 1260L,                                 
     alphas     = c(.1, .05, .025, .01),
-    nc       = max(parallel::detectCores()-1, 1)
+    nc       = max(parallel::detectCores()-1, 1),
+    trunc_tree = trunc_tree
   )
 }
 
 map_families <- function(fams) {
-  mapping <- c(indep = 0, gaussian = 1, bb1 = 3, bb8 = 6)
+  mapping <- c(indep = 0, gaussian = 1, bb1 = 3, bb8 = 6, )
   return(unname(mapping[fams]))
 }
 
@@ -63,7 +66,7 @@ extend_with_gaussian <- function(vinecop_t1, structure_full) {
   obj
 }
 
-extend_with_t <- function(vinecop_t1, structure_full) {
+extend_with_t <- function(vinecop_t1, structure_full, cfg) {
   # get dimension from structure (or from T1 length + 1)
   d <- dim(structure_full)[1]
   
@@ -72,10 +75,10 @@ extend_with_t <- function(vinecop_t1, structure_full) {
   
   # ensure 'pair_copulas' has d-1 trees; keep Tree 1 as-is
   pcs <- obj$pair_copulas
-  pcs <- c(pcs, vector("list", (d - 1) - length(pcs)))  # pad if needed
+ # pcs <- c(pcs, vector("list", (cfg$trunc_tree - 1) - length(pcs)))  # pad if needed
   
   # fill Trees 2..(d-1) with Gaussian placeholders
-  for (t in 2:(d - 1)) {
+  for (t in 2:(cfg$trunc_tree)) {
     pcs[[t]] <- replicate(d - t, bicop_dist("t", parameters = c(0,5)), simplify = FALSE)
   }
   obj$pair_copulas <- pcs
@@ -89,15 +92,21 @@ extend_with_t <- function(vinecop_t1, structure_full) {
 #####################################################################################
 
 
+SCEN_COVAR <- c(
+  "a0.05b0.05", "a0.05b0.1", "a0.1b0.1", "a0.1b0.05",
+  "a0.05b0.025", "a0.025b0.05"
+)
 
 
-n_assets <- 1:5
+#n_assets <- 1:5
 
-data <- import_data(drop_first_col = TRUE, n_assets = 5)
+data <- import_data(drop_first_col = TRUE, n_assets = 7)
 
 
 U         <- data$U
 cfg <- build_cfg(d = ncol(U))
+set.seed(cfg$seed)
+
 N <- nrow(U); K <- cfg$K; tickers <- colnames(U); A <- length(cfg$alphas)
 n_oos <- N - cfg$W_predict; d <- cfg$d; t_train <- cfg$W_predict
 
@@ -143,7 +152,10 @@ out <- list(
     wCRPS = numeric(n_oos)
   ),
   
-  CoVaR_tail = array(NA_real_, c(n_oos, d, 4), dimnames = list(NULL, tickers, c("a0.05b0.05","a0.05b0.1","a0.1b0.1","a0.1b0.05")))
+  CoVaR_tail = array(
+    NA_real_, c(n_oos, d, length(SCEN_COVAR)),
+    dimnames = list(NULL, tickers, SCEN_COVAR)
+  )
 )
 
 
@@ -152,29 +164,30 @@ out <- list(
 
 for (t in seq_len(n_oos)) {
   test_idx <- t_train + t
-  u_train <- U[(test_idx - t_train):(test_idx - 1), , drop = FALSE]
+  u_train <- U[(test_idx - 252):(test_idx - 1), , drop = FALSE]
   y_real_t <- y_real[t,]
   
-  if (t == 1)  skel <- make_skeleton_CVM(u_train, trunc_tree = 4)
-  #fit_t1
-  model <- vinecop(u_train,
-                   family_set = c('gaussian'),#c("bb1", "bb7", "t"),
+  if (t == 1)  skel <- make_skeleton_CVM(u_train, cfg$trunc_tree)  # do not truncate here yet
+
+  if (t == 1 | t%%63==0) {
+  model1 <- vinecop(u_train,
+                   family_set = c("bb1", "bb7", "t"),
                    structure   = skel$structure,
                    allow_rotations = TRUE,
-                   trunc_lvl       = 4)#1
+                   trunc_lvl       = cfg$trunc_tree)
   
   #template_vinecop  <- extend_with_gaussian(fit_t1, skel$structure)
-  # template_vinecop  <- extend_with_t(fit_t1, skel$structure)
+  template_vinecop  <- extend_with_t(model1, skel$structure, cfg)
   # 
-  # model <- vinecop(
-  #   u_train,
-  #   vinecop_object  = template_vinecop,  # <-- must be class 'vinecop'
-  #   par_method      = "mle",
-  #   allow_rotations = FALSE              # rotations irrelevant for Gaussian
-  # )
-  # 
+  model <- vinecop(
+    u_train,
+    vinecop_object  = template_vinecop,  # <-- must be class 'vinecop'
+    par_method      = "mle",
+    allow_rotations = FALSE              # rotations irrelevant for Gaussian
+  )
+  }
   
-  out$fam_hist[t, ] <- map_families(unlist(get_all_families(model, trees = NA)))
+  out$fam_hist[t, ] <- (unlist(get_all_families(model, trees = NA)))
   out$par1_hist[t, ] <- extract_params(model)$par1
   out$par2_hist[t, ] <- extract_params(model)$par2
   out$rotation_hist[t, ] <- extract_rotations(model)
@@ -218,20 +231,27 @@ for (t in seq_len(n_oos)) {
   
   
   # CoVaR
+  k025 <- which.min(abs(cfg$alphas - 0.025))
   k5  <- which.min(abs(cfg$alphas - 0.05))
   k10 <- which.min(abs(cfg$alphas - 0.10))
   
+  VaRj_025 <- rs$VaR[, k025]
   VaRj_5  <- rs$VaR[, k5]   # d-vector
   VaRj_10 <- rs$VaR[, k10]
+  
   covar5  <- covar_tail_vec(R_t, r_p, VaRj_5,  port_alpha = 0.05, minN = 50)
   covar5b10  <- covar_tail_vec(R_t, r_p, VaRj_5,  port_alpha = 0.1, minN = 50)
   covar10 <- covar_tail_vec(R_t, r_p, VaRj_10, port_alpha = 0.10, minN = 50)
   covar10b5 <- covar_tail_vec(R_t, r_p, VaRj_10, port_alpha = 0.05, minN = 50)
+  covar5b0025 <- covar_tail_vec(R_t, r_p, VaRj_5,   port_alpha = 0.025, minN = 50)
+  covar025b5  <- covar_tail_vec(R_t, r_p, VaRj_025, port_alpha = 0.05,  minN = 50)
   
   out$CoVaR_tail[t, , "a0.05b0.05"] <- covar5
   out$CoVaR_tail[t, , "a0.05b0.1"] <- covar5b10
   out$CoVaR_tail[t, , "a0.1b0.1"] <- covar10
   out$CoVaR_tail[t, , "a0.1b0.05"] <- covar10b5
+  out$CoVaR_tail[t, , "a0.05b0.025"]  <- covar5b0025
+  out$CoVaR_tail[t, , "a0.025b0.05"]  <- covar025b5
   
   
   print(t)
@@ -240,7 +260,7 @@ for (t in seq_len(n_oos)) {
   
 out$cfg <- cfg
   
-saveRDS(out, file = file.path("empirical_results", "naive_monthly_5d_gaussian.rds"))
+saveRDS(out, file = file.path("empirical_results", "naive_63refit.rds"))
 
 
 
