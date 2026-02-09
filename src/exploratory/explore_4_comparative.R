@@ -199,45 +199,101 @@ evaluate_model <- function(out, data,
     }))
   }))
   
-  # 6) CoVaR backtests (α_j x α_port)
-  grid <- CJ(alpha_j = alphas_covar, alpha_port = alphas_covar, sorted = TRUE)
-  # available CoVaR labels in the 3rd dim:
-  labs_avail <- if (!is.null(dimnames(CoVaR)[[3]])) dimnames(CoVaR)[[3]] else NULL
+  # # 6) CoVaR backtests (α_j x α_port)
+  # grid <- CJ(alpha_j = alphas_covar, alpha_port = alphas_covar, sorted = TRUE)
+  # # available CoVaR labels in the 3rd dim:
+  # labs_avail <- if (!is.null(dimnames(CoVaR)[[3]])) dimnames(CoVaR)[[3]] else NULL
   
+  
+  covar_labs <- dimnames(CoVaR)[[3]]
+  if (is.null(covar_labs)) stop("CoVaR array is missing 3rd dimension names (e.g., 'a0.05b0.05').")
+  
+  # Parse the labels (e.g., "a0.05b0.025") into a data.table
+  # Pattern: ^a(number)b(number)$
+  grid <- rbindlist(lapply(covar_labs, function(lbl) {
+    m <- regexec("^a([0-9\\.]+)b([0-9\\.]+)$", lbl)
+    parts <- regmatches(lbl, m)[[1]]
+    
+    if (length(parts) == 3) {
+      list(
+        label      = lbl,                   # Keep original label to avoid reconstruction errors
+        alpha_j    = as.numeric(parts[2]), 
+        alpha_port = as.numeric(parts[3])
+      )
+    } else {
+      NULL # Skip valid labels if they don't match the pattern
+    }
+  }))
+  
+  # Now iterate over the *existing* scenarios
   dt_covar <- rbindlist(lapply(seq_len(nrow(grid)), function(i) {
-    a <- grid$alpha_j[i]
-    b <- grid$alpha_port[i]
+    
+    # Extract pre-parsed values
+    lab <- grid$label[i] 
+    a   <- grid$alpha_j[i]
+    b   <- grid$alpha_port[i]
+    
+    # Find index for Asset VaR (alpha_j)
+    # Note: Ensure 'a' exists in your main 'alphas_out' or this will fail
     k <- .which_alpha(alphas_out, a)
     
-    # simple label (and a robust fallback if names are like "a0.10b0.10")
-    lab_simple <- paste0("a", a, "b", b)
-    lab <- lab_simple
-    if (!is.null(labs_avail) && !(lab_simple %in% labs_avail)) {
-      lab_alt <- paste0("a", formatC(a, format = "f", digits = 2),
-                        "b", formatC(b, format = "f", digits = 2))
-      if (lab_alt %in% labs_avail) lab <- lab_alt
-      # else: keep lab_simple; will error clearly if not found
-    }
-    
+    # Slice data
     VaRj  <- matrix(riskVaR[, , k], ncol = d); colnames(VaRj) <- tickers
+    # Use 'lab' directly - no need to guess format "0.1" vs "0.10"
     CoVab <- CoVaR[, , lab, drop = FALSE][, , 1]; colnames(CoVab) <- tickers
     
     cond <- covar_hits_by_j(rp, as.data.table(Y), VaRj, CoVab)
     
     rbindlist(lapply(seq_len(d), function(j) {
       hj <- cond$hits[[j]]
+      # Handle cases with 0 events
       if (length(hj) == 0) {
         data.table(asset = tickers[j], alpha_j = a, alpha_port = b,
                    T_event = 0L, rate = NA_real_, kupiec = NA_real_, ind = NA_real_, cc = NA_real_)
       } else {
         data.table(asset = tickers[j], alpha_j = a, alpha_port = b,
                    T_event = length(hj), rate = mean(hj),
-                   kupiec = kupiec_test(hj, b)$pval,
+                   kupiec = kupiec_test(hj, b)$pval, # Test against alpha_port (b)
                    ind    = christoffersen_ind_test(hj)$pval,
                    cc     = christoffersen_cc_test(hj, b)$pval)
       }
     }))
   }))
+  
+  # dt_covar <- rbindlist(lapply(seq_len(nrow(grid)), function(i) {
+  #   a <- grid$alpha_j[i]
+  #   b <- grid$alpha_port[i]
+  #   k <- .which_alpha(alphas_out, a)
+  #   
+  #   # simple label (and a robust fallback if names are like "a0.10b0.10")
+  #   lab_simple <- paste0("a", a, "b", b)
+  #   lab <- lab_simple
+  #   if (!is.null(labs_avail) && !(lab_simple %in% labs_avail)) {
+  #     lab_alt <- paste0("a", formatC(a, format = "f", digits = 2),
+  #                       "b", formatC(b, format = "f", digits = 2))
+  #     if (lab_alt %in% labs_avail) lab <- lab_alt
+  #     # else: keep lab_simple; will error clearly if not found
+  #   }
+  #   
+  #   VaRj  <- matrix(riskVaR[, , k], ncol = d); colnames(VaRj) <- tickers
+  #   CoVab <- CoVaR[, , lab, drop = FALSE][, , 1]; colnames(CoVab) <- tickers
+  #   
+  #   cond <- covar_hits_by_j(rp, as.data.table(Y), VaRj, CoVab)
+  #   
+  #   rbindlist(lapply(seq_len(d), function(j) {
+  #     hj <- cond$hits[[j]]
+  #     if (length(hj) == 0) {
+  #       data.table(asset = tickers[j], alpha_j = a, alpha_port = b,
+  #                  T_event = 0L, rate = NA_real_, kupiec = NA_real_, ind = NA_real_, cc = NA_real_)
+  #     } else {
+  #       data.table(asset = tickers[j], alpha_j = a, alpha_port = b,
+  #                  T_event = length(hj), rate = mean(hj),
+  #                  kupiec = kupiec_test(hj, b)$pval,
+  #                  ind    = christoffersen_ind_test(hj)$pval,
+  #                  cc     = christoffersen_cc_test(hj, b)$pval)
+  #     }
+  #   }))
+  # }))
   
   list(port_var = dt_port[], asset_var = dt_asset[], covar = dt_covar[])
 }
@@ -270,7 +326,7 @@ compare_models <- function(out_list_named,
 
 # ---- example usage ------------------------------------------------------------
 # Load data once
-data <- import_data(drop_first_col = FALSE, n_assets = 5)
+data <- import_data(drop_first_col = FALSE, n_assets = 7)
 
 # Load as many 'out' objects as you want and name them for comparison
 out_list <- list(
@@ -278,20 +334,22 @@ out_list <- list(
   #smc126_10   = readRDS("empirical_results/standard_tip_w126_M2000_tipk10.rds"),
   #smc126_15   = readRDS("empirical_results/standard_tip_w126_M2000_tipk15.rds"),
    #smc252_5   = readRDS("empirical_results/standard_tip_w252_M2000_tipk5.rds"),
-   smc252_10   = readRDS("empirical_results/standard_tip_w252_M2000_tipk10.rds"),
+   #smc252   = readRDS("empirical_results/unnamedAlg_tip_w252_M3000_tip.rds")
+   #smc126   = readRDS("empirical_results/unnamedAlg_tip_w126_M3000_tip.rds")
+   #smc504   = readRDS("empirical_results/unnamedAlg_tip_w504_M3000_tip.rds")
    #smc252_15   = readRDS("empirical_results/standard_tip_w252_M2000_tipk15.rds"),
    #smc504_5   = readRDS("empirical_results/standard_tip_w504_M2000_tipk5.rds"),
    #smc504_10   = readRDS("empirical_results/standard_tip_w504_M2000_tipk10.rds"),
    #smc504_15   = readRDS("empirical_results/standard_tip_w504_M2000_tipk15.rds")
    
-   smc252_10_flat   = readRDS("empirical_results/standard_5d_flat.rds"),
-   alt_gaussian   = readRDS("empirical_results/naive_5d_gaussian.rds"),
-   alt   = readRDS("empirical_results/out_naive_3_5d_extend_t.rds")
+   #smc252_10_flat   = readRDS("empirical_results/standard_5d_flat.rds"),
+   #alt_gaussian   = readRDS("empirical_results/naive_5d_gaussian.rds"),
+   alt   = readRDS("empirical_results/naive_1refit.rds")
 )
 
 # Choose period & assets by name (Date handling is centralized and consistent)
-date_from <- as.Date("2004-01-01")
-date_to   <- as.Date("2025-01-01")
+date_from <- as.Date("2005-01-01")
+date_to   <- as.Date("2026-01-01")
 assets_sel <- NULL            # or c("AIG","AXP","BAC") to force a set/order
 
 #out <- readRDS("C:/Users/55419/Documents/Research/project_1/Code/Exploratory/smc_vines/empirical_results/test.rds")
@@ -308,12 +366,13 @@ cmp <- compare_models(
   alphas_covar   = c(0.10, 0.05)
 )
 
+cmp$port_var
 cmp$covar[(alpha_j == 0.05)&(alpha_port  == 0.05)]
 
 # Tidy results ready for tables/plots:
 # cmp$port_var  # columns: model, alpha, n, hits, rate, kupiec, ind, cc
 # cmp$asset_var # columns: model, asset, alpha, n, hits, rate, kupiec, ind, cc
-df <- (cmp$covar[(alpha_j == 0.05)&(alpha_port  == 0.05)&(asset  == "AIG")][,c("model", "rate","kupiec","cc")])    # columns: model, asset, alpha_j, alpha_port, T_event, rate, kupiec, ind, cc
+df <- (cmp$covar[(alpha_j == 0.05)&(alpha_port  == 0.05)&(asset  == "MS")][,c("model", "rate","kupiec","cc")])    # columns: model, asset, alpha_j, alpha_port, T_event, rate, kupiec, ind, cc
 df$rate <- round(df$rate, 3)
 df$kupiec <- round(df$kupiec, 3)
 df$cc <- round(df$cc, 3)
