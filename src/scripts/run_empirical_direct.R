@@ -22,10 +22,8 @@ dat <- import_data(drop_first_col = TRUE, n_assets = 7)
 
 # Variants
 cfg_variants <- list(
-  list(label = "tip38_w252_M5000", use_tail_informed_prior = TRUE, tip_k=38, W = 252L, M = 5000L),
-  list(label = "tip25_w252_M5000", use_tail_informed_prior = TRUE, tip_k=25, W = 252L, M = 5000L),
-  list(label = "tip13_w252_M5000", use_tail_informed_prior = TRUE, tip_k=13, W = 252L, M = 5000L),
-  list(label = "tip_w252_M10000", use_tail_informed_prior = TRUE, W = 252L, M = 10000L)
+  list(label = "tip_w252_M5000", use_tail_informed_prior = TRUE, W = 252L, M = 5000L)
+  #list(label = "tip_w252_M10000", use_tail_informed_prior = TRUE, W = 252L, M = 10000L)
   #list(label = "tip_w252_M3000_tip", use_tail_informed_prior = TRUE, W = 252L, M = 3000L),
   #list(label = "tip_w504_M3000_tip", use_tail_informed_prior = TRUE, W = 504L, M = 3000L)
   #list(label = "tip_w126_M3000_tip", use_tail_informed_prior = TRUE, W = 126L, M = 3000L)
@@ -121,7 +119,7 @@ for (v in cfg_variants) {
     NULL
   })
   
-  cl20 <- structure(cl[1:20], class = class(cl))
+  cl20 <- structure(cl[1:4], class = class(cl))
   
   out <- list(
     log_pred = numeric(n_oos),

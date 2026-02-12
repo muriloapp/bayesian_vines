@@ -58,10 +58,11 @@ build_cfg <- function(d,
     families_first = families_first,
     families_deep  = families_deep,
     adapt_step_sd  = adapt_step_sd,
+    adapt_iter = 0L,
     seed         = 11111L,
     G            = 2L,
     edge_tree    = edge_tree,                  # <- length == K
-    nc           = 63,                          # cores
+    nc           = 5,                          # cores
     type         = "standard",
     alphas       = c(0.1, 0.05, 0.025, 0.01),  # alpha for tail risk
     use_tail_informed_prior = FALSE,           # turn on strong tail-centered priors

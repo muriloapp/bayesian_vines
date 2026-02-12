@@ -46,7 +46,7 @@ log_prior_edge <- function(fam, th1, th2, cfg) {
   if (fam == FAM_GAUSS) {
     return(log(1/1.98)) #- cfg$lambda)
   }
-  
+
   if (fam == FAM_BB1) {
     lam <- bb1_par2tail(th1, th2)   # (λL, λU)
     lp_tail <- dbeta(lam[1], 2, 2, log=TRUE) + dbeta(lam[2], 2, 2, log=TRUE)
@@ -165,6 +165,8 @@ new_particle_row_mat <- function(cfg, U_init = NULL, true_bases=NULL) {
       emps <- emp_tails_FRAPO(uv, method = cfg$tip_method, k = cfg$tip_k)
       mL   <- as.numeric(emps["L"]);  mU <- as.numeric(emps["U"])
       tail_strength <- max(mL, mU)
+      sd_mL <- compute_tip_sd_logit(mL, dim(uv)[1])
+      sd_mU <- compute_tip_sd_logit(mU, dim(uv)[1])
       
       #tail_codes <- c(FAM_BB1, FAM_BB1R180, FAM_BB7, FAM_BB7R180, FAM_BB8R180, FAM_T)
       #base_w     <- rep(1.0, nrow(fam_tbl))
@@ -186,8 +188,8 @@ new_particle_row_mat <- function(cfg, U_init = NULL, true_bases=NULL) {
           mL           = mL,
           mU           = mU,
           cur_delta    = runif(1, 1.1, 5.0),
-          step_sd      = cfg$step_sd,
-          tip_sd_logit = cfg$tip_sd_logit
+          sd_mL      = sd_mL,
+          sd_mU = sd_mU
         )
         th1[k] <- th_new[1]; th2[k] <- th_new[2]
       }
@@ -1092,7 +1094,11 @@ mh_step <- function(fam, th1, th2,
       fam_p[idx] <- new_code
       
       if (isTRUE(cfg$use_tail_informed_prior)) {
-        tipm <- if (is.null(tip_means_cache)) NULL else tip_means_cache[[idx]]
+        tip_means <- tip_means_cache$mean
+        tip_sd <- tip_means_cache$sd
+        tipm <- if (is.null(tip_means)) NULL else tip_means[[idx]]
+        sd_mL <- if (is.null(tip_sd)) NULL else tip_sd[[idx]][1]
+        sd_mU <- if (is.null(tip_sd)) NULL else tip_sd[[idx]][2]
         if (is.null(tipm)) {
           tails_old <- get_tails(old_code, th1_p[idx], th2_p[idx])
           tp_new    <- init_from_tails(new_code, tails_old)
@@ -1103,8 +1109,8 @@ mh_step <- function(fam, th1, th2,
             mL           = tipm["mL"],
             mU           = tipm["mU"],
             cur_delta    = th2_p[idx],
-            step_sd      = cfg$step_sd,
-            tip_sd_logit = cfg$tip_sd_logit
+            sd_mL      = sd_mL,
+            sd_mU = sd_mU
           )
           th1_p[idx] <- th_new[1]; th2_p[idx] <- th_new[2]
         }
@@ -1289,30 +1295,50 @@ emp_tails_FRAPO <- function(uv, method = "EmpTC", k = NULL) {
   c(L = clamp01(get12(tL)), U = clamp01(get12(tU)))
 }
 
+compute_tip_sd_logit <- function(lambda_hat, k,
+                                 shrink = 0.1,
+                                 floor_term = 0.01) {
+  
+  # lambda(1-lambda)
+  denom <- lambda_hat * (1 - lambda_hat)
+  
+  # prevent explosion near boundaries
+  denom <- max(denom, floor_term)
+  
+  sd_raw <- sqrt(1 / (k * denom))
+  
+  shrink * sd_raw
+}
+
+
+r_lam <- function(m, sd_m) {
+  z <- rnorm(1, mean = logit(clamp01(m)), sd = sd_m) 
+  ilogit(z)
+}
+
+
+
 ## --- Seeding new family params from empirical tails (Tree 1) ---------------
-seed_family_from_emp <- function(new_code, mL, mU, cur_delta, step_sd, tip_sd_logit) {
-  r_lam <- function(m) {
-    z <- rnorm(1, mean = logit(clamp01(m)), sd = step_sd) #tip_sd_logit
-    ilogit(z)
-  }
+seed_family_from_emp <- function(new_code, mL, mU, cur_delta, sd_mL, sd_mU) {
+  
   if (new_code == FAM_INDEP)  return(c(0, 0))
   if (new_code == FAM_GAUSS)  return(c(runif(1, -0.99, 0.99), 0))
   
   if (new_code == FAM_BB1) {
-    lamL <- r_lam(mL); lamU <- r_lam(mU)
+    lamL <- r_lam(mL, sd_mL); lamU <- r_lam(mU, sd_mU)
     th   <- bb1_tail2par(lamL, lamU); th <- sanitize_bb1(th[1], th[2]); return(th)
   }
   if (new_code == FAM_BB7) {
-    lamL <- r_lam(mL); lamU <- r_lam(mU)
+    lamL <- r_lam(mL, sd_mL); lamU <- r_lam(mU, sd_mU)
     th   <- bb7_tail2par(lamL, lamU); th <- sanitize_bb7(th[1], th[2]); return(th)
   }
   if (new_code == FAM_BB1R180) {
     # rotation: lower-rot ↔ upper(orig), upper-rot ↔ lower(orig)
-    lamLr <- r_lam(mU); lamUr <- r_lam(mL)
+    lamLr <- r_lam(mU, sd_mU); lamUr <- r_lam(mL, sd_mL)
     th    <- bb1r180_tail2par(lamLr, lamUr); th <- sanitize_bb1(th[1], th[2]); return(th)
   }
   if (new_code == FAM_BB7R180) {
-    lamLr <- r_lam(mU); lamUr <- r_lam(mL)
+    lamLr <- r_lam(mU, sd_mU); lamUr <- r_lam(mL, sd_mL)
     th    <- bb7r180_tail2par(lamLr, lamUr); th <- sanitize_bb7(th[1], th[2]); return(th)
   }
   #if (new_code == FAM_BB8R180) {
@@ -1322,7 +1348,7 @@ seed_family_from_emp <- function(new_code, mL, mU, cur_delta, step_sd, tip_sd_lo
   #}
   if (new_code == FAM_T) {
     lam <- {
-      z <- rnorm(1, mean = logit(clamp01(max(mL, mU))), sd = step_sd) #tip_sd_logit
+      z <- rnorm(1, mean = logit(clamp01(mL)), sd = sd_mL) 
       ilogit(z)
     }
     nu  <- exp(runif(1, 0, log(30)))
@@ -1501,6 +1527,7 @@ log_prior_with_tip_time <- function(p, cfg, data_up_to_t) {
 precompute_tip_means <- function(data_up_to_t, cfg) {
   K <- cfg$K
   out <- vector("list", K)
+  out_sd <- vector("list", K)
   if (is.null(cfg$edge_pair)) return(out)
   for (e in seq_len(K)) {
     if (cfg$edge_tree[e] != 1L) {
@@ -1511,9 +1538,13 @@ precompute_tip_means <- function(data_up_to_t, cfg) {
       uv        <- data_up_to_t[, pair, drop = FALSE]
       emps      <- emp_tails_FRAPO(uv, method = cfg$tip_method, k = cfg$tip_k)
       out[[e]]  <- c(mL = as.numeric(emps["L"]), mU = as.numeric(emps["U"]))
+      
+      sd_mL <- compute_tip_sd_logit(mL, dim(data_up_to_t)[1])
+      sd_mU <- compute_tip_sd_logit(mU, dim(data_up_to_t)[1])
+      out_sd[[e]]  <- c(sd_mL = sd_mL, sd_mU = sd_mU)
     }
   }
-  out
+  list(mean = out, sd = out_sd)
 }
 
 
@@ -1537,15 +1568,43 @@ precompute_tail_weights <- function(data_up_to_t, cfg) {
 
 ## Adaptive RW step
 
-compute_adapt_step_sd <- function(cfg, acc_pct, lambda = 0.25, target_acc = 0.30, sd_min = 0.01, sd_max=0.05){
-  log_sd_new <- log(cfg$step_sd) + lambda * (acc_pct/100 - target_acc)
-  step_sd <- pmin(pmax(exp(log_sd_new), sd_min), sd_max)
-  cat(sprintf(
-    "step_sd = %4f \n\n",
-    step_sd
-  ))
-  return(step_sd)
+# compute_adapt_step_sd <- function(cfg, acc_pct, lambda = 0.25, target_acc = 0.30, sd_min = 0.01, sd_max=0.05){
+#   log_sd_new <- log(cfg$step_sd) + lambda * (acc_pct/100 - target_acc)
+#   step_sd <- pmin(pmax(exp(log_sd_new), sd_min), sd_max)
+#   cat(sprintf(
+#     "step_sd = %4f \n\n",
+#     step_sd
+#   ))
+#   return(step_sd)
+# }
+
+#Logarithmic Decay
+compute_adapt_step_sd <- function(cfg, acc_pct,
+                                  lambda    = 0.30,
+                                  c_log      = 0.5,
+                                  target_acc = 0.30,
+                                  sd_min     = 0.01,
+                                  sd_max     = 0.05) {
+  
+  if (is.null(cfg$adapt_iter)) cfg$adapt_iter <- 0L
+  cfg$adapt_iter <- cfg$adapt_iter + 1L
+  t <- cfg$adapt_iter
+  
+  # logarithmic slow decay
+  lambda_t <- lambda / (1 + c_log * log(1 + t))
+  
+  log_sd_new <- log(cfg$step_sd) +
+    lambda_t * (acc_pct/100 - target_acc)
+  
+  step_sd <- exp(log_sd_new)
+  step_sd <- min(max(step_sd, sd_min), sd_max)
+  
+  cfg$step_sd <- step_sd
+  
+  return(cfg)
 }
+
+
 
 ## Resample move
 # 
