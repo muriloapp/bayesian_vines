@@ -1222,10 +1222,10 @@ mh_step <- function(fam, th1, th2,
   p_curr <- list(fam = fam,   th1 = th1,   th2 = th2)
   
   lp_prop <- if (isTRUE(cfg$use_tail_informed_prior))
-    log_prior_with_tip_cached(p_prop, cfg, tip_means_cache) else
+    log_prior_with_tip_cached(p_prop, cfg, tip_means_cache$mean) else
       log_prior(p_prop, cfg)
   lp_curr <- if (isTRUE(cfg$use_tail_informed_prior))
-    log_prior_with_tip_cached(p_curr, cfg, tip_means_cache) else
+    log_prior_with_tip_cached(p_curr, cfg, tip_means_cache$mean) else
       log_prior(p_curr, cfg)
   
   log_acc <- (ll_prop + lp_prop) - (ll_curr + lp_curr)
@@ -1539,8 +1539,8 @@ precompute_tip_means <- function(data_up_to_t, cfg) {
       emps      <- emp_tails_FRAPO(uv, method = cfg$tip_method, k = cfg$tip_k)
       out[[e]]  <- c(mL = as.numeric(emps["L"]), mU = as.numeric(emps["U"]))
       
-      sd_mL <- compute_tip_sd_logit(mL, dim(data_up_to_t)[1])
-      sd_mU <- compute_tip_sd_logit(mU, dim(data_up_to_t)[1])
+      sd_mL <- compute_tip_sd_logit(as.numeric(emps["L"]), dim(data_up_to_t)[1])
+      sd_mU <- compute_tip_sd_logit(as.numeric(emps["U"]), dim(data_up_to_t)[1])
       out_sd[[e]]  <- c(sd_mL = sd_mL, sd_mU = sd_mU)
     }
   }
@@ -1599,9 +1599,7 @@ compute_adapt_step_sd <- function(cfg, acc_pct,
   step_sd <- exp(log_sd_new)
   step_sd <- min(max(step_sd, sd_min), sd_max)
   
-  cfg$step_sd <- step_sd
-  
-  return(cfg)
+  return(step_sd)
 }
 
 

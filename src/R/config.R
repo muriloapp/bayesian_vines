@@ -26,7 +26,7 @@ build_cfg <- function(d,
                       adapt_step_sd  = TRUE,
                       trunc_tree     = NULL,
                       W              = 252L,
-                      W_predict      = 1260
+                      W_predict      = 1000
                       ) {
   
   d <- as.integer(d)
@@ -62,7 +62,7 @@ build_cfg <- function(d,
     seed         = 11111L,
     G            = 2L,
     edge_tree    = edge_tree,                  # <- length == K
-    nc           = 5,                          # cores
+    nc           = 4,                          # cores
     type         = "standard",
     alphas       = c(0.1, 0.05, 0.025, 0.01),  # alpha for tail risk
     use_tail_informed_prior = FALSE,           # turn on strong tail-centered priors
