@@ -12,77 +12,73 @@ source(here("src/simulation/naive_simulation.R"))
 source(here("src/simulation/main_simulation_nonparallel.R"))
 source(here("src/simulation/fun_simulation.R"))
 
-mean_len_grid  <- c(500)      
-#p_extreme_grid <- c(0.00)   
 
-#W_grid     <- c(252)  #AIC 
-W_grid     <- c(252)  #SMC 
 
-#aic_refit_every_grid <- c(252, 63) #AIC 
-aic_refit_every_grid <- c(1) #SMC 
 
-#W_predict_grid <- c(252) #AIC 
-W_predict_grid <- c(1000) #SMC 
+# ---- list ONLY the scenarios you want -----------------------------------------
+scenarios <- list(
+  list(ml = 1e10, w = 252, wp = 1000),
+  list(ml = 500,  w = 252, wp = 1000),
+  list(ml = 500,  w = 126, wp = 1000)
+  #list(ml = 500,  w = 504, wp = 1000),
+  # add more here, one line per combo
+)
 
-    base_dir <- "simul_results/NAIVE_300"
+base_dir <- "simul_results/SMC"
 dir.create(base_dir, recursive = TRUE, showWarnings = FALSE)
 
 
-ml <- mean_len <- 1e10
-wp <- 756
-re <- 1
-w <- W <- 252
+make_tag <- function(s) {
+  parts <- c()
+  
+  if (!is.null(s$ml)) parts <- c(parts, paste0("ml", s$ml))
+  if (!is.null(s$w))  parts <- c(parts, sprintf("w%03d", s$w))
+  if (!is.null(s$wp)) parts <- c(parts, sprintf("wp%04d", s$wp))
+  if (!is.null(s$re)) parts <- c(parts, sprintf("re%03d", s$re))
+  
+  paste(parts, collapse = "_")
+}
 
-for (ml in mean_len_grid) {
-  #for (pe in p_extreme_grid) {
-  for (w in W_grid) {
-    for (wp in W_predict_grid) {
-      for (re in aic_refit_every_grid) {
-        
-        cfg <- modifyList(build_cfg(d = 2), list(M = 1000, label = "M1000", W_predict=wp, aic_refit_every = re, W=w,  use_tail_informed_prior = TRUE))
-        
-        
-        n_train <- cfg$W_predict
-        d       <- 2
-        n_test  <- 2000
-        n       <- n_train+n_test
-        
-        
-        
-        tag <- sprintf(
-          "ml%s_w%03d_wp%04d_re%03d",
-          formatC(ml, format = "d"),
-          w,
-          wp,
-          re
-        )
-        
-        out_dir <- file.path(base_dir, tag)
-        dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
-        
-        
-        cat("\n============================\n")
-        cat("Running:", tag, "\n")
-        cat("============================\n")
-        
-        sim_files <- future_lapply(
-          X = 1:300,
-          FUN = run_one_sim,
-          n_train   = n_train,
-          n_test    = n_test,
-          d         = d,
-          cfg       = cfg,
-          mean_len  = ml,
-          out_dir   = out_dir,
-          future.seed = 11111
-        )
-        
-        saveRDS(sim_files, file.path(out_dir, sprintf("sim_files_%s.rds", tag)))
-        
-      }
-    }
-  }
-  #}
+
+for (s in scenarios) {
+  
+  # build cfg, using defaults when missing
+  cfg_list <- list(M = 1000, label = "M1000", use_tail_informed_prior = TRUE)
+  
+  if (!is.null(s$wp)) cfg_list$W_predict <- s$wp
+  if (!is.null(s$w))  cfg_list$W        <- s$w
+  if (!is.null(s$re)) cfg_list$aic_refit_every <- s$re  # only if exists
+  
+  cfg <- modifyList(build_cfg(d = 2), cfg_list)
+  
+  n_train <- cfg$W_predict
+  d       <- 2
+  n_test  <- 2000
+  
+  ml <- if (!is.null(s$ml)) s$ml else stop("scenario missing ml")  # or set a default
+
+  tag <- make_tag(s)
+  
+  out_dir <- file.path(base_dir, tag)
+  dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+  
+  cat("\n============================\n")
+  cat("Running:", tag, "\n")
+  cat("============================\n")
+  
+  sim_files <- future_lapply(
+    X = 1:300,
+    FUN = run_one_sim,
+    n_train   = n_train,
+    n_test    = n_test,
+    d         = d,
+    cfg       = cfg,
+    mean_len  = ml,
+    out_dir   = out_dir,
+    future.seed = 11111
+  )
+  
+  saveRDS(sim_files, file.path(out_dir, sprintf("sim_files_%s.rds", tag)))
 }
 
 
