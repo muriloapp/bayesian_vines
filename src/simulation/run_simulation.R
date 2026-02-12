@@ -10,13 +10,13 @@ plan(multisession, workers = max(1, parallel::detectCores() - 1))
 source(here("src/R", "config.R"))
 source(here("src/simulation/naive_simulation.R"))
 source(here("src/simulation/main_simulation_nonparallel.R"))
+source(here("src/simulation/fun_simulation.R"))
 
-
-mean_len_grid  <- c(1e10, 500)      
+mean_len_grid  <- c(500)      
 #p_extreme_grid <- c(0.00)   
 
 #W_grid     <- c(252)  #AIC 
-W_grid     <- c(252, 126, 504)  #SMC 
+W_grid     <- c(252)  #SMC 
 
 #aic_refit_every_grid <- c(252, 63) #AIC 
 aic_refit_every_grid <- c(1) #SMC 
@@ -24,7 +24,7 @@ aic_refit_every_grid <- c(1) #SMC
 #W_predict_grid <- c(252) #AIC 
 W_predict_grid <- c(1000) #SMC 
 
-base_dir <- "simul_results/SMC"
+    base_dir <- "simul_results/NAIVE_300"
 dir.create(base_dir, recursive = TRUE, showWarnings = FALSE)
 
 
@@ -181,7 +181,7 @@ library(dplyr)
 library(tidyr)
 library(openxlsx)
 
-folder_rel <- "SMC/ml500_w126_wp1000_re001"
+folder_rel <- "SMC/mlNA_w252_wp1000_re001"
 #folder_rel <- "NAIVE_300/ml500_w252_wp0252_re063"
 
 folder     <- file.path("simul_results", folder_rel)
@@ -237,3 +237,59 @@ write.xlsx(tab, out_file, overwrite = TRUE)
 
 
 
+
+
+#### SCATTER PLOT
+
+folder_smc <- "SMC/mlNA_w252_wp1000_re001"
+folder_smc     <- file.path("simul_results", folder_smc)
+files_smc <- list.files(folder_smc, pattern = "\\.rds$", full.names = TRUE)
+obj_smc <- lapply(files_smc, readRDS)
+
+folder_naive <- "NAIVE_300/mlNA_w252_wp0252_re252"
+folder_naive     <- file.path("simul_results", folder_naive)
+files_naive <- list.files(folder_naive, pattern = "\\.rds$", full.names = TRUE)
+obj_naive <- lapply(files_naive, readRDS)
+
+
+rmse_smc  <- bind_rows(lapply(obj_smc, `[[`, "rmse_mae_from_covar"))
+covar_smc <- bind_rows(lapply(obj_smc, `[[`, "eval_covar_asset"))
+
+rmse_naive  <- bind_rows(lapply(obj_naive, `[[`, "rmse_mae_from_covar"))
+covar_naive <- bind_rows(lapply(obj_naive, `[[`, "eval_covar_asset"))
+
+
+# subset to your condition
+s1 <- rmse_smc  [rmse_smc$cond_asset == 2 & rmse_smc$scenario  == "a0.05b0.025", , drop=FALSE]
+s2 <- rmse_naive[rmse_naive$cond_asset == 2 & rmse_naive$scenario == "a0.05b0.025", , drop=FALSE]
+
+# vectors
+rmse_A <- s1$RMSE; rmse_B <- s2$RMSE
+mae_A  <- s1$MAE;  mae_B  <- s2$MAE
+
+# zoom limits using 0.025 and 0.975
+lims_rmse <- as.numeric(quantile(c(rmse_A, rmse_B), probs = c(0.02, 0.98), na.rm = TRUE))
+lims_mae  <- as.numeric(quantile(c(mae_A,  mae_B ), probs = c(0.01, 0.99), na.rm = TRUE))
+
+op <- par(mfrow = c(1, 2), mar = c(4, 4, 2.5, 1) + 0.1)
+on.exit(par(op), add = TRUE)
+
+# --- RMSE panel ---
+plot(rmse_A, rmse_B,
+     xlim = lims_rmse, ylim = lims_rmse,
+     asp  = 1,
+     pch  = 19,
+     xlab = "SMC",
+     ylab = "Naive",
+     main = "RMSE")
+abline(0, 1, lwd = 1.5, col = gray(0.75), lty = 2)
+
+# --- MAE panel ---
+plot(mae_A, mae_B,
+     xlim = lims_mae, ylim = lims_mae,
+     asp  = 1,
+     pch  = 19,
+     xlab = "SMC",
+     ylab = "Naive",
+     main = "MAE")
+abline(0, 1, lwd = 1.5, col = gray(0.75), lty = 2)

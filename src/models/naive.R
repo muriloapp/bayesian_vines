@@ -169,7 +169,7 @@ for (t in seq_len(n_oos)) {
   
   if (t == 1)  skel <- make_skeleton_CVM(u_train, cfg$trunc_tree)  # do not truncate here yet
 
-  if (t == 1 | t%%63==0) {
+  #if (t == 1 | t%%63==0) {
   model1 <- vinecop(u_train,
                    family_set = c("bb1", "bb7", "t"),
                    structure   = skel$structure,
@@ -185,7 +185,7 @@ for (t in seq_len(n_oos)) {
     par_method      = "mle",
     allow_rotations = FALSE              # rotations irrelevant for Gaussian
   )
-  }
+ # }
   
   out$fam_hist[t, ] <- (unlist(get_all_families(model, trees = NA)))
   out$par1_hist[t, ] <- extract_params(model)$par1
@@ -199,7 +199,7 @@ for (t in seq_len(n_oos)) {
   out$log_pred[t]   <- dvinecop(u_test, model, cores = cfg$nc)
   
   ## Draws & risk metrics 
-  draws <- rvinecop(n=20000, model, qrng = FALSE, cores = cfg$nc)
+  draws <- rvinecop(n=30000, model, qrng = FALSE, cores = cfg$nc)
   Z_pred <- st_inv_fast(draws, shape_fc[t, ], df_fc[t, ])  
   R_t <- sweep(Z_pred, 2, as.numeric(sig_fc[t, ]), `*`) + as.numeric(mu_fc[t, ])
   
@@ -260,7 +260,7 @@ for (t in seq_len(n_oos)) {
   
 out$cfg <- cfg
   
-saveRDS(out, file = file.path("empirical_results", "naive_63refit.rds"))
+saveRDS(out, file = file.path("empirical_results", "naive_1refit_30000draws.rds"))
 
 
 
