@@ -26,7 +26,7 @@ build_cfg <- function(d,
                       adapt_step_sd  = TRUE,
                       trunc_tree     = NULL,
                       W              = 252L,
-                      W_predict      = 1000
+                      W_predict      = 252
                       ) {
   
   d <- as.integer(d)

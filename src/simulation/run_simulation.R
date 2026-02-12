@@ -181,7 +181,7 @@ library(dplyr)
 library(tidyr)
 library(openxlsx)
 
-folder_rel <- "SMC/mlNA_w252_wp1000_re001"
+folder_rel <- "NAIVE_300/ml500_w252_wp1000_re001"
 #folder_rel <- "NAIVE_300/ml500_w252_wp0252_re063"
 
 folder     <- file.path("simul_results", folder_rel)

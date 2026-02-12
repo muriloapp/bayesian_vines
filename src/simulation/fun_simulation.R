@@ -552,8 +552,8 @@ run_one_sim <- function(s,
   #cfg <- modifyList(build_cfg(d = 2), list(M = 500, label = "M500", use_tail_informed_prior = TRUE, tip_k=25))
 
   # --- Run your method ---
-  out <- naive_simul_d2_regimes(data, cfg, dgp)
-  #out <- smc_simul_serial(data, cfg, dgp)
+  #out <- naive_simul_d2_regimes(data, cfg, dgp)
+  out <- smc_simul_serial(data, cfg, dgp)
 
   n_oos <- nrow(data$U) - cfg$W_predict
   y_real_oos  <- data$y_real[(nrow(data$y_real) - n_oos + 1):nrow(data$y_real), , drop = FALSE]

@@ -334,10 +334,10 @@ out_list <- list(
   #smc126_10   = readRDS("empirical_results/standard_tip_w126_M2000_tipk10.rds"),
   #smc126_15   = readRDS("empirical_results/standard_tip_w126_M2000_tipk15.rds"),
    #smc252_5   = readRDS("empirical_results/standard_tip_w252_M2000_tipk5.rds"),
-   smc252_10k   = readRDS("empirical_results/unnamedAlg_tip_w252_M10000.rds"),
-   smc25213   = readRDS("empirical_results/unnamedAlg_tip13_w252_M5000.rds"),
-   smc25225   = readRDS("empirical_results/unnamedAlg_tip25_w252_M5000.rds"),
-   smc126   = readRDS("empirical_results/unnamedAlg_tip_w126_M3000_tip.rds"),
+   smc252_5k   = readRDS("empirical_results/unnamedAlg_tip_w252_M5000_tip.rds"),
+   smc252_10k   = readRDS("empirical_results/unnamedAlg_tip_w252_M10000.rds")
+   #smc25225   = readRDS("empirical_results/unnamedAlg_tip25_w252_M5000.rds"),
+   #smc126   = readRDS("empirical_results/unnamedAlg_tip_w126_M3000_tip.rds"),
    #smc252_15   = readRDS("empirical_results/standard_tip_w252_M2000_tipk15.rds"),
    #smc504_5   = readRDS("empirical_results/standard_tip_w504_M2000_tipk5.rds"),
    #smc504_10   = readRDS("empirical_results/standard_tip_w504_M2000_tipk10.rds"),
@@ -345,7 +345,7 @@ out_list <- list(
    
    #smc252_10_flat   = readRDS("empirical_results/standard_5d_flat.rds"),
    #alt_gaussian   = readRDS("empirical_results/naive_5d_gaussian.rds"),
-   alt30k   = readRDS("empirical_results/naive_1refit_30000draws.rds")
+   #alt30k   = readRDS("empirical_results/naive_1refit_30000draws.rds")
 )
 
 # Choose period & assets by name (Date handling is centralized and consistent)

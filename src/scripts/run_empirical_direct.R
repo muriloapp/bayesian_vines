@@ -22,8 +22,10 @@ dat <- import_data(drop_first_col = TRUE, n_assets = 7)
 
 # Variants
 cfg_variants <- list(
-  list(label = "tip_w252_M5000", use_tail_informed_prior = TRUE, W = 252L, M = 5000L)
-  #list(label = "tip_w252_M10000", use_tail_informed_prior = TRUE, W = 252L, M = 10000L)
+  list(label = "tip_w252_M8000", use_tail_informed_prior = TRUE, W = 252L, M = 8000L),
+  list(label = "tip_w126_M8000", use_tail_informed_prior = TRUE, W = 126L, M = 8000L),
+  list(label = "tip_w252_M10000", use_tail_informed_prior = TRUE, W = 252L, M = 10000L),
+  list(label = "tip_w126_M10000", use_tail_informed_prior = TRUE, W = 126L, M = 10000L)
   #list(label = "tip_w252_M3000_tip", use_tail_informed_prior = TRUE, W = 252L, M = 3000L),
   #list(label = "tip_w504_M3000_tip", use_tail_informed_prior = TRUE, W = 504L, M = 3000L)
   #list(label = "tip_w126_M3000_tip", use_tail_informed_prior = TRUE, W = 126L, M = 3000L)
@@ -93,7 +95,7 @@ for (v in cfg_variants) {
     "rtnorm_vec","log_prior_edge",
     "bicop_dist","vinecop_dist","dvinecop",
     "rvinecop","bicop",
-    "diagnostic_report","compute_predictive_metrics",
+    "diagnostic_report","compute_predictive_metrics", "compute_tip_sd_logit",
     "compute_log_incr",
     "w_mean","w_var","mc_se","w_quantile","fillna_neg","fam_spec","get_tails","clamp01","init_from_tails",
     "tail_weights","safe_logdens",
@@ -101,7 +103,7 @@ for (v in cfg_variants) {
     "emp_tails_FRAPO","seed_family_from_emp",
     "log_prior_edge_strong",".tip_means_for_edge_t","log_prior_with_tip_time","log_prior_with_tip_cached",
     ".safe_logdens1","fast_vine_from_row",".build_vine_from_vectors",
-    ".as_particle_vectors","K_of_skeleton","safe_sample"
+    ".as_particle_vectors","K_of_skeleton","safe_sample","r_lam"
   )
   
   cl <- make_cluster(cfg$nc, cfg$seed, exports, envir = .GlobalEnv)
@@ -119,7 +121,7 @@ for (v in cfg_variants) {
     NULL
   })
   
-  cl20 <- structure(cl[1:4], class = class(cl))
+  cl20 <- structure(cl[1:2], class = class(cl))
   
   out <- list(
     log_pred = numeric(n_oos),
@@ -174,7 +176,7 @@ for (v in cfg_variants) {
       y_real_t <- y_real[idx, ]
       out$log_pred[idx] <- compute_predictive_metrics(u_t, particles, skeleton, w / sum(w), cfg)$log_pred_density
       
-      draws <- smc_predictive_sample_fast2_scoped2(particles, skeleton, w, L = 20000, cl = cl20)
+      draws <- smc_predictive_sample_fast2_scoped2(particles, skeleton, w, L = 30000, cl = cl20)
       
       cmp  <- sweep(draws, 2, as.numeric(u_t), FUN = "<=")
       pitV <- matrixStats::rowAlls(cmp)
