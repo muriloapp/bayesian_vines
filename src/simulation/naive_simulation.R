@@ -174,7 +174,12 @@ naive_simul_d2_regimes <- function(data, cfg, dgp) {
     CoVaR_tail_asset = array(
       NA_real_, c(n_oos, d, length(SCEN_COVAR)),
       dimnames = list(NULL, tickers, SCEN_COVAR)
+    ),
+    CoES_tail_asset = array(
+      NA_real_, c(n_oos, d, length(SCEN_COVAR)),
+      dimnames = list(NULL, tickers, SCEN_COVAR)
     )
+    
   )
   
   model <- NULL
@@ -235,7 +240,7 @@ naive_simul_d2_regimes <- function(data, cfg, dgp) {
     out$log_pred[t] <- log(dbicop(u_test, model))
     
     # predictive draws on copula scale
-    draws <- rbicop(10000, model)
+    draws <- rbicop(cfg$sim, model)
 
     # transform + build returns
     Z_pred <- st_inv_fast(draws, shape_fc[t, ], df_fc[t, ])
@@ -302,6 +307,21 @@ naive_simul_d2_regimes <- function(data, cfg, dgp) {
     out$CoVaR_tail_asset[t, , "a0.1b0.05"]  <- covar10b5
     out$CoVaR_tail_asset[t, , "a0.05b0.025"]  <- covar5b0025
     out$CoVaR_tail_asset[t, , "a0.025b0.05"]  <- covar025b5
+    
+    # ---- CoES (asset | distressed asset j) ----
+    coes5      <- coes_tail_vec_asset(R_t, r_p, VaRj_5,   port_alpha = 0.05,  minN = 50)
+    coes5b10   <- coes_tail_vec_asset(R_t, r_p, VaRj_5,   port_alpha = 0.10,  minN = 50)
+    coes10     <- coes_tail_vec_asset(R_t, r_p, VaRj_10,  port_alpha = 0.10,  minN = 50)
+    coes10b5   <- coes_tail_vec_asset(R_t, r_p, VaRj_10,  port_alpha = 0.05,  minN = 50)
+    coes5b0025 <- coes_tail_vec_asset(R_t, r_p, VaRj_5,   port_alpha = 0.025, minN = 50)
+    coes025b5  <- coes_tail_vec_asset(R_t, r_p, VaRj_025, port_alpha = 0.05,  minN = 50)
+    
+    out$CoES_tail_asset[t, , "a0.05b0.05"]   <- coes5
+    out$CoES_tail_asset[t, , "a0.05b0.1"]    <- coes5b10
+    out$CoES_tail_asset[t, , "a0.1b0.1"]     <- coes10
+    out$CoES_tail_asset[t, , "a0.1b0.05"]    <- coes10b5
+    out$CoES_tail_asset[t, , "a0.05b0.025"]  <- coes5b0025
+    out$CoES_tail_asset[t, , "a0.025b0.05"]  <- coes025b5
     
 
   }

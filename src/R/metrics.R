@@ -198,6 +198,24 @@ covar_tail_vec_asset <- function(R_draws, r_p, VaRj, port_alpha = 0.05, minN = 2
   out
 }
 
-
+coes_tail_vec_asset <- function(R_draws, r_p, VaRj, port_alpha = 0.05, minN = 200) {
+  
+  d <- ncol(R_draws)
+  out <- rep(NA_real_, d)
+  
+  for (j in seq_len(d)) {
+    xx  <- 3L - j  # ONLY WORK FOR 2 assets (other asset index)
+    idx <- which(R_draws[, j] <= VaRj[j])
+    x_other <- R_draws[idx, xx]
+    
+    # CoVaR inside distress set (same as your function, but we use it as ES cutoff)
+    q <- as.numeric(stats::quantile(x_other, probs = port_alpha, names = FALSE))
+    
+    # CoES: ES of the other asset inside distress set
+    out[j] <- mean(x_other[x_other <= q])
+  }
+  
+  out
+}
 
 

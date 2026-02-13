@@ -17,14 +17,19 @@ source(here("src/simulation/fun_simulation.R"))
 
 # ---- list ONLY the scenarios you want -----------------------------------------
 scenarios <- list(
-  list(ml = 1e10, w = 252, wp = 1000),
-  list(ml = 500,  w = 252, wp = 1000),
-  list(ml = 500,  w = 126, wp = 1000)
+  #list(ml = 1e10, w = 252, wp = 1000),
+  #list(ml = 500,  w = 252, wp = 1000),
+  #list(ml = 500,  w = 126, wp = 1000),
+  #list(ml = 1e10, w = 252, wp = 1000, re=1),
+  #list(ml = 1e10, w = 252, wp = 1000, re=252, sim=100000),
+  #list(ml = 1e10,  w = 252, wp = 1000,  re=252, sim=10000),
+  list(ml = 1e10,  w = 252, wp = 1000,  re=252, sim=20000)
+  #list(ml = 500,  w = 126, wp = 1000)
   #list(ml = 500,  w = 504, wp = 1000),
   # add more here, one line per combo
 )
 
-base_dir <- "simul_results/SMC"
+base_dir <- "simul_results/NAIVE"
 dir.create(base_dir, recursive = TRUE, showWarnings = FALSE)
 
 
@@ -35,15 +40,16 @@ make_tag <- function(s) {
   if (!is.null(s$w))  parts <- c(parts, sprintf("w%03d", s$w))
   if (!is.null(s$wp)) parts <- c(parts, sprintf("wp%04d", s$wp))
   if (!is.null(s$re)) parts <- c(parts, sprintf("re%03d", s$re))
+  if (!is.null(s$sim)) parts <- c(parts, sprintf("sim%03d", s$sim))
   
   paste(parts, collapse = "_")
 }
 
-
+s <- scenarios[[1]]
 for (s in scenarios) {
   
   # build cfg, using defaults when missing
-  cfg_list <- list(M = 1000, label = "M1000", use_tail_informed_prior = TRUE)
+  cfg_list <- list(M = 1000, label = "M1000", use_tail_informed_prior = TRUE, sim=s$sim)
   
   if (!is.null(s$wp)) cfg_list$W_predict <- s$wp
   if (!is.null(s$w))  cfg_list$W        <- s$w
@@ -53,7 +59,7 @@ for (s in scenarios) {
   
   n_train <- cfg$W_predict
   d       <- 2
-  n_test  <- 2000
+  n_test  <- 20
   
   ml <- if (!is.null(s$ml)) s$ml else stop("scenario missing ml")  # or set a default
 
@@ -177,7 +183,7 @@ library(dplyr)
 library(tidyr)
 library(openxlsx)
 
-folder_rel <- "NAIVE_300/ml500_w252_wp1000_re001"
+folder_rel <- "NAIVE/ml1e+10_w252_wp1000_re252_sim100000"
 #folder_rel <- "NAIVE_300/ml500_w252_wp0252_re063"
 
 folder     <- file.path("simul_results", folder_rel)
@@ -237,7 +243,7 @@ write.xlsx(tab, out_file, overwrite = TRUE)
 
 #### SCATTER PLOT
 
-folder_smc <- "SMC/mlNA_w252_wp1000_re001"
+folder_smc <- "NAIVE/ml1e+10_w252_wp1000_re252_sim100000"
 folder_smc     <- file.path("simul_results", folder_smc)
 files_smc <- list.files(folder_smc, pattern = "\\.rds$", full.names = TRUE)
 obj_smc <- lapply(files_smc, readRDS)
@@ -246,6 +252,7 @@ folder_naive <- "NAIVE_300/mlNA_w252_wp0252_re252"
 folder_naive     <- file.path("simul_results", folder_naive)
 files_naive <- list.files(folder_naive, pattern = "\\.rds$", full.names = TRUE)
 obj_naive <- lapply(files_naive, readRDS)
+
 
 
 rmse_smc  <- bind_rows(lapply(obj_smc, `[[`, "rmse_mae_from_covar"))
