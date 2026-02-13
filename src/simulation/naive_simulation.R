@@ -245,7 +245,6 @@ naive_simul_d2_regimes <- function(data, cfg, dgp) {
     # transform + build returns
     Z_pred <- st_inv_fast(draws, shape_fc[t, ], df_fc[t, ])
     R_t <- sweep(Z_pred, 2, as.numeric(sqrt(sig_fc[t, ])), `*`) + as.numeric(mu_fc[t, ])
-    
     # Risk metrics
     rs <- risk_stats_full(R_t, cfg$alphas)
     
@@ -315,6 +314,8 @@ naive_simul_d2_regimes <- function(data, cfg, dgp) {
     coes10b5   <- coes_tail_vec_asset(R_t, r_p, VaRj_10,  port_alpha = 0.05,  minN = 50)
     coes5b0025 <- coes_tail_vec_asset(R_t, r_p, VaRj_5,   port_alpha = 0.025, minN = 50)
     coes025b5  <- coes_tail_vec_asset(R_t, r_p, VaRj_025, port_alpha = 0.05,  minN = 50)
+    
+    coes5b0025
     
     out$CoES_tail_asset[t, , "a0.05b0.05"]   <- coes5
     out$CoES_tail_asset[t, , "a0.05b0.1"]    <- coes5b10

@@ -538,9 +538,6 @@ coes_rmse_mae_all <- function(out, dgp,
   res
 }
 
-mean_len <- 1e10
-p_extreme = 0
-tip_k = NA_integer_
 
 # REGIMES PARALLED
 run_one_sim <- function(s,
@@ -713,7 +710,7 @@ run_one_sim <- function(s,
 
   # --- Run your method ---
   out <- naive_simul_d2_regimes(data, cfg, dgp)
-  out <- smc_simul_serial(data, cfg, dgp)
+  #out <- smc_simul_serial(data, cfg, dgp)
 
   n_oos <- nrow(data$U) - cfg$W_predict
   y_real_oos  <- data$y_real[(nrow(data$y_real) - n_oos + 1):nrow(data$y_real), , drop = FALSE]

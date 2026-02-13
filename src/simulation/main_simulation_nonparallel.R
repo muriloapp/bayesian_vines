@@ -85,7 +85,7 @@ for (t in (cfg$W+1):N) {
       y_real_t <- y_real[idx,]
       out$log_pred[idx] <- compute_predictive_metrics(u_t, particles, skeleton, w/sum(w), cfg)$log_pred_density
 
-      draws <- smc_predictive_sample_fast2_scoped2_serial(particles, skeleton, w, L = 10000)
+      draws <- smc_predictive_sample_fast2_scoped2_serial(particles, skeleton, w, L = cfg$sim)
       
       Z_pred <- st_inv_fast(draws, shape_fc[idx, ], df_fc[idx, ])  
       R_t  <- sweep(Z_pred, 2, as.numeric(sqrt(sig_fc[idx, ])), `*`) + as.numeric(mu_fc[idx, ])          # L × d

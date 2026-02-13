@@ -59,7 +59,7 @@ for (s in scenarios) {
   
   n_train <- cfg$W_predict
   d       <- 2
-  n_test  <- 100
+  n_test  <- 2000
   
   ml <- if (!is.null(s$ml)) s$ml else stop("scenario missing ml")  # or set a default
 
@@ -183,7 +183,7 @@ library(dplyr)
 library(tidyr)
 library(openxlsx)
 
-folder_rel <- "NAIVE/ml1e+10_w252_wp1000_re252_sim100000"
+folder_rel <- "SMC_test/ml1e+10_w252_wp1000_re252_sim20000"
 #folder_rel <- "NAIVE_300/ml500_w252_wp0252_re063"
 
 folder     <- file.path("simul_results", folder_rel)
