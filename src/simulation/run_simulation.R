@@ -59,7 +59,7 @@ for (s in scenarios) {
   
   n_train <- cfg$W_predict
   d       <- 2
-  n_test  <- 20
+  n_test  <- 100
   
   ml <- if (!is.null(s$ml)) s$ml else stop("scenario missing ml")  # or set a default
 
@@ -203,7 +203,7 @@ summarize_folder <- function(folder, cond_asset = 2, asset = 2, scenarios_tbl) {
   
   obj <- lapply(files, readRDS)
   
-  rmse_all  <- bind_rows(lapply(obj, `[[`, "rmse_mae_from_covar"))
+  rmse_all  <- bind_rows(lapply(obj, `[[`, "rmse_mae_from_coes"))
   covar_all <- bind_rows(lapply(obj, `[[`, "eval_covar_asset"))
   
   rmse_sum <- rmse_all %>%

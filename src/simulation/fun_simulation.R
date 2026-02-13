@@ -454,7 +454,7 @@ covar_rmse_mae_all <- function(out, dgp,
     truth_last <- truth_mat[(nrow(truth_mat) - n_test + 1):nrow(truth_mat), , drop = FALSE]
     
     # predicted slice for this scenario: (n_test x 2 cond_assets)
-    pred_slice <- out$CoVaR_tail[, , sc, drop = FALSE][, , 1]
+    pred_slice <- out$CoVaR_tail_asset[, , sc, drop = FALSE][, , 1]
     
     # compute errors for each conditioning asset (dimension 2)
     for (j in 1:2) {
@@ -465,8 +465,8 @@ covar_rmse_mae_all <- function(out, dgp,
         scenario   = sc,
         truth_obj  = truth_name,
         cond_asset = j,
-        RMSE       = rmse(pred_j, truth_j, na.rm = na.rm),
-        MAE        = mae(pred_j, truth_j, na.rm = na.rm),
+        RMSE       = rmse(pred_j, truth_j),
+        MAE        = mae(pred_j, truth_j),
         stringsAsFactors = FALSE
       ))
     }
@@ -528,8 +528,8 @@ coes_rmse_mae_all <- function(out, dgp,
         scenario   = sc,
         truth_obj  = truth_name,
         cond_asset = j,
-        RMSE       = rmse(pred_j, truth_j, na.rm = na.rm),
-        MAE        = mae(pred_j, truth_j, na.rm = na.rm),
+        RMSE       = rmse(pred_j, truth_j),
+        MAE        = mae(pred_j, truth_j),
         stringsAsFactors = FALSE
       ))
     }
