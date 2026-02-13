@@ -17,13 +17,19 @@ source(here("src/simulation/fun_simulation.R"))
 
 # ---- list ONLY the scenarios you want -----------------------------------------
 scenarios <- list(
-  #list(ml = 1e10, w = 252, wp = 1000),
-  #list(ml = 500,  w = 252, wp = 1000),
-  #list(ml = 500,  w = 126, wp = 1000),
-  #list(ml = 1e10, w = 252, wp = 1000, re=1),
-  #list(ml = 1e10, w = 252, wp = 1000, re=252, sim=100000),
-  #list(ml = 1e10,  w = 252, wp = 1000,  re=252, sim=10000),
-  list(ml = 1e10,  w = 252, wp = 1000,  re=252, sim=20000)
+  #list(ml = 1e10,  w = 252, wp = 1000,  re=252, sim=20000), # NAIVE
+  #list(ml = 500,  w = 252, wp = 1000,  re=1, sim=20000)     # NAIVE
+  
+  #list(ml = 1e10,  w = 252, wp = 1000,  re=1, sim=20000)     # NAIVE robust
+  
+  list(ml = 1e10,  w = 252, wp = 1000,  sim=20000), #SMC
+  list(ml = 500,  w = 252, wp = 1000,  sim=20000), #SMC
+  list(ml = 500,  w = 126, wp = 1000,  sim=20000), #SMC
+  list(ml = 500,  w = 504, wp = 1000,  sim=20000), #SMC
+  
+  list(ml = 1e10,  w = 126, wp = 1000,  sim=20000), #SMC robust
+  list(ml = 1e10,  w = 504, wp = 1000,  sim=20000), #SMC robust
+  
   #list(ml = 500,  w = 126, wp = 1000)
   #list(ml = 500,  w = 504, wp = 1000),
   # add more here, one line per combo

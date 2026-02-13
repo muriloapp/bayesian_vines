@@ -121,7 +121,7 @@ for (v in cfg_variants) {
     NULL
   })
   
-  cl20 <- structure(cl[1:2], class = class(cl))
+  cl20 <- structure(cl[1:20], class = class(cl)) #*ADJUST*
   
   out <- list(
     log_pred = numeric(n_oos),
