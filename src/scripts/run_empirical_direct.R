@@ -223,9 +223,10 @@ for (v in cfg_variants) {
       out$CoVaR_tail[idx, , "a0.025b0.05"]  <- covar_tail_vec(R_t, r_p, VaRj_025,port_alpha = 0.05,  minN = 50)
     }
     
+    if (t %% 250 == 0L){
     dg <- diagnostic_report(t, 0, U, particles, w, cfg)
     out$diag_log[t, `:=`(t = t, ESS = dg$ESS, unique = dg$unique, euc = dg$euc, sparsity = dg$sparsity)]
-    
+    }
     if (ESS(w) < cfg$ess_thr * M && t < N) {
       newAncestors <- stratified_resample(w)
       data_up_to_t <- U[max(1, t - cfg$W + 1):(t - 1), , drop = FALSE]
